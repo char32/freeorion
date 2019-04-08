@@ -24,9 +24,10 @@
 
 #include <GG/dialogs/ColorDlg.h>
 
-#include <GG/GUI.h>
 #include <GG/DrawUtil.h>
 #include <GG/Font.h>
+#include <GG/GLClientAndServerBuffer.h>
+#include <GG/GUI.h>
 #include <GG/Layout.h>
 #include <GG/Slider.h>
 #include <GG/StyleFactory.h>
@@ -161,14 +162,14 @@ HueSaturationPicker::HueSaturationPicker(X x, Y y, X w, Y h) :
     const int SAMPLES = 100;
     const double INCREMENT = 1.0 / (SAMPLES + 1);
     const double VALUE = 1.0;
-    m_vertices.resize(SAMPLES, std::vector<std::pair<double, double> >(2 * (SAMPLES + 1)));
+    m_vertices.resize(SAMPLES, std::vector<std::pair<double, double>>(2 * (SAMPLES + 1)));
     m_colors.resize(SAMPLES, std::vector<Clr>(2 * (SAMPLES + 1)));
     for (int col = 0; col < SAMPLES; ++col) {
         for (int row = 0; row < SAMPLES + 1; ++row) {
-            m_vertices[col][2 * row] = std::make_pair(col * INCREMENT, row * INCREMENT);
-            m_vertices[col][2 * row + 1] = std::make_pair((col + 1) * INCREMENT, row * INCREMENT);
-            m_colors[col][2 * row] = Convert(HSVClr(col * INCREMENT, 1.0 - row * INCREMENT, VALUE));
-            m_colors[col][2 * row + 1] = Convert(HSVClr((col + 1) * INCREMENT, 1.0 - row * INCREMENT, VALUE));
+            m_vertices[col][2 * row] =      {col * INCREMENT, row * INCREMENT};
+            m_vertices[col][2 * row + 1] =  {(col + 1) * INCREMENT, row * INCREMENT};
+            m_colors[col][2 * row] =        Convert(HSVClr(col * INCREMENT, 1.0 - row * INCREMENT, VALUE));
+            m_colors[col][2 * row + 1] =    Convert(HSVClr((col + 1) * INCREMENT, 1.0 - row * INCREMENT, VALUE));
         }
     }
 }
@@ -178,28 +179,66 @@ void HueSaturationPicker::Render()
     Pt ul = UpperLeft(), lr = LowerRight();
     Pt size = Size();
     glDisable(GL_TEXTURE_2D);
+
+    glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+    // grid of quads of varying hue and saturation
     glPushMatrix();
     glTranslated(Value(ul.x), Value(ul.y), 0.0);
     glScaled(Value(size.x), Value(size.y), 1.0);
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_COLOR_ARRAY);
     for (std::size_t i = 0; i < m_vertices.size(); ++i) {
         glVertexPointer(2, GL_DOUBLE, 0, &m_vertices[i][0]);
         glColorPointer(4, GL_UNSIGNED_BYTE, 0, &m_colors[i][0]);
         glDrawArrays(GL_QUAD_STRIP, 0, m_vertices[i].size());
     }
-    glDisableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_COLOR_ARRAY);
     glPopMatrix();
+
+    glDisableClientState(GL_COLOR_ARRAY);
+
+    // lines to indicate currently selected colour
+    glLineWidth(1.5f);
     Pt color_position(static_cast<X>(ul.x + size.x * m_hue),
                       static_cast<Y>(ul.y + size.y * (1.0 - m_saturation)));
     glColor(CLR_SHADOW);
-    glBegin(GL_LINES);
-    glVertex(color_position.x, ul.y);
-    glVertex(color_position.x, lr.y);
-    glVertex(ul.x, color_position.y);
-    glVertex(lr.x, color_position.y);
-    glEnd();
+
+    const float GAP(3.0f);
+
+    GL2DVertexBuffer lines_verts;
+    lines_verts.reserve(16);
+    lines_verts.store(Value(color_position.x),      Value(ul.y));
+    lines_verts.store(Value(color_position.x),      Value(color_position.y) - GAP);
+
+    lines_verts.store(Value(color_position.x),      Value(lr.y));
+    lines_verts.store(Value(color_position.x),      Value(color_position.y) + GAP);
+
+    lines_verts.store(Value(ul.x),                  Value(color_position.y));
+    lines_verts.store(Value(color_position.x) - GAP,Value(color_position.y));
+
+    lines_verts.store(Value(lr.x),                  Value(color_position.y));
+    lines_verts.store(Value(color_position.x) + GAP,Value(color_position.y));
+
+
+    lines_verts.store(Value(color_position.x),      Value(color_position.y) - GAP);
+    lines_verts.store(Value(color_position.x) - GAP,Value(color_position.y));
+
+    lines_verts.store(Value(color_position.x) - GAP,Value(color_position.y));
+    lines_verts.store(Value(color_position.x),      Value(color_position.y) + GAP);
+
+    lines_verts.store(Value(color_position.x),      Value(color_position.y) + GAP);
+    lines_verts.store(Value(color_position.x) + GAP,Value(color_position.y));
+
+    lines_verts.store(Value(color_position.x) + GAP,Value(color_position.y));
+    lines_verts.store(Value(color_position.x),      Value(color_position.y) - GAP);
+
+    lines_verts.activate();
+
+    glDrawArrays(GL_LINES, 0, lines_verts.size());
+    glLineWidth(1.0f);
+
+    glPopClientAttrib();
     glEnable(GL_TEXTURE_2D);
 }
 
@@ -246,29 +285,63 @@ ValuePicker::ValuePicker(X x, Y y, X w, Y h, Clr arrow_color) :
 
 void ValuePicker::Render()
 {
-    Pt eff_ul = UpperLeft(), eff_lr = LowerRight() - Pt(X(4), Y0);
+    Pt eff_ul = UpperLeft() + Pt(X(3), Y0), eff_lr = LowerRight() - Pt(X(4), Y0);
     Y h = Height();
     glDisable(GL_TEXTURE_2D);
-    glBegin(GL_QUADS);
-    glColor(Convert(HSVClr(m_hue, m_saturation, 1.0)));
-    glVertex(eff_lr.x, eff_ul.y);
-    glVertex(eff_ul.x, eff_ul.y);
-    glColor(Convert(HSVClr(m_hue, m_saturation, 0.0)));
-    glVertex(eff_ul.x, eff_lr.y);
-    glVertex(eff_lr.x, eff_lr.y);
-    glEnd();
+
+    GL2DVertexBuffer vert_buf;
+    vert_buf.reserve(12);
+    GLRGBAColorBuffer colour_buf;   // need to give each vertex in lightness bar its own colour so can't just use a glColor call
+    colour_buf.reserve(12);
+
+    // bar for picking lightness
+    vert_buf.store(Value(eff_lr.x),    Value(eff_ul.y));
+    colour_buf.store(Convert(HSVClr(m_hue, m_saturation, 1.0)));
+    vert_buf.store(Value(eff_ul.x),    Value(eff_ul.y));
+    colour_buf.store(Convert(HSVClr(m_hue, m_saturation, 1.0)));
+
+    vert_buf.store(Value(eff_ul.x),    Value(eff_lr.y));
+    colour_buf.store(Convert(HSVClr(m_hue, m_saturation, 0.0)));
+    vert_buf.store(Value(eff_lr.x),    Value(eff_lr.y));
+    colour_buf.store(Convert(HSVClr(m_hue, m_saturation, 0.0)));
+
+    // line indicating currently-selected lightness
     Y color_position(eff_ul.y + h * (1.0 - m_value));
-    glColor(CLR_SHADOW);
-    glBegin(GL_LINES);
-    glVertex(eff_ul.x, color_position);
-    glVertex(eff_lr.x, color_position);
-    glEnd();
-    glColor(m_arrow_color);
-    glBegin(GL_TRIANGLES);
-    glVertex(eff_lr.x + 4, color_position - 3);
-    glVertex(eff_lr.x + 1, color_position);
-    glVertex(eff_lr.x + 4, color_position + 3);
-    glEnd();
+    vert_buf.store(Value(eff_ul.x),    Value(color_position));
+    colour_buf.store(CLR_SHADOW);
+    vert_buf.store(Value(eff_lr.x),    Value(color_position));
+    colour_buf.store(CLR_SHADOW);
+
+    // arrows marking lightness position
+    vert_buf.store(Value(eff_lr.x + 5),Value(color_position - 4));
+    colour_buf.store(m_arrow_color);
+    vert_buf.store(Value(eff_lr.x + 1),Value(color_position));
+    colour_buf.store(m_arrow_color);
+    vert_buf.store(Value(eff_lr.x + 5),Value(color_position + 4));
+    colour_buf.store(m_arrow_color);
+    vert_buf.store(Value(eff_ul.x - 5),Value(color_position - 4));
+    colour_buf.store(m_arrow_color);
+    vert_buf.store(Value(eff_ul.x),    Value(color_position));
+    colour_buf.store(m_arrow_color);
+    vert_buf.store(Value(eff_ul.x - 5),Value(color_position + 4));
+    colour_buf.store(m_arrow_color);
+
+
+    glDisable(GL_TEXTURE_2D);
+    glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+    vert_buf.activate();
+    colour_buf.activate();
+    glDrawArrays(GL_QUADS, 0, 4);
+    glLineWidth(1.5f);
+    glDrawArrays(GL_LINES, 4, 2);
+    glLineWidth(1.0f);
+    glDrawArrays(GL_TRIANGLES, 6, 6);
+
+    glPopClientAttrib();
     glEnable(GL_TEXTURE_2D);
 }
 
@@ -308,9 +381,8 @@ void ValuePicker::SetValueFromPt(Pt pt)
 // ColorDlg
 ////////////////////////////////////////////////
 
-// ColorDlg::ColorButton
 ColorDlg::ColorButton::ColorButton(const Clr& color) :
-    Button("", boost::shared_ptr<Font>(), color),
+    Button("", nullptr, color),
     m_represented_color(CLR_BLACK)
 {}
 
@@ -347,8 +419,11 @@ void ColorDlg::ColorDisplay::Render()
 {
     Pt ul = UpperLeft(), lr = LowerRight();
     const int SQUARE_SIZE = 7;
-    glDisable(GL_TEXTURE_2D);
-    glBegin(GL_QUADS);
+
+    GL2DVertexBuffer    vert_buf;
+    GLRGBAColorBuffer   colour_buf;
+
+    // background checkerboard for curent colour display (to see through transparent areas)
     int i = 0, j = 0;
     for (Y y = lr.y; y > ul.y; y -= SQUARE_SIZE, ++j) {
         Y y0 = y - SQUARE_SIZE;
@@ -359,38 +434,55 @@ void ColorDlg::ColorDisplay::Render()
             X x0 = x - SQUARE_SIZE;
             if (x0 < ul.x)
                 x0 = ul.x;
-            glColor(((i + j) % 2) ? CLR_WHITE : CLR_BLACK);
-            glVertex(x, y0);
-            glVertex(x0, y0);
-            glVertex(x0, y);
-            glVertex(x, y);
+            Clr vert_clr = ((i + j) % 2) ? CLR_WHITE : CLR_BLACK;
+            colour_buf.store(vert_clr);
+            vert_buf.store(Value(x), Value(y0));
+            colour_buf.store(vert_clr);
+            vert_buf.store(Value(x0), Value(y0));
+            colour_buf.store(vert_clr);
+            vert_buf.store(Value(x0), Value(y));
+            colour_buf.store(vert_clr);
+            vert_buf.store(Value(x), Value(y));
         }
     }
-    glEnd();
+
+
     Clr full_alpha_color = Color();
     full_alpha_color.a = 255;
-    glBegin(GL_TRIANGLES);
+
+
+    GLfloat verts[12];
+    // upper left: full alpha colour
+    verts[0] = Value(lr.x); verts[1] = Value(ul.y);
+    verts[2] = Value(ul.x); verts[3] = Value(ul.y);
+    verts[4] = Value(ul.x); verts[5] = Value(lr.y);
+    // bottom right: actual alpha colour
+    verts[6] = Value(ul.x); verts[7] = Value(lr.y);
+    verts[8] = Value(lr.x); verts[9] = Value(lr.y);
+    verts[10]= Value(lr.x); verts[11]= Value(ul.y);
+
+
+    glDisable(GL_TEXTURE_2D);
+    glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+    vert_buf.activate();
+    colour_buf.activate();
+    glDrawArrays(GL_QUADS, 0, vert_buf.size());
+
+    glDisableClientState(GL_COLOR_ARRAY);
+
+    glVertexPointer(2, GL_FLOAT, 0, verts);
     glColor(full_alpha_color);
-    glVertex(lr.x, ul.y);
-    glVertex(ul.x, ul.y);
-    glVertex(ul.x, lr.y);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
     glColor(Color());
-    glVertex(ul.x, lr.y);
-    glVertex(lr.x, lr.y);
-    glVertex(lr.x, ul.y);
-    glEnd();
+    glDrawArrays(GL_TRIANGLES, 3, 3);
+
+    glPopClientAttrib();
     glEnable(GL_TEXTURE_2D);
 }
-
-
-// ColorDlg::ColorButtonClickFunctor
-ColorDlg::ColorButtonClickFunctor::ColorButtonClickFunctor(std::size_t id, ColorDlg* picker_) :
-    button_id(id),
-    picker(picker_)
-{}
-
-void ColorDlg::ColorButtonClickFunctor::operator()()
-{ picker->ColorButtonClicked(button_id); }
 
 
 // ColorDlg
@@ -399,29 +491,159 @@ void ColorDlg::ColorButtonClickFunctor::operator()()
 std::vector<Clr> ColorDlg::s_custom_colors;
 const std::size_t ColorDlg::INVALID_COLOR_BUTTON = std::numeric_limits<std::size_t>::max();
 
-ColorDlg::ColorDlg(X x, Y y, Clr original_color, const boost::shared_ptr<Font>& font,
+ColorDlg::ColorDlg(X x, Y y, Clr original_color, const std::shared_ptr<Font>& font,
                    Clr dialog_color, Clr border_color, Clr text_color/* = CLR_BLACK*/) :
     Wnd(x, y, X(315), Y(300), INTERACTIVE | DRAGABLE | MODAL),
     m_original_color(original_color),
-    m_original_color_specified(true),
-    m_color_was_picked(false),
-    m_hue_saturation_picker(0),
-    m_value_picker(0),
-    m_pickers_layout(0),
-    m_new_color_square(0),
-    m_old_color_square(0),
-    m_new_color_square_text(0),
-    m_old_color_square_text(0),
-    m_color_squares_layout(0),
-    m_color_buttons_layout(0),
     m_current_color_button(INVALID_COLOR_BUTTON),
-    m_ok(0),
-    m_cancel(0),
-    m_sliders_ok_cancel_layout(0),
     m_color(dialog_color),
     m_border_color(border_color),
     m_text_color(text_color)
-{ Init(font); }
+{
+    m_current_color = m_original_color_specified ? Convert(m_original_color) : Convert(CLR_BLACK);
+    Clr color = Convert(m_current_color);
+
+    const auto& style = GetStyleFactory();
+
+    const int COLOR_BUTTON_ROWS = 4;
+    const int COLOR_BUTTON_COLS = 5;
+    if (s_custom_colors.empty()) {
+        s_custom_colors = { GG::CLR_WHITE,      GG::CLR_LIGHT_GRAY, GG::CLR_GRAY,       GG::CLR_DARK_GRAY,  GG::CLR_BLACK,
+                            GG::CLR_PINK,       GG::CLR_RED,        GG::CLR_DARK_RED,   GG::CLR_MAGENTA,    GG::CLR_PURPLE,
+                            GG::CLR_BLUE,       GG::CLR_DARK_BLUE,  GG::CLR_TEAL,       GG::CLR_CYAN,       GG::CLR_GREEN,
+                            GG::CLR_DARK_GREEN, GG::CLR_OLIVE,      GG::CLR_YELLOW,     GG::CLR_ORANGE};
+
+        for (unsigned int i = s_custom_colors.size(); i < COLOR_BUTTON_ROWS * COLOR_BUTTON_COLS; ++i) {
+            s_custom_colors.push_back(CLR_GRAY);
+        }
+    }
+
+    m_hue_saturation_picker = Wnd::Create<HueSaturationPicker>(X(10), Y(10), X(300), Y(300));
+    m_hue_saturation_picker->SetHueSaturation(m_current_color.h, m_current_color.s);
+    m_value_picker = Wnd::Create<ValuePicker>(X(320), Y(10), X(25), Y(300), m_text_color);
+    m_value_picker->SetHueSaturation(m_current_color.h, m_current_color.s);
+    m_value_picker->SetValue(m_current_color.v);
+    const int HUE_SATURATION_PICKER_SIZE = 200;
+    m_pickers_layout = Wnd::Create<Layout>(X0, Y0, X(HUE_SATURATION_PICKER_SIZE + 30), Y(HUE_SATURATION_PICKER_SIZE),
+                                           1, 2, 0, 5);
+    m_pickers_layout->SetColumnStretch(0, 1);
+    m_pickers_layout->SetMinimumColumnWidth(1, X(24));
+    m_pickers_layout->Add(m_hue_saturation_picker, 0, 0);
+    m_pickers_layout->Add(m_value_picker, 0, 1);
+
+    m_color_squares_layout = Wnd::Create<Layout>(X0, m_pickers_layout->Bottom() + 5, m_pickers_layout->Width(), Y(40),
+                                                 1, 1, 0, 4);
+    m_new_color_square = Wnd::Create<ColorDisplay>(color);
+    if (m_original_color_specified) {
+        m_new_color_square_text = style->NewTextControl(style->Translate("New"), font, m_text_color, FORMAT_RIGHT);
+        m_color_squares_layout->Add(m_new_color_square_text, 0, 0);
+        m_color_squares_layout->Add(m_new_color_square, 0, 1);
+        m_old_color_square_text = style->NewTextControl(style->Translate("Old"), font, m_text_color, FORMAT_RIGHT);
+        m_color_squares_layout->Add(m_old_color_square_text, 1, 0);
+        m_old_color_square = Wnd::Create<ColorDisplay>(m_original_color);
+        m_color_squares_layout->Add(m_old_color_square, 1, 1);
+        m_color_squares_layout->SetMinimumColumnWidth(0, X(30));
+        m_color_squares_layout->SetColumnStretch(1, 1);
+    } else {
+        m_color_squares_layout->Add(m_new_color_square, 0, 0);
+    }
+
+    m_color_buttons_layout = Wnd::Create<Layout>(X0, m_color_squares_layout->Bottom() + 5, m_pickers_layout->Width(), Y(80),
+                                                 COLOR_BUTTON_ROWS, COLOR_BUTTON_COLS, 0, 4);
+    for (int i = 0; i < COLOR_BUTTON_ROWS; ++i) {
+        for (int j = 0; j < COLOR_BUTTON_COLS; ++j) {
+            m_color_buttons.push_back(Wnd::Create<ColorButton>(m_color));
+            m_color_buttons.back()->SetRepresentedColor(s_custom_colors[i * COLOR_BUTTON_COLS + j]);
+            m_color_buttons_layout->Add(m_color_buttons.back(), i, j);
+        }
+    }
+
+    m_sliders_ok_cancel_layout = Wnd::Create<Layout>(m_pickers_layout->Right() + 5, Y0, X(150), Y((25 + 5) * 8 - 5),
+                                                     9, 3, 0, 5);
+    m_sliders_ok_cancel_layout->SetMinimumColumnWidth(0, X(15));
+    m_sliders_ok_cancel_layout->SetMinimumColumnWidth(1, X(30));
+    m_sliders_ok_cancel_layout->SetColumnStretch(2, 1);
+
+    int row = 0;
+
+    for (auto entry : {
+            std::make_tuple(static_cast<int>(color.r), 0, 255, "R:"),
+            std::make_tuple(static_cast<int>(color.g), 0, 255, "G:"),
+            std::make_tuple(static_cast<int>(color.b), 0, 255, "B:"),
+            std::make_tuple(static_cast<int>(color.a), 0, 255, "A:"),
+            std::make_tuple(static_cast<int>(m_current_color.h * 359), 0, 359, "H:"),
+            std::make_tuple(static_cast<int>(m_current_color.s * 255), 0, 255, "S:"),
+            std::make_tuple(static_cast<int>(m_current_color.v * 255), 0, 255, "V:")
+        })
+    {
+        auto color_value = std::get<0>(entry);
+        auto color_min   = std::get<1>(entry);
+        auto color_max   = std::get<2>(entry);
+        auto color_label = std::get<3>(entry);
+
+        m_slider_labels.push_back(style->NewTextControl(style->Translate(color_label), font, m_text_color, FORMAT_RIGHT));
+        m_sliders_ok_cancel_layout->Add(m_slider_labels.back(), row, 0);
+        m_slider_values.push_back(style->NewTextControl(std::to_string(color_value),
+                                                        font, m_text_color, FORMAT_LEFT));
+        m_sliders_ok_cancel_layout->Add(m_slider_values.back(), row, 1);
+        m_sliders.push_back(style->NewIntSlider(color_min, color_max, HORIZONTAL, m_color, 10));
+        m_sliders.back()->SlideTo(color_value);
+        m_sliders_ok_cancel_layout->Add(m_sliders.back(), row, 2);
+
+        ++row;
+    }
+
+    m_ok = style->NewButton(style->Translate("Ok"), font, m_color, m_text_color);
+    m_sliders_ok_cancel_layout->Add(m_ok, 7, 0, 1, 3);
+    m_cancel = style->NewButton(style->Translate("Cancel"), font, m_color, m_text_color);
+    m_sliders_ok_cancel_layout->Add(m_cancel, 8, 0, 1, 3);
+}
+
+void ColorDlg::CompleteConstruction()
+{
+    Wnd::CompleteConstruction();
+
+    auto master_layout = Wnd::Create<Layout>(X0, Y0, ClientWidth(), ClientHeight(), 3, 2, 5, 5);
+    master_layout->SetColumnStretch(0, 1.25);
+    master_layout->SetColumnStretch(1, 1);
+    master_layout->SetRowStretch(0, 1.25);
+    master_layout->SetMinimumRowHeight(1, Y(40));
+    master_layout->SetRowStretch(2, 1);
+    master_layout->Add(m_pickers_layout, 0, 0);
+    master_layout->Add(m_color_squares_layout, 1, 0);
+    master_layout->Add(m_color_buttons_layout, 2, 0);
+    master_layout->Add(m_sliders_ok_cancel_layout, 0, 1, 3, 1);
+    SetLayout(master_layout);
+
+    for (std::size_t i = 0; i < m_color_buttons.size(); ++i) {
+        m_color_buttons[i]->LeftClickedSignal.connect(
+            [this, i](){ this->ColorButtonClicked(i); });
+    }
+    m_sliders[R]->SlidSignal.connect(
+        boost::bind(&ColorDlg::RedSliderChanged, this, _1, _2, _3));
+    m_sliders[G]->SlidSignal.connect(
+        boost::bind(&ColorDlg::GreenSliderChanged, this, _1, _2, _3));
+    m_sliders[B]->SlidSignal.connect(
+        boost::bind(&ColorDlg::BlueSliderChanged, this, _1, _2, _3));
+    m_sliders[A]->SlidSignal.connect(
+        boost::bind(&ColorDlg::AlphaSliderChanged, this, _1, _2, _3));
+    m_sliders[H]->SlidSignal.connect(
+        boost::bind(&ColorDlg::HueSliderChanged, this, _1, _2, _3));
+    m_sliders[S]->SlidSignal.connect(
+        boost::bind(&ColorDlg::SaturationSliderChanged, this, _1, _2, _3));
+    m_sliders[V]->SlidSignal.connect(
+        boost::bind(&ColorDlg::ValueSliderChanged, this, _1, _2, _3));
+    m_ok->LeftClickedSignal.connect(
+        boost::bind(&ColorDlg::OkClicked, this));
+    m_cancel->LeftClickedSignal.connect(
+        boost::bind(&ColorDlg::CancelClicked, this));
+    m_hue_saturation_picker->ChangedSignal.connect(
+        boost::bind(&ValuePicker::SetHueSaturation, m_value_picker, _1, _2));
+    m_hue_saturation_picker->ChangedSignal.connect(
+        boost::bind(&ColorDlg::HueSaturationPickerChanged, this, _1, _2));
+    m_value_picker->ChangedSignal.connect(
+        boost::bind(&ColorDlg::ValuePickerChanged, this, _1));
+}
 
 bool ColorDlg::ColorWasSelected() const
 { return m_color_was_picked; }
@@ -440,175 +662,12 @@ void ColorDlg::Render()
     }
 }
 
-void ColorDlg::KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys)
+void ColorDlg::KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys)
 {
     if (key == GGK_RETURN || key == GGK_KP_ENTER)
         OkClicked();
     else if (key == GGK_ESCAPE)
         CancelClicked();
-}
-
-void ColorDlg::Init(const boost::shared_ptr<Font>& font)
-{
-    m_current_color = m_original_color_specified ? Convert(m_original_color) : Convert(CLR_BLACK);
-    Clr color = Convert(m_current_color);
-
-    boost::shared_ptr<StyleFactory> style = GetStyleFactory();
-
-    const int COLOR_BUTTON_ROWS = 3;
-    const int COLOR_BUTTON_COLS = 5;
-    if (s_custom_colors.empty()) {
-        for (int i = 0; i < COLOR_BUTTON_ROWS * COLOR_BUTTON_COLS; ++i) {
-            s_custom_colors.push_back(CLR_BLACK);
-        }
-    }
-
-    m_hue_saturation_picker = new HueSaturationPicker(X(10), Y(10), X(300), Y(300));
-    m_hue_saturation_picker->SetHueSaturation(m_current_color.h, m_current_color.s);
-    m_value_picker = new ValuePicker(X(320), Y(10), X(25), Y(300), m_text_color);
-    m_value_picker->SetHueSaturation(m_current_color.h, m_current_color.s);
-    m_value_picker->SetValue(m_current_color.v);
-    const int HUE_SATURATION_PICKER_SIZE = 200;
-    m_pickers_layout = new Layout(X0, Y0, X(HUE_SATURATION_PICKER_SIZE + 30), Y(HUE_SATURATION_PICKER_SIZE),
-                                  1, 2, 0, 5);
-    m_pickers_layout->SetColumnStretch(0, 1);
-    m_pickers_layout->SetMinimumColumnWidth(1, X(20));
-    m_pickers_layout->Add(m_hue_saturation_picker, 0, 0);
-    m_pickers_layout->Add(m_value_picker, 0, 1);
-
-    m_color_squares_layout = new Layout(X0, m_pickers_layout->Bottom() + 5, m_pickers_layout->Width(), Y(40),
-                                        1, 1, 0, 4);
-    m_new_color_square = new ColorDisplay(color);
-    if (m_original_color_specified) {
-        m_new_color_square_text = style->NewTextControl(style->Translate("New"), font, m_text_color, FORMAT_RIGHT);
-        m_color_squares_layout->Add(m_new_color_square_text, 0, 0);
-        m_color_squares_layout->Add(m_new_color_square, 0, 1);
-        m_old_color_square_text = style->NewTextControl(style->Translate("Old"), font, m_text_color, FORMAT_RIGHT);
-        m_color_squares_layout->Add(m_old_color_square_text, 1, 0);
-        m_old_color_square = new ColorDisplay(m_original_color);
-        m_color_squares_layout->Add(m_old_color_square, 1, 1);
-        m_color_squares_layout->SetMinimumColumnWidth(0, X(30));
-        m_color_squares_layout->SetColumnStretch(1, 1);
-    } else {
-        m_color_squares_layout->Add(m_new_color_square, 0, 0);
-    }
-
-    m_color_buttons_layout = new Layout(X0, m_color_squares_layout->Bottom() + 5, m_pickers_layout->Width(), Y(80),
-                                        COLOR_BUTTON_ROWS, COLOR_BUTTON_COLS, 0, 4);
-    for (int i = 0; i < COLOR_BUTTON_ROWS; ++i) {
-        for (int j = 0; j < COLOR_BUTTON_COLS; ++j) {
-            m_color_buttons.push_back(new ColorButton(m_color));
-            m_color_buttons.back()->SetRepresentedColor(s_custom_colors[i * COLOR_BUTTON_COLS + j]);
-            m_color_buttons_layout->Add(m_color_buttons.back(), i, j);
-        }
-    }
-
-    using boost::lexical_cast;
-    m_sliders_ok_cancel_layout = new Layout(m_pickers_layout->Right() + 5, Y0, X(150), Y((25 + 5) * 8 - 5),
-                                            9, 3, 0, 5);
-    m_sliders_ok_cancel_layout->SetMinimumColumnWidth(0, X(15));
-    m_sliders_ok_cancel_layout->SetMinimumColumnWidth(1, X(30));
-    m_sliders_ok_cancel_layout->SetColumnStretch(2, 1);
-    m_slider_labels.push_back(style->NewTextControl(style->Translate("R:"), font, m_text_color, FORMAT_RIGHT));
-    m_sliders_ok_cancel_layout->Add(m_slider_labels.back(), 0, 0);
-    m_slider_values.push_back(style->NewTextControl(lexical_cast<std::string>(static_cast<int>(color.r)),
-                                                    font, m_text_color, FORMAT_LEFT));
-    m_sliders_ok_cancel_layout->Add(m_slider_values.back(), 0, 1);
-    m_sliders.push_back(style->NewIntSlider(0, 255, HORIZONTAL, m_color, 10));
-    m_sliders.back()->SlideTo(color.r);
-    m_sliders_ok_cancel_layout->Add(m_sliders.back(), 0, 2);
-
-    m_slider_labels.push_back(style->NewTextControl(style->Translate("G:"), font, m_text_color, FORMAT_RIGHT));
-    m_sliders_ok_cancel_layout->Add(m_slider_labels.back(), 1, 0);
-    m_slider_values.push_back(style->NewTextControl(lexical_cast<std::string>(static_cast<int>(color.g)),
-                                                    font, m_text_color, FORMAT_LEFT));
-    m_sliders_ok_cancel_layout->Add(m_slider_values.back(), 1, 1);
-    m_sliders.push_back(style->NewIntSlider(0, 255, HORIZONTAL, m_color, 10));
-    m_sliders.back()->SlideTo(color.g);
-    m_sliders_ok_cancel_layout->Add(m_sliders.back(), 1, 2);
-
-    m_slider_labels.push_back(style->NewTextControl(style->Translate("B:"), font, m_text_color, FORMAT_RIGHT));
-    m_sliders_ok_cancel_layout->Add(m_slider_labels.back(), 2, 0);
-    m_slider_values.push_back(style->NewTextControl(lexical_cast<std::string>(static_cast<int>(color.b)),
-                                                    font, m_text_color, FORMAT_LEFT));
-    m_sliders_ok_cancel_layout->Add(m_slider_values.back(), 2, 1);
-    m_sliders.push_back(style->NewIntSlider(0, 255, HORIZONTAL, m_color, 10));
-    m_sliders.back()->SlideTo(color.b);
-    m_sliders_ok_cancel_layout->Add(m_sliders.back(), 2, 2);
-
-    m_slider_labels.push_back(style->NewTextControl(style->Translate("A:"), font, m_text_color, FORMAT_RIGHT));
-    m_sliders_ok_cancel_layout->Add(m_slider_labels.back(), 3, 0);
-    m_slider_values.push_back(style->NewTextControl(lexical_cast<std::string>(static_cast<int>(color.a)),
-                                                    font, m_text_color, FORMAT_LEFT));
-    m_sliders_ok_cancel_layout->Add(m_slider_values.back(), 3, 1);
-    m_sliders.push_back(style->NewIntSlider(0, 255, HORIZONTAL, m_color, 10));
-    m_sliders.back()->SlideTo(color.a);
-    m_sliders_ok_cancel_layout->Add(m_sliders.back(), 3, 2);
-
-    m_slider_labels.push_back(style->NewTextControl(style->Translate("H:"), font, m_text_color, FORMAT_RIGHT));
-    m_sliders_ok_cancel_layout->Add(m_slider_labels.back(), 4, 0);
-    m_slider_values.push_back(style->NewTextControl(lexical_cast<std::string>(static_cast<int>(m_current_color.h * 359)),
-                                                    font, m_text_color, FORMAT_LEFT));
-    m_sliders_ok_cancel_layout->Add(m_slider_values.back(), 4, 1);
-    m_sliders.push_back(style->NewIntSlider(0, 359, HORIZONTAL, m_color, 10));
-    m_sliders.back()->SlideTo(static_cast<int>(m_current_color.h * 359));
-    m_sliders_ok_cancel_layout->Add(m_sliders.back(), 4, 2);
-
-    m_slider_labels.push_back(style->NewTextControl(style->Translate("S:"), font, m_text_color, FORMAT_RIGHT));
-    m_sliders_ok_cancel_layout->Add(m_slider_labels.back(), 5, 0);
-    m_slider_values.push_back(style->NewTextControl(lexical_cast<std::string>(static_cast<int>(m_current_color.s * 255)),
-                                                    font, m_text_color, FORMAT_LEFT));
-    m_sliders_ok_cancel_layout->Add(m_slider_values.back(), 5, 1);
-    m_sliders.push_back(style->NewIntSlider(0, 255, HORIZONTAL, m_color, 10));
-    m_sliders.back()->SlideTo(static_cast<int>(m_current_color.s * 255));
-    m_sliders_ok_cancel_layout->Add(m_sliders.back(), 5, 2);
-
-    m_slider_labels.push_back(style->NewTextControl(style->Translate("V:"), font, m_text_color, FORMAT_RIGHT));
-    m_sliders_ok_cancel_layout->Add(m_slider_labels.back(), 6, 0);
-    m_slider_values.push_back(style->NewTextControl(lexical_cast<std::string>(static_cast<int>(m_current_color.v * 255)),
-                                                    font, m_text_color, FORMAT_LEFT));
-    m_sliders_ok_cancel_layout->Add(m_slider_values.back(), 6, 1);
-    m_sliders.push_back(style->NewIntSlider(0, 255, HORIZONTAL, m_color, 10));
-    m_sliders.back()->SlideTo(static_cast<int>(m_current_color.v * 255));
-    m_sliders_ok_cancel_layout->Add(m_sliders.back(), 6, 2);
-
-    m_ok = style->NewButton(style->Translate("Ok"), font, m_color, m_text_color);
-    m_sliders_ok_cancel_layout->Add(m_ok, 7, 0, 1, 3);
-    m_cancel = style->NewButton(style->Translate("Cancel"), font, m_color, m_text_color);
-    m_sliders_ok_cancel_layout->Add(m_cancel, 8, 0, 1, 3);
-
-    Layout* master_layout = new Layout(X0, Y0, ClientWidth(), ClientHeight(), 3, 2, 5, 5);
-    master_layout->SetColumnStretch(0, 1.25);
-    master_layout->SetColumnStretch(1, 1);
-    master_layout->SetRowStretch(0, 1.25);
-    master_layout->SetMinimumRowHeight(1, Y(40));
-    master_layout->SetRowStretch(2, 1);
-    master_layout->Add(m_pickers_layout, 0, 0);
-    master_layout->Add(m_color_squares_layout, 1, 0);
-    master_layout->Add(m_color_buttons_layout, 2, 0);
-    master_layout->Add(m_sliders_ok_cancel_layout, 0, 1, 3, 1);
-    SetLayout(master_layout);
-
-    ConnectSignals();
-}
-
-void ColorDlg::ConnectSignals()
-{
-    for (std::size_t i = 0; i < m_color_buttons.size(); ++i) {
-        Connect(m_color_buttons[i]->LeftClickedSignal, ColorButtonClickFunctor(i, this));
-    }
-    Connect(m_sliders[R]->SlidSignal, &ColorDlg::RedSliderChanged, this);
-    Connect(m_sliders[G]->SlidSignal, &ColorDlg::GreenSliderChanged, this);
-    Connect(m_sliders[B]->SlidSignal, &ColorDlg::BlueSliderChanged, this);
-    Connect(m_sliders[A]->SlidSignal, &ColorDlg::AlphaSliderChanged, this);
-    Connect(m_sliders[H]->SlidSignal, &ColorDlg::HueSliderChanged, this);
-    Connect(m_sliders[S]->SlidSignal, &ColorDlg::SaturationSliderChanged, this);
-    Connect(m_sliders[V]->SlidSignal, &ColorDlg::ValueSliderChanged, this);
-    Connect(m_ok->LeftClickedSignal, &ColorDlg::OkClicked, this);
-    Connect(m_cancel->LeftClickedSignal, &ColorDlg::CancelClicked, this);
-    Connect(m_hue_saturation_picker->ChangedSignal, &ValuePicker::SetHueSaturation, m_value_picker);
-    Connect(m_hue_saturation_picker->ChangedSignal, &ColorDlg::HueSaturationPickerChanged, this);
-    Connect(m_value_picker->ChangedSignal, &ColorDlg::ValuePickerChanged, this);
 }
 
 void ColorDlg::ColorChanged(HSVClr color)

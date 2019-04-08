@@ -1,0 +1,14 @@
+ShipDesign
+    name = "SM_BLACK_KRAKEN"
+    uuid = "08a58b08-0929-496d-84fc-fba91424ca17"
+    description = "SM_BLACK_KRAKEN_DESC"
+    hull = "SH_BLACK_KRAKEN_BODY"
+    parts = [
+        "SR_SPINES"
+        "SR_SPINES"
+        "SR_SPINES"
+        "SP_CHAOS_WAVE"
+        "ST_CLOAK_1"
+    ]
+    icon = "icons/monsters/kraken-4.png"
+    model = "seed"

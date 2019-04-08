@@ -14,9 +14,10 @@ namespace GG {
 class GG_API GLBufferBase
 {
 public:
-    GLBufferBase();             // ctor
-    virtual ~GLBufferBase();    // dtor,    required to automatically drop
-                                //          server buffer in case of delete
+    GLBufferBase();
+
+    /** Required to automatically drop server buffer in case of delete. */
+    virtual ~GLBufferBase();
 
     // use this if you want to make sure that two buffers both
     // have server buffers or not, drops the buffer for mixed cases
@@ -45,6 +46,9 @@ public:
     std::size_t size() const;
     bool        empty() const;
 
+    // pre-allocate space for item data
+    void reserve(std::size_t num_items);
+
     // store items, buffers usually store tupels, convenience functions
     // do not use while server buffer exists
     void store(vtype item);
@@ -62,7 +66,7 @@ public:
 protected:
     std::vector<vtype>  b_data;
     std::size_t         b_size;
-    std::size_t         b_elementsPerItem;
+    std::size_t         b_elements_per_item;
 
     // used in derived classes to activate the buffer
     // implementations should use glBindBuffer, gl...Pointer if
@@ -78,7 +82,7 @@ class GG_API GLRGBAColorBuffer : public GLClientAndServerBufferBase<unsigned cha
 public:
     GLRGBAColorBuffer();
     void store(const Clr& color);
-    void activate() const;
+    void activate() const override;
 };
 
 ///////////////////////////////////////////////////////////////////////////
@@ -88,19 +92,12 @@ class GG_API GL2DVertexBuffer : public GLClientAndServerBufferBase<float>
 {
 public:
     GL2DVertexBuffer();
-    void activate() const;
-};
-
-///////////////////////////////////////////////////////////////////////////
-// GLPtBuffer specialized class for int 2d vertex data
-///////////////////////////////////////////////////////////////////////////
-class GG_API GLPtBuffer : public GLClientAndServerBufferBase<int>
-{
-public:
-    GLPtBuffer();
     void store(const Pt& pt);
     void store(X x, Y y);
-    void activate() const;
+    void store(X x, float y);
+    void store(float x, Y y);
+    void store(float x, float y);
+    void activate() const override;
 };
 
 ///////////////////////////////////////////////////////////////////////////
@@ -110,7 +107,29 @@ class GG_API GLTexCoordBuffer : public GLClientAndServerBufferBase<float>
 {
 public:
     GLTexCoordBuffer();
-    void activate() const;
+    void activate() const override;
+};
+
+///////////////////////////////////////////////////////////////////////////
+// GL3DVertexBuffer specialized class for 3d vertex data
+///////////////////////////////////////////////////////////////////////////
+class GG_API GL3DVertexBuffer : public GLClientAndServerBufferBase<float>
+{
+public:
+    GL3DVertexBuffer();
+    void store(float x, float y, float z);
+    void activate() const override;
+};
+
+///////////////////////////////////////////////////////////////////////////
+// GLNormalBuffer specialized class for 3d normal data
+///////////////////////////////////////////////////////////////////////////
+class GG_API GLNormalBuffer : public GLClientAndServerBufferBase<float>
+{
+public:
+    GLNormalBuffer();
+    void store(float x, float y, float z);
+    void activate() const override;
 };
 
 }

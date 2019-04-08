@@ -1,10 +1,7 @@
-// -*- C++ -*-
 #ifndef _ResourceCenter_h_
 #define _ResourceCenter_h_
 
-#include "Enums.h"
-#include "EnableTemporaryFromThis.h"
-#include "TemporaryPtr.h"
+#include "EnumsFwd.h"
 #include <boost/signals2/signal.hpp>
 #include <boost/serialization/nvp.hpp>
 
@@ -22,12 +19,12 @@ class UniverseObject;
   * classes could be made from it as well (e.g., a trade-ship or mining vessel,
   * or a non-Planet UniverseObject- and PopCenter- derived object of some
   * sort. */
-class FO_COMMON_API ResourceCenter : virtual public EnableTemporaryFromThis<UniverseObject> {
+class FO_COMMON_API ResourceCenter : virtual public std::enable_shared_from_this<UniverseObject> {
 public:
     /** \name Structors */ //@{
-    ResourceCenter();                               ///< default ctor
-    virtual ~ResourceCenter();                      ///< dtor
-    ResourceCenter(const ResourceCenter& rhs);      ///< copy ctor
+    ResourceCenter();
+    ResourceCenter(const ResourceCenter& rhs);
+    virtual ~ResourceCenter();
     //@}
 
     /** \name Accessors */ //@{
@@ -36,35 +33,33 @@ public:
     virtual std::vector<std::string>AvailableFoci() const;                          ///< focus settings available to this ResourceCenter
     virtual const std::string&      FocusIcon(const std::string& focus_name) const; ///< icon representing focus with name \a focus_name for this ResourceCenter
 
-    std::string     Dump() const;
+    std::string     Dump(unsigned short ntabs = 0) const;
 
     virtual float   InitialMeterValue(MeterType type) const = 0;            ///< implementation should return the initial value of the specified meter \a type
     virtual float   CurrentMeterValue(MeterType type) const = 0;            ///< implementation should return the current value of the specified meter \a type
-    virtual float   NextTurnCurrentMeterValue(MeterType type) const = 0;    ///< implementation should return an estimate of the next turn's current value of the specified meter \a type
 
     /** the state changed signal object for this ResourceCenter */
     mutable boost::signals2::signal<void ()> ResourceCenterChangedSignal;
     //@}
 
     /** \name Mutators */ //@{
-    void            Copy(TemporaryPtr<const ResourceCenter> copied_object, Visibility vis = VIS_FULL_VISIBILITY);
+    void Copy(std::shared_ptr<const ResourceCenter> copied_object, Visibility vis);
+    void Copy(std::shared_ptr<const ResourceCenter> copied_object);
 
-    void            SetFocus(const std::string& focus);
-    void            ClearFocus();
-    void            UpdateFocusHistory();
+    void SetFocus(const std::string& focus);
+    void ClearFocus();
+    void UpdateFocusHistory();
 
-    virtual void    Reset();                                                        ///< Resets the meters, etc.  This should be called when a ResourceCenter is wiped out due to starvation, etc.
+    /** Resets the meters, etc. This should be called when a ResourceCenter is
+        wiped out due to starvation, etc. */
+    virtual void Reset();
     //@}
 
 protected:
-    void            Init();                                                         ///< initialization that needs to be called by derived class after derived class is constructed
+    void Init();    ///< initialization that needs to be called by derived class after derived class is constructed
 
-    float           ResourceCenterNextTurnMeterValue(MeterType meter_type) const;   ///< returns estimate of the next turn's current values of meters relevant to this ResourceCenter
-    void            ResourceCenterResetTargetMaxUnpairedMeters();
-    void            ResourceCenterClampMeters();
-
-    void            ResourceCenterPopGrowthProductionResearchPhase();
-
+    void ResourceCenterResetTargetMaxUnpairedMeters();
+    void ResourceCenterClampMeters();
 
 private:
     std::string m_focus;

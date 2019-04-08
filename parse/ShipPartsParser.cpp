@@ -1,221 +1,175 @@
-#define PHOENIX_LIMIT 11
+#define FUSION_MAX_VECTOR_SIZE 15
+#define PHOENIX_LIMIT 12
 #define BOOST_RESULT_OF_NUM_ARGS PHOENIX_LIMIT
 
-#include "ConditionParserImpl.h"
-#include "EnumParser.h"
-#include "Double.h"
-#include "Label.h"
 #include "Parse.h"
-#include "ParseImpl.h"
-#include "ShipPartStatsParser.h"
-#include "ValueRefParser.h"
-#include "../universe/ShipDesign.h"
 
+#include "ParseImpl.h"
+#include "EnumParser.h"
+#include "ValueRefParser.h"
+#include "ConditionParserImpl.h"
+#include "CommonParamsParser.h"
+
+#include "../universe/ShipDesign.h"
 #include "../universe/Condition.h"
+#include "../universe/ValueRef.h"
 
 #include <boost/spirit/include/phoenix.hpp>
+//TODO: replace with std::make_unique when transitioning to C++14
+#include <boost/smart_ptr/make_unique.hpp>
 
 #define DEBUG_PARSERS 0
 
 #if DEBUG_PARSERS
 namespace std {
     inline ostream& operator<<(ostream& os, const std::vector<ShipSlotType>&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::vector<boost::shared_ptr<Effect::EffectsGroup> >&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::map<std::string, PartType*>&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::pair<const std::string, PartType*>&) { return os; }
+    inline ostream& operator<<(ostream& os, const parse::effects_group_payload&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::map<std::string, std::unique_ptr<PartType>>&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::pair<const std::string, std::unique_ptr<PartType>>&) { return os; }
 }
 #endif
 
+namespace parse {
+    namespace detail {
+        typedef std::tuple<
+            boost::optional<double>,
+            boost::optional<double>,
+            boost::optional<parse::detail::MovableEnvelope<Condition::ConditionBase>>
+        > OptCap_OptStat2_OptMoveableTargets;
+    }
+}
+
 namespace {
-    struct insert_ {
-#if BOOST_VERSION < 105600
-        template <typename Arg1, typename Arg2> // Phoenix v2
-        struct result
-        { typedef void type; };
-#else
-        typedef void result_type;
-#endif
+    const boost::phoenix::function<parse::detail::is_unique> is_unique_;
 
-        void operator()(std::map<std::string, PartType*>& part_types, PartType* part_type) const {
-            if (!part_types.insert(std::make_pair(part_type->Name(), part_type)).second) {
-                std::string error_str = "ERROR: More than one ship part in ship_parts.txt has the name " + part_type->Name();
-                throw std::runtime_error(error_str.c_str());
-            }
-        }
-    };
-    const boost::phoenix::function<insert_> insert;
+    void insert_parttype(std::map<std::string, std::unique_ptr<PartType>>& part_types,
+                         ShipPartClass part_class,
+                         const parse::detail::OptCap_OptStat2_OptMoveableTargets capacity_and_stat2_and_targets,
+                         const parse::detail::MovableEnvelope<CommonParams>& common_params,
+                         const MoreCommonParams& more_common_params,
+                         boost::optional<std::vector<ShipSlotType>> mountable_slot_types,
+                         const std::string& icon,
+                         bool no_default_capacity_effect,
+                         bool& pass)
+    {
+        boost::optional<double> capacity, stat2;
+        boost::optional<parse::detail::MovableEnvelope<Condition::ConditionBase>> combat_targets;
+        std::tie(capacity, stat2, combat_targets) = capacity_and_stat2_and_targets;
 
-    struct rules {
-        rules() {
-            const parse::lexer& tok = parse::lexer::instance();
 
-            const parse::value_ref_parser_rule<double>::type& double_value_ref =    parse::value_ref_parser<double>();
-            const parse::value_ref_parser_rule< int >::type& flexible_int_ref =     parse::value_ref_parser_flexible_int();
+        auto part_type = boost::make_unique<PartType>(
+            part_class,
+            (capacity ? *capacity : 0.0),
+            (stat2 ? *stat2 : 1.0),
+            *common_params.OpenEnvelope(pass), more_common_params,
+            (mountable_slot_types ? *mountable_slot_types : std::vector<ShipSlotType>()),
+            icon,
+            !no_default_capacity_effect,
+            (combat_targets ? (*combat_targets).OpenEnvelope(pass) : nullptr));
+
+        part_types.insert(std::make_pair(part_type->Name(), std::move(part_type)));
+    }
+
+    BOOST_PHOENIX_ADAPT_FUNCTION(void, insert_parttype_, insert_parttype, 9)
+
+    using start_rule_payload = std::map<std::string, std::unique_ptr<PartType>>;
+    using start_rule_signature = void(start_rule_payload&);
+
+    struct grammar : public parse::detail::grammar<start_rule_signature> {
+        grammar(const parse::lexer& tok,
+                const std::string& filename,
+                const parse::text_iterator& first, const parse::text_iterator& last) :
+            grammar::base_type(start),
+            condition_parser(tok, label),
+            string_grammar(tok, label, condition_parser),
+            tags_parser(tok, label),
+            common_rules(tok, label, condition_parser, string_grammar, tags_parser),
+            ship_slot_type_enum(tok),
+            ship_part_class_enum(tok),
+            double_rule(tok),
+            one_or_more_slots(ship_slot_type_enum)
+        {
+            namespace phoenix = boost::phoenix;
+            namespace qi = boost::spirit::qi;
+
+            using phoenix::construct;
 
             qi::_1_type _1;
             qi::_2_type _2;
             qi::_3_type _3;
             qi::_4_type _4;
-            qi::_a_type _a;
-            qi::_b_type _b;
-            qi::_c_type _c;
-            qi::_d_type _d;
-            qi::_e_type _e;
-            qi::_f_type _f;
+            qi::_5_type _5;
+            qi::_6_type _6;
+            qi::_7_type _7;
+            qi::_8_type _8;
+            qi::_9_type _9;
+            phoenix::actor<boost::spirit::argument<9>> _10; // qi::_10_type is not predefined
+            qi::_pass_type _pass;
             qi::_r1_type _r1;
-            qi::_r2_type _r2;
-            qi::_r3_type _r3;
-            qi::_val_type _val;
-            qi::eps_type eps;
-            using phoenix::construct;
-            using phoenix::new_;
-            using phoenix::push_back;
-
-            part_type_prefix
-                =    tok.Part_
-                >    parse::label(Name_token)        > tok.string [ _r1 = _1 ]
-                >    parse::label(Description_token) > tok.string [ _r2 = _1 ]
-                >    parse::label(Class_token)       > parse::enum_parser<ShipPartClass>() [ _r3 = _1 ]
-                ;
-
-            producible
-                =    tok.Unproducible_ [ _val = false ]
-                |    tok.Producible_ [ _val = true ]
-                |    eps [ _val = true ]
-                ;
-
-            slots
-                =  -(
-                        parse::label(MountableSlotTypes_token)
-                    >   (
-                            '[' > +parse::enum_parser<ShipSlotType>() [ push_back(_r1, _1) ] > ']'
-                        |   parse::enum_parser<ShipSlotType>() [ push_back(_r1, _1) ]
-                        )
-                     )
-                ;
-
-            location
-                =    parse::label(Location_token) > parse::detail::condition_parser [ _r1 = _1 ]
-                |    eps [ _r1 = new_<Condition::All>() ]
-                ;
-
-            common_params
-                =   parse::label(BuildCost_token)    > double_value_ref  [ _a = _1 ]
-                >   parse::label(BuildTime_token)    > flexible_int_ref  [ _b = _1 ]
-                >   producible                                           [ _c = _1 ]
-                >   parse::detail::tags_parser()(_d)
-                >   location(_e)
-                >   -(
-                        parse::label(EffectsGroups_token) > parse::detail::effects_group_parser() [ _f = _1 ]
-                     )
-                >    parse::label(Icon_token)        > tok.string
-                    [ _val = construct<PartHullCommonParams>(_a, _b, _c, _d, _e, _f, _1) ]
-            ;
+            qi::matches_type matches_;
 
             part_type
-                =    part_type_prefix(_a, _b, _c)
-                >    (  ( parse::label(Capacity_token)  >> parse::double_ [ _d = _1 ])
-                      | ( parse::label(Damage_token)    >> parse::double_ [ _d = _1 ])
-                      |   eps [ _d = 0.0 ]
-                     )
-                >    slots(_f)
-                >    common_params [ _e = _1 ]
-                    [ insert(_r1, new_<PartType>(_a, _b, _c, _d, _e, _f)) ]
+                = ( tok.Part_                                       // _1
+                >   common_rules.more_common                        // _2
+                >   label(tok.Class_)       > ship_part_class_enum  // _3
+                > -( (label(tok.Capacity_)  > double_rule)          // _4
+                   | (label(tok.Damage_)    > double_rule)          // _4
+                   )
+                > -( (label(tok.Damage_)    > double_rule )         // _5 : damage is secondary stat for fighters
+                   | (label(tok.Shots_)     > double_rule )         // _5 : shots is secondary stat for direct fire weapons
+                   )
+                > matches_[tok.NoDefaultCapacityEffect_]                // _6
+                > -(label(tok.CombatTargets_)       > condition_parser) // _7
+                > -(label(tok.MountableSlotTypes_)  > one_or_more_slots)// _8
+                >   common_rules.common                                 // _9
+                >   label(tok.Icon_)        > tok.string                // _10
+                  ) [ _pass = is_unique_(_r1, _1, phoenix::bind(&MoreCommonParams::name, _2)),
+                      insert_parttype_(_r1, _3,
+                                       construct<parse::detail::OptCap_OptStat2_OptMoveableTargets>(_4, _5, _7)
+                                       , _9, _2, _8, _10, _6, _pass) ]
                 ;
 
             start
                 =   +part_type(_r1)
                 ;
 
-            part_type_prefix.name("Part");
-            producible.name("Producible or Unproducible");
-            slots.name("mountable slot types");
-            location.name("Location");
-            common_params.name("Part Hull Common Params");
             part_type.name("Part");
 
 #if DEBUG_PARSERS
-            debug(part_type_prefix);
-            debug(producible);
-            debug(slots);
-            debug(location);
-            debug(common_params);
             debug(part_type);
 #endif
 
-            qi::on_error<qi::fail>(start, parse::report_error(_1, _2, _3, _4));
+            qi::on_error<qi::fail>(start, parse::report_error(filename, first, last, _1, _2, _3, _4));
         }
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::string&, std::string&, ShipPartClass&),
-            parse::skipper_type
-        > part_type_prefix_rule;
+        using  part_type_rule = parse::detail::rule<void (start_rule_payload&)>;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            bool (),
-            parse::skipper_type
-        > producible_rule;
+        using start_rule = parse::detail::rule<start_rule_signature>;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::vector<ShipSlotType>&),
-            parse::skipper_type
-        > slots_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (Condition::ConditionBase*&),
-            parse::skipper_type
-        > location_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            PartHullCommonParams (),
-            qi::locals<
-                ValueRef::ValueRefBase<double>*,
-                ValueRef::ValueRefBase<int>*,
-                bool,
-                std::set<std::string>,
-                Condition::ConditionBase*,
-                std::vector<boost::shared_ptr<Effect::EffectsGroup> >
-            >,
-            parse::skipper_type
-        > part_hull_common_params_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::map<std::string, PartType*>&),
-            qi::locals<
-                std::string,
-                std::string,
-                ShipPartClass,
-                double,
-                PartHullCommonParams,
-                std::vector<ShipSlotType>
-            >,
-            parse::skipper_type
-        > part_type_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::map<std::string, PartType*>&),
-            parse::skipper_type
-        > start_rule;
-
-        part_type_prefix_rule           part_type_prefix;
-        producible_rule                 producible;
-        location_rule                   location;
-        part_hull_common_params_rule    common_params;
-        slots_rule                      slots;
-        part_type_rule                  part_type;
-        start_rule                      start;
+        parse::detail::Labeller                 label;
+        const parse::conditions_parser_grammar  condition_parser;
+        const parse::string_parser_grammar      string_grammar;
+        parse::detail::tags_grammar             tags_parser;
+        parse::detail::common_params_rules      common_rules;
+        parse::ship_slot_enum_grammar           ship_slot_type_enum;
+        parse::ship_part_class_enum_grammar     ship_part_class_enum;
+        parse::detail::double_grammar           double_rule;
+        parse::detail::single_or_bracketed_repeat<parse::ship_slot_enum_grammar>
+                                                one_or_more_slots;
+        part_type_rule                          part_type;
+        start_rule                              start;
     };
-
 }
 
 namespace parse {
-    bool ship_parts(const boost::filesystem::path& path, std::map<std::string, PartType*>& parts)
-    { return detail::parse_file<rules, std::map<std::string, PartType*> >(path, parts); }
+    start_rule_payload ship_parts(const boost::filesystem::path& path) {
+        const lexer lexer;
+        start_rule_payload parts;
+
+        for (const auto& file : ListScripts(path)) {
+            /*auto success =*/ detail::parse_file<grammar, start_rule_payload>(lexer, file, parts);
+        }
+
+        return parts;
+    }
 }

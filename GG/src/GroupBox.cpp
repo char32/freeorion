@@ -33,7 +33,7 @@
 using namespace GG;
 
 namespace {
-    Y TopOfFrame(bool label, const boost::shared_ptr<Font>& font)
+    Y TopOfFrame(bool label, const std::shared_ptr<Font>& font)
     { return label ? font->Lineskip() / 2 - 1 : Y0; }
 }
 
@@ -45,23 +45,28 @@ const int GroupBox::FRAME_THICK = 2;
 const int GroupBox::PIXEL_MARGIN = 4;
 
 GroupBox::GroupBox() :
-    m_label(0),
+    m_label(nullptr),
     m_set_client_corners_equal_to_box_corners(false)
 {}
 
-GroupBox::GroupBox(X x, Y y, X w, Y h, const std::string& label, const boost::shared_ptr<Font>& font,
+GroupBox::GroupBox(X x, Y y, X w, Y h, const std::string& label, const std::shared_ptr<Font>& font,
                    Clr color, Clr text_color/* = CLR_BLACK*/, Clr interior/* = CLR_ZERO*/,
                    Flags<WndFlag> flags/* = NO_WND_FLAGS*/) :
     m_color(color),
     m_text_color(text_color),
     m_int_color(interior),
     m_font(font),
-    m_label(label.empty() ? 0 : GUI::GetGUI()->GetStyleFactory()->NewTextControl(label, m_font, m_text_color, FORMAT_LEFT | FORMAT_TOP)),
+    m_label(label.empty() ? nullptr : GUI::GetGUI()->GetStyleFactory()->NewTextControl(label, m_font, m_text_color, FORMAT_LEFT | FORMAT_TOP)),
     m_set_client_corners_equal_to_box_corners(false)
+{}
+
+void GroupBox::CompleteConstruction()
 {
-    m_label->MoveTo(Pt(X0, -m_font->Lineskip()));
-    m_label->MoveTo(Pt(X1, m_font->Lineskip()));
-    AttachChild(m_label);
+    if (m_label) {
+        m_label->MoveTo(Pt(X0, -m_font->Lineskip()));
+        m_label->MoveTo(Pt(X1, m_font->Lineskip()));
+        AttachChild(m_label);
+    }
 }
 
 Pt GroupBox::ClientUpperLeft() const
@@ -69,7 +74,7 @@ Pt GroupBox::ClientUpperLeft() const
     Pt retval = UpperLeft();
     if (!m_set_client_corners_equal_to_box_corners)
         retval += Pt(X(FRAME_THICK + PIXEL_MARGIN),
-                     Y(FRAME_THICK + PIXEL_MARGIN) + TopOfFrame(m_label != 0, m_font));
+                     Y(FRAME_THICK + PIXEL_MARGIN) + TopOfFrame(m_label != nullptr, m_font));
     return retval;
 }
 
@@ -84,7 +89,7 @@ Pt GroupBox::ClientLowerRight() const
 void GroupBox::Render()
 {
     Pt ul = UpperLeft(), lr = LowerRight() - Pt(X1, Y1);
-    ul.y += TopOfFrame(m_label != 0, m_font);
+    ul.y += TopOfFrame(m_label != nullptr, m_font);
     Clr light = LightColor(m_color);
     Clr dark = DarkColor(m_color);
     const int GAP_FROM_TEXT = 2;
@@ -94,7 +99,7 @@ void GroupBox::Render()
         Value(ul.x), Value(lr.y),
         Value(lr.x), Value(lr.y),
         Value(lr.x), Value(ul.y),
-        vertices[0], Value(ul.y)
+        Value(ul.x) + FRAME_THICK + PIXEL_MARGIN - GAP_FROM_TEXT, Value(ul.y)
     };
     if (m_label) {
         vertices[0] = Value(m_label->TextUpperLeft().x - GAP_FROM_TEXT);
@@ -159,8 +164,6 @@ void GroupBox::SetClientCornersEqualToBoxCorners(bool b)
 
 void GroupBox::SetText(const std::string& str)
 {
-    delete m_label;
-
     if (!str.empty()) {
         m_label = GUI::GetGUI()->GetStyleFactory()->NewTextControl(str, m_font, m_text_color);
         m_label->MoveTo(Pt(X(FRAME_THICK + PIXEL_MARGIN), Y0));

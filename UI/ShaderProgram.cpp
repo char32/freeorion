@@ -1,17 +1,14 @@
-#include <GL/glew.h>
-
 #include "ShaderProgram.h"
 
 #include <cassert>
 #include <iostream>
-#include <fstream>
 
 #include "../client/human/HumanClientApp.h"
 #include "../util/Logger.h"
 
-#include <GG/utf8/checked.h>
-
 #include <boost/filesystem/fstream.hpp>
+//TODO: replace with std::make_unique when transitioning to C++14
+#include <boost/smart_ptr/make_unique.hpp>
 
 
 namespace {
@@ -57,9 +54,8 @@ bool ReadFile(const boost::filesystem::path& path, std::string& file_contents) {
         return false;
 
     // skip byte order mark (BOM)
-    static const int UTF8_BOM[3] = {0x00EF, 0x00BB, 0x00BF};
-    for (int i = 0; i < 3; i++) {
-        if (UTF8_BOM[i] != ifs.get()) {
+    for (int BOM : {0xEF, 0xBB, 0xBF}) {
+        if (BOM != ifs.get()) {
             // no header set stream back to start of file
             ifs.seekg(0, std::ios::beg);
             // and continue
@@ -88,14 +84,14 @@ ShaderProgram::ShaderProgram(const std::string& vertex_shader, const std::string
     m_program_id = glCreateProgram();
     CHECK_ERROR("ShaderProgram::ShaderProgram", "glCreateProgram()");
 
-    const char* strings[1] = { 0 };
+    const char* strings[1] = { nullptr };
 
     if (!vertex_shader.empty()) {
         m_vertex_shader_id = glCreateShader(GL_VERTEX_SHADER);
         CHECK_ERROR("ShaderProgram::ShaderProgram", "glCreateShader(GL_VERTEX_SHADER)");
 
         strings[0] = vertex_shader.c_str();
-        glShaderSource(m_vertex_shader_id, 1, strings, 0);
+        glShaderSource(m_vertex_shader_id, 1, strings, nullptr);
         CHECK_ERROR("ShaderProgram::ShaderProgram", "glShaderSource(vertex_shader)");
 
         glCompileShader(m_vertex_shader_id);
@@ -112,7 +108,7 @@ ShaderProgram::ShaderProgram(const std::string& vertex_shader, const std::string
         CHECK_ERROR("ShaderProgram::ShaderProgram", "glCreateShader(GL_FRAGMENT_SHADER)");
 
         strings[0] = fragment_shader.c_str();
-        glShaderSource(m_fragment_shader_id, 1, strings, 0);
+        glShaderSource(m_fragment_shader_id, 1, strings, nullptr);
         CHECK_ERROR("ShaderProgram::ShaderProgram", "glShaderSource(fragment_shader)");
 
         glCompileShader(m_fragment_shader_id);
@@ -134,12 +130,12 @@ ShaderProgram::ShaderProgram(const std::string& vertex_shader, const std::string
     GetProgramLog(m_program_id, m_program_log);
 }
 
-ShaderProgram* ShaderProgram::shaderProgramFactory(const std::string& vertex_shader,
-                                                   const std::string& fragment_shader)
+std::unique_ptr<ShaderProgram> ShaderProgram::shaderProgramFactory(const std::string& vertex_shader,
+                                                                   const std::string& fragment_shader)
 {
-    if (HumanClientApp::GetApp()->GLVersion() >= 2.0f) 
-        return new ShaderProgram(vertex_shader,fragment_shader);
-    return 0;
+    if (HumanClientApp::GetApp()->GLVersion() >= 2.0f)
+        return boost::make_unique<ShaderProgram>(vertex_shader,fragment_shader);
+    return nullptr;
 }
 
 ShaderProgram::~ShaderProgram() {

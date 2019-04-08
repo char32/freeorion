@@ -1,10 +1,11 @@
-// -*- C++ -*-
 #ifndef _Enums_h_
 #define _Enums_h_
 
 #include <GG/Enum.h>
 
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include "../util/Export.h"
 
@@ -19,6 +20,7 @@ GG_ENUM(UniverseObjectType,
     OBJ_PROD_CENTER,
     OBJ_SYSTEM,
     OBJ_FIELD,
+    OBJ_FIGHTER,
     NUM_OBJ_TYPES
 )
 
@@ -67,7 +69,6 @@ GG_ENUM(PlanetSize,
     NUM_PLANET_SIZES
 )
 
-
 /** environmental suitability of planets for a particular race */
 GG_ENUM(PlanetEnvironment,
     INVALID_PLANET_ENVIRONMENT = -1,
@@ -93,12 +94,14 @@ GG_ENUM(MeterType,
     METER_TARGET_HAPPINESS,
 
     METER_MAX_CAPACITY,
+    METER_MAX_SECONDARY_STAT,
 
     METER_MAX_FUEL,
     METER_MAX_SHIELD,
     METER_MAX_STRUCTURE,
     METER_MAX_DEFENSE,
     METER_MAX_SUPPLY,
+    METER_MAX_STOCKPILE,
     METER_MAX_TROOPS,
 
     METER_POPULATION,
@@ -109,12 +112,14 @@ GG_ENUM(MeterType,
     METER_HAPPINESS,
 
     METER_CAPACITY,
+    METER_SECONDARY_STAT,
 
     METER_FUEL,
     METER_SHIELD,
     METER_STRUCTURE,
     METER_DEFENSE,
     METER_SUPPLY,
+    METER_STOCKPILE,
     METER_TROOPS,
 
     METER_REBEL_TROOPS,
@@ -134,10 +139,11 @@ GG_ENUM(Shape,
     SPIRAL_4,       ///< a four-armed spiral galaxy
     CLUSTER,        ///< a cluster galaxy
     ELLIPTICAL,     ///< an elliptical galaxy
-    IRREGULAR1,     ///< an irregular galaxy (type 1)
-    IRREGULAR2,     ///< an irregular galaxy (type 2)
+    DISC,           ///< a disc shaped galaxy
+    BOX,            ///< a rectangular shaped galaxy
+    IRREGULAR,      ///< an irregular galaxy
     RING,           ///< a ring galaxy
-    RANDOM,         ///< a random one of the above
+    RANDOM,         ///< a random one of the other shapes
     GALAXY_SHAPES   ///< the number of shapes in this enum (leave this last)
 )
 
@@ -145,11 +151,11 @@ GG_ENUM(Shape,
 GG_ENUM(Aggression,
     INVALID_AGGRESSION = -1,
     BEGINNER,
-    TURTLE,        ///< very defensive
-    CAUTIOUS,      ///< Somewhat Defensive
-    TYPICAL,       ///< Typical
-    AGGRESSIVE,    ///< Aggressive
-    MANIACAL,     ///< Very Aggressive
+    TURTLE,         ///< Very Defensive
+    CAUTIOUS,       ///< Somewhat Defensive
+    TYPICAL,        ///< Typical
+    AGGRESSIVE,     ///< Aggressive
+    MANIACAL,       ///< Very Aggressive
     NUM_AI_AGGRESSION_LEVELS
 )
 
@@ -160,6 +166,7 @@ GG_ENUM(GalaxySetupOption,
     GALAXY_SETUP_LOW,
     GALAXY_SETUP_MEDIUM,
     GALAXY_SETUP_HIGH,
+    GALAXY_SETUP_RANDOM,
     NUM_GALAXY_SETUP_OPTIONS
 )
 
@@ -172,6 +179,7 @@ GG_ENUM(EmpireAffiliationType,
     AFFIL_ANY,      ///< any empire
     AFFIL_NONE,     ///< no empire
     AFFIL_CAN_SEE,  ///< special case enum used to specify empires that can detect particular objects, for use in effects or conditions
+    AFFIL_HUMAN,    ///< empire controlled by a human player
     NUM_AFFIL_TYPES ///< keep last, the number of affiliation types
 )
 
@@ -180,6 +188,7 @@ GG_ENUM(DiplomaticStatus,
     INVALID_DIPLOMATIC_STATUS = -1,
     DIPLO_WAR,
     DIPLO_PEACE,
+    DIPLO_ALLIED,
     NUM_DIPLO_STATUSES
 )
 
@@ -194,31 +203,25 @@ GG_ENUM(UnlockableItemType,
     NUM_UNLOCKABLE_ITEM_TYPES   ///< keep last, the number of types of unlockable item
 )
 
-/** General classification for purpose and function of techs, and allowed place in tech prerequisite tree */
-GG_ENUM(TechType,
-    INVALID_TECH_TYPE = -1,
-    TT_THEORY,      ///< Theory: does nothing itself, but is prerequisite for applications and refinements
-    TT_APPLICATION, ///< Application: has effects that do things, or may unlock something such as a building that does things
-    TT_REFINEMENT,  ///< Refinement: does nothing itself, but if researched, may alter the effects of something else
-    NUM_TECH_TYPES  ///< keep last, the number of types of tech
-)
-
 /** Research status of techs, relating to whether they have been or can be researched */
 GG_ENUM(TechStatus,
     INVALID_TECH_STATUS = -1,
-    TS_UNRESEARCHABLE,
-    TS_RESEARCHABLE,
-    TS_COMPLETE,
+    TS_UNRESEARCHABLE,          ///< never researchable, or has no researched prerequisites
+    TS_HAS_RESEARCHED_PREREQ,   ///< has at least one researched, and at least one unreserached, prerequisite
+    TS_RESEARCHABLE,            ///< all prerequisites researched
+    TS_COMPLETE,                ///< has been researched
     NUM_TECH_STATUSES
 )
 
-/** The general type of construction being done at a ProdCenter.  Within each valid type, a specific kind 
+/** The general type of production being done at a ProdCenter.  Within each valid type, a specific kind 
     of item is being built, e.g. under BUILDING a kind of building called "SuperFarm" might be built. */
 GG_ENUM(BuildType,
     INVALID_BUILD_TYPE = -1,
-    BT_NOT_BUILDING,         ///< no building is taking place
-    BT_BUILDING,             ///< a Building object is being built
-    BT_SHIP,                 ///< a Ship object is being built
+    BT_NOT_BUILDING,        ///< no building is taking place
+    BT_BUILDING,            ///< a Building object is being built
+    BT_SHIP,                ///< a Ship object is being built
+    BT_PROJECT,             ///< a project may produce effects while on the queue, may or may not ever complete, and does not result in a ship or building being produced
+    BT_STOCKPILE,
     NUM_BUILD_TYPES
 )
 
@@ -228,16 +231,16 @@ GG_ENUM(ResourceType,
     RE_INDUSTRY,
     RE_TRADE,
     RE_RESEARCH,
+    RE_STOCKPILE,
     NUM_RESOURCE_TYPES
 )
 
 /** Types "classes" of ship parts */
 GG_ENUM(ShipPartClass,
     INVALID_SHIP_PART_CLASS = -1,
-    PC_SHORT_RANGE,         ///< short range direct weapons, good against ships, bad against fighters
-    PC_MISSILES,            ///< long range indirect weapons, good against ships, bad against fighters
-    PC_FIGHTERS,            ///< self-propelled long-range weapon platforms, good against fighters and/or ships
-    PC_POINT_DEFENSE,       ///< short range direct weapons, good against fighters or incoming missiles, bad against ships
+    PC_DIRECT_WEAPON,       ///< direct-fire weapons
+    PC_FIGHTER_BAY,         ///< launch aparatus for fighters, which are self-propelled platforms that function independently of ships in combat, but don't exist on the main game map
+    PC_FIGHTER_HANGAR,      ///< storage for fighters, also determines their weapon strength stat
     PC_SHIELD,              ///< energy-based defense
     PC_ARMOUR,              ///< defensive material on hull of ship
     PC_TROOPS,              ///< ground troops, used to conquer planets
@@ -251,7 +254,7 @@ GG_ENUM(ShipPartClass,
     PC_INDUSTRY,            ///< generates production points for owner at its location
     PC_RESEARCH,            ///< generates research points for owner
     PC_TRADE,               ///< generates trade points for owner
-    PC_PRODICTION_LOCATION, ///< allows production items to be produced at its location
+    PC_PRODUCTION_LOCATION, ///< allows production items to be produced at its location
     NUM_SHIP_PART_CLASSES
 )
 
@@ -268,18 +271,20 @@ GG_ENUM(ShipSlotType,
 /** Returns the equivalent meter type for the given resource type; if no such
   * meter type exists, returns INVALID_METER_TYPE. */
 FO_COMMON_API MeterType ResourceToMeter(ResourceType type);
+FO_COMMON_API MeterType ResourceToTargetMeter(ResourceType type);
 
 /** Returns the equivalent resource type for the given meter type; if no such
   * resource type exists, returns INVALID_RESOURCE_TYPE. */
 FO_COMMON_API ResourceType MeterToResource(MeterType type);
 
+/** Returns mapping from active to target or max meter types that correspond.
+  * eg. METER_RESEARCH -> METER_TARGET_RESEARCH */
+FO_COMMON_API const std::map<MeterType, MeterType>& AssociatedMeterTypes();
+
 /** Returns the target or max meter type that is associated with the given
   * active meter type.  If no associated meter type exists, INVALID_METER_TYPE
   * is returned. */
 FO_COMMON_API MeterType AssociatedMeterType(MeterType meter_type);
-
-
-extern const int ALL_EMPIRES;
 
 
 /** degrees of visibility an Empire or UniverseObject can have for an
@@ -330,6 +335,25 @@ GG_ENUM(ModeratorActionSetting,
     MAS_CreateSystem,
     MAS_CreatePlanet
 )
+
+/** Types of root directories */
+GG_ENUM(PathType,
+    PATH_BINARY,
+    PATH_RESOURCE,
+    PATH_PYTHON,
+    PATH_DATA_ROOT,
+    PATH_DATA_USER,
+    PATH_CONFIG,
+    PATH_SAVE,
+    PATH_TEMP,
+    PATH_INVALID
+)
+
+/** Returns a string representation of PathType */
+FO_COMMON_API const std::string& PathTypeToString(PathType path_type);
+
+/** Returns a vector of strings for all PathTypes */
+FO_COMMON_API const std::vector<std::string>& PathTypeStrings();
 
 
 #endif // _Enums_h_

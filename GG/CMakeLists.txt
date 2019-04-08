@@ -1,123 +1,130 @@
-cmake_minimum_required(VERSION 2.6)
-cmake_policy(VERSION 2.6.4)
+# GG is a GUI for SDL and OpenGL.
+#
+# Copyright (C) 2009-2011 T. Zach Laine
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public License
+# as published by the Free Software Foundation; either version 2.1
+# of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free
+# Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+# 02111-1307 USA
+#
+# If you do not wish to comply with the terms of the LGPL please
+# contact the author as other terms are available for a fee.
+#
+# Zach Laine
+# whatwasthataddress@gmail.com
 
-enable_testing()
-include(CMakeDependentOption)
+cmake_minimum_required(VERSION 3.1 FATAL_ERROR)
 
-project(GiGi)
-
-########################################
-# Configuration                        #
-########################################
-set(GIGI_VERSION 0.8.0)
+if(POLICY CMP0044)
+    cmake_policy(SET CMP0044 OLD)
+endif()
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_HOME_DIRECTORY}/cmake)
 
-set(MINIMUM_BOOST_VERSION 1.47.0)
 
-option(BUILD_SHARED_LIBS "Enables building of shared libraries; OFF implies static libraries." ON)
+##
+## Global project configuration
+##
+
+project(GiGi)
+
+include(CMakeDependentOption)
+include(GNUInstallDirs)
+include(UseCodeCoverage)
+include(Util)
+
+set(GIGI_VERSION 0.8.0)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+option(ENABLE_PNG_TEXTURES "Enable PNG texture support." ON)
+option(ENABLE_TIFF_TEXTURES "Enable TIFF texture support." OFF)
+option(BUILD_SDL_DRIVER "Builds GG SDL support (the GiGiSDL library)." ON)
+option(BUILD_DOCUMENTATION "Builds HTML documentation." OFF)
+option(BUILD_TESTING "Build the testing tree." OFF)
+option(BUILD_DEVEL_PACKAGE "Install development files." ON)
 
 cmake_dependent_option(USE_STATIC_LIBS "Favour static linking of depencendies." OFF BUILD_SHARED_LIBS OFF)
-
-if (BUILD_DEBUG)
-    set(BUILD_RELEASE OFF)
-else ()
-    set(BUILD_RELEASE ON)
-endif ()
-
-if (DEFINED BUILD_STATIC OR DEFINED BUILD_SHARED)
-    message(FATAL "BUILD_STATIC and BUILD_SHARED are removed in favour of BUILD_SHARED_LIBS.")
-    return()
-endif ()
-
-include(Util)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-option(USE_DEVIL
-       "Enables optional use of the DevIL image-loading library.  This should only be enabled if you need to load image files other than PNG, JPEG, and TIFF."
-       OFF)
 
-option(BUILD_SDL_DRIVER
-       "Builds GG SDL support (the GiGiSDL library)."
-       ON)
-option(BUILD_DOCUMENTATION
-       "Builds HTML documentation (requires Doxygen)."
-       OFF)
-option(BUILD_DEVEL_PACKAGE
-       "Install development files."
-       ON)
+if(MSVC)
+    set(CMAKE_STATIC_LIBRARY_PREFIX "lib")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /NODEFAULTLIB:LIBCMT")
+    set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /NODEFAULTLIB:LIBCMT")
 
-if (NOT DEFINED USE_STATIC_LIBS)
-    add_definitions(-DBOOST_ALL_DYN_LINK)
-endif ()
-
-if (MSVC)
-    set (CMAKE_STATIC_LIBRARY_PREFIX "lib")
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /NODEFAULTLIB:LIBCMT")
-    set (CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /NODEFAULTLIB:LIBCMT")
-endif ()
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+    add_definitions(/wd4146 /wd4099 /wd4251 /wd4800 /wd4267 /wd4275
+                    /wd4244 /wd4101 /wd4258 /wd4351 /wd4996)
+    add_definitions(
+        /EHsc
+        -D_UNICODE
+    )
+endif()
 
 
-########################################
-# Dependencies                         #
-########################################
+##
+## Collect project dependencies.
+##
+
+set(MINIMUM_BOOST_VERSION 1.58.0)
+
+if(NOT USE_STATIC_LIBS)
+    add_definitions(
+        -DBOOST_ALL_NO_LIB
+        -DBOOST_ALL_DYN_LINK
+        -DBOOST_LOG_NO_LIB
+        -DBOOST_LOG_DYN_LINK
+    )
+endif()
+
 set(Boost_USE_STATIC_LIBS ${USE_STATIC_LIBS})
-find_package(Boost ${MINIMUM_BOOST_VERSION} COMPONENTS chrono date_time filesystem signals system thread log REQUIRED)
-
-include_directories(${Boost_INCLUDE_DIRS})
-
-set(int_have_devil 0)
-set(int_have_jpeg 0)
-set(int_have_png 0)
-set(int_have_tiff 0)
-if (USE_DEVIL)
-    find_package(DevIL REQUIRED)
-
-    if (IL_FOUND)
-        set(int_have_devil 1)
-    endif ()
-
-    include_directories(${IL_INCLUDE_DIR})
-else ()
-    find_package(JPEG)
-    find_package(PNG)
-    find_package(TIFF)
-
-    if (JPEG_FOUND)
-        include_directories(${JPEG_INCLUDE_DIR})
-        set(int_have_jpeg 1)
-    endif ()
-    if (PNG_FOUND)
-        include_directories(${PNG_INCLUDE_DIR})
-        set(int_have_png 1)
-    endif ()
-    if (TIFF_FOUND)
-        include_directories(${TIFF_INCLUDE_DIR})
-        set(int_have_tiff 1)
-    endif ()
-
-endif ()
+find_package(Boost ${MINIMUM_BOOST_VERSION} COMPONENTS date_time filesystem regex system thread log REQUIRED)
 
 find_package(OpenGL REQUIRED)
+find_package(GLEW REQUIRED)
 find_package(Freetype REQUIRED)
 
-if (NOT OPENGL_GLU_FOUND)
+if(NOT OPENGL_GLU_FOUND)
     message(FATAL_ERROR "OpenGL GLU library not found.")
-endif ()
+endif()
+
+if(ENABLE_PNG_TEXTURES)
+    find_package(PNG REQUIRED)
+    set(int_have_png 1)
+else()
+    set(int_have_png 0)
+endif()
+
+if(ENABLE_TIFF_TEXTURES)
+    find_package(TIFF REQUIRED)
+    set(int_have_tiff 1)
+else()
+    set(int_have_tiff 0)
+endif()
+set(SDL_NO_MAIN true)
+
+find_package(SDL REQUIRED)
+
 
 include_directories(
-    ${OPENGL_INCLUDE_DIR}
-    ${FREETYPE_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-########################################
-# Header Generation                    #
-########################################
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Config.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/GG/Config.h
@@ -125,62 +132,178 @@ configure_file(
 )
 
 
-########################################
-# Installed Files                      #
-########################################
-if (BUILD_DEVEL_PACKAGE)
-    install(
-        DIRECTORY GG
-        DESTINATION include
-        COMPONENT COMPONENT_GIGI_DEVEL
-        PATTERN ".svn" EXCLUDE
-        PATTERN "*~" EXCLUDE
+##
+## Define main project targets.
+##
+
+add_library(GiGi "")
+
+if(USE_STATIC_LIBS)
+    set_target_properties(GiGi
+        PROPERTIES
+        LINK_SEARCH_END_STATIC true
     )
-endif ()
+endif()
+
+target_compile_definitions(GiGi
+    PRIVATE
+        -DFONS_USE_FREETYPE
+        # Starting with boost 1.68 boost::gil integrates support for
+        # grayscale-alpha png images, so prefer their implementation
+        # instead of our hacky gilext code.
+        $<$<VERSION_LESS:${Boost_MAJOR_VERSION}.${Boost_MINOR_VERSION},1.68>:GIGI_CONFIG_USE_OLD_IMPLEMENTATION_OF_GIL_PNG_IO>
+        $<$<VERSION_GREATER:${Boost_MAJOR_VERSION}.${Boost_MINOR_VERSION},1.67>:BOOST_GIL_IO_ENABLE_GRAY_ALPHA>
+)
+
+target_include_directories(GiGi SYSTEM
+    PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        ${OPENGL_INCLUDE_DIR}
+        ${GLEW_INCLUDE_DIRS}
+        ${FREETYPE_INCLUDE_DIRS}
+        ${PNG_INCLUDE_DIRS}
+        ${TIFF_INCLUDE_DIRS}
+)
+
+target_link_libraries(GiGi
+    ${Boost_LIBRARIES}
+    ${OPENGL_LIBRARIES}
+    ${GLEW_LIBRARIES}
+    ${FREETYPE_LIBRARIES}
+)
+
+if(PNG_FOUND)
+    target_link_libraries(GiGi ${PNG_LIBRARIES})
+endif()
+
+if(TIFF_FOUND)
+    target_link_libraries(GiGi ${TIFF_LIBRARIES})
+endif()
 
 
-########################################
-# Recurse Into Sources                 #
-########################################
+add_library(GiGiSDL "")
+
+if(USE_STATIC_LIBS)
+    set_target_properties(GiGiSDL
+        PROPERTIES
+        LINK_SEARCH_END_STATIC true
+    )
+endif()
+
+target_include_directories(GiGiSDL SYSTEM
+    PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        ${OPENGL_INCLUDE_DIR}
+        ${GLEW_INCLUDE_DIRS}
+        ${SDL_INCLUDE_DIR}
+)
+
+target_link_libraries(GiGiSDL
+    GiGi
+    ${OPENGL_LIBRARIES}
+    ${GLEW_LIBRARIES}
+    ${SDL_LIBRARIES}
+)
+
+
+##
+## Recurse into sources.
+##
+
+add_subdirectory(GG)
 add_subdirectory(src)
 
-########################################
-# Documentation                        #
-########################################
-if (BUILD_DOCUMENTATION)
-    find_package(Doxygen REQUIRED)
-endif ()
+if(BUILD_TESTING)
+    enable_testing()
+    enable_coverage()
 
-if (DOXYGEN_FOUND)
-    set(GG_DOC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/doc")
-    set(GG_DOC_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/doc")
-    set(GG_DOC_STAMP_DIR "${GG_DOC_OUTPUT_DIR}/GG")
-    configure_file(
-        ${GG_DOC_SOURCE_DIR}/Doxyfile.in
-        ${GG_DOC_OUTPUT_DIR}/Doxyfile
-        @ONLY
-        IMMEDIATE
-    )
-    add_custom_command (
-        OUTPUT ${GG_DOC_STAMP_DIR}/index.html
-        COMMAND ${DOXYGEN_EXECUTABLE} ${GG_DOC_OUTPUT_DIR}/Doxyfile
-        MAIN_DEPENDENCY ${GG_DOC_OUTPUT_DIR}/Doxyfile ${GG_DOC_SOURCE_DIR}/Doxyfile.in
-        DEPENDS ${GG_DOC_SOURCE_DIR}/GGDoc.txt
-        COMMENT "Generating documentation with Doxygen" VERBATIM
-    )
-    add_custom_target (doc ALL DEPENDS ${GG_DOC_STAMP_DIR}/index.html)
-    if (BUILD_DEVEL_PACKAGE)
-        install(
-            DIRECTORY ${GG_DOC_STAMP_DIR}
-            DESTINATION doc
+    if(NOT TARGET unittest)
+        add_custom_target(unittest
+            COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+            COMMENT "Run tests for ${CMAKE_PROJECT_NAME}"
         )
-    endif ()
-endif ()
+    endif()
+
+    add_subdirectory(test)
+endif()
+
+if(BUILD_DOCUMENTATION)
+    add_subdirectory(doc)
+endif()
 
 
-########################################
-# Packaging                            #
-########################################
+##
+## Install targets and package project.
+##
+
+if(BUILD_DEVEL_PACKAGE)
+    install(
+        DIRECTORY GG
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        COMPONENT COMPONENT_GIGI_DEVEL
+    )
+endif()
+
+if(UNIX AND NOT APPLE)
+    install(
+        TARGETS GiGi
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT COMPONENT_GIGI
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        COMPONENT COMPONENT_GIGI
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT COMPONENT_GIGI_DEVEL
+    )
+endif()
+
+if(UNIX AND BUILD_DEVEL_PACKAGE)
+    get_pkg_config_libs(pkg_config_libs ${GiGi_LINK_LIBS})
+
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GiGi.pc.in
+        ${CMAKE_BINARY_DIR}/GiGi.pc
+        @ONLY
+    )
+
+    install(
+        FILES ${CMAKE_BINARY_DIR}/GiGi.pc
+        DESTINATION  ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+        COMPONENT COMPONENT_GIGI_DEVEL
+        OPTIONAL
+    )
+endif()
+
+
+if(UNIX AND NOT APPLE)
+    install(
+        TARGETS GiGiSDL
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT COMPONENT_GIGISDL
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        COMPONENT COMPONENT_GIGISDL
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT COMPONENT_GIGISDL_DEVEL
+    )
+endif()
+
+if(UNIX AND BUILD_DEVEL_PACKAGE)
+    get_pkg_config_libs(pkg_config_libs ${GiGiSDL_LINK_LIBS})
+
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GiGiSDL.pc.in
+        ${CMAKE_BINARY_DIR}/GiGiSDL.pc
+        @ONLY
+    )
+
+    install(
+        FILES ${CMAKE_BINARY_DIR}/GiGiSDL.pc
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+        COMPONENT COMPONENT_GIGI_DEVEL
+        OPTIONAL
+    )
+endif()
+
+
 set(CPACK_PACKAGE_VERSION ${GIGI_VERSION})
 set(CPACK_PACKAGE_VENDOR "T. Zachary Laine")
 set(CPACK_PACKAGE_CONTACT ${CPACK_PACKAGE_VENDOR})
@@ -198,18 +321,18 @@ set(CPACK_RPM_PACKAGE_REQUIRES)
 list(APPEND CPACK_RPM_PACKAGE_REQUIRES Mesa freetype2)
 list(APPEND CPACK_RPM_PACKAGE_REQUIRES gigi=${GIGI_VERSION})
 
-if (BUILD_SDL_DRIVER)
+if(BUILD_SDL_DRIVER)
     list(APPEND CPACK_RPM_PACKAGE_REQUIRES SDL>=1.2)
-endif ()
+endif()
 
-if (BUILD_DEVEL_PACKAGE)
+if(BUILD_DEVEL_PACKAGE)
     list(APPEND CPACK_RPM_PACKAGE_REQUIRES boost-devel>=1.44.0 Mesa-devel freetype2-devel)
     list(APPEND CPACK_RPM_PACKAGE_REQUIRES gigi-devel=${GIGI_VERSION})
-endif ()
+endif()
 
-if (BUILD_DEVEL_PACKAGE AND BUILD_SDL_DRIVER)
+if(BUILD_DEVEL_PACKAGE AND BUILD_SDL_DRIVER)
     list(APPEND CPACK_RPM_PACKAGE_REQUIRES SDL-devel>=1.2)
-endif ()
+endif()
 
 # Deb-specific settings
 set(CPACK_DEBIAN_PACKAGE_SECTION libs)
@@ -217,36 +340,36 @@ set(CPACK_DEBIAN_PACKAGE_SECTION libs)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "libgl1-mesa-glx | libgl1, libglu1-mesa | libglu, libfreetype6")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}, gigi (= ${GIGI_VERSION})")
 
-if (BUILD_SDL_DRIVER)
+if(BUILD_SDL_DRIVER)
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}, libsdl1.2debian (>= 1.2)")
-endif ()
+endif()
 
-if (BUILD_DEVEL_PACKAGE)
+if(BUILD_DEVEL_PACKAGE)
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "boost-devel (>= 1.44.0), libgl1-mesa-dev | libgl-dev, libglu1-mesa-dev | libglu-dev, libfreetype6-dev")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}, gigi-dev (= ${GIGI_VERSION})")
-endif ()
+endif()
 
-if (BUILD_DEVEL_PACKAGE AND BUILD_SDL_DRIVER)
+if(BUILD_DEVEL_PACKAGE AND BUILD_SDL_DRIVER)
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}, libsdl1.2-dev (>= 1.2)")
-endif ()
+endif()
 
-if (UNIX)
+if(UNIX)
     set(CPACK_GENERATOR "TGZ;TBZ2")
     find_program(RPMBUILD rpmbuild)
-    if (RPMBUILD)
+    if(RPMBUILD)
         list(APPEND CPACK_GENERATOR RPM)
-    endif ()
+    endif()
     set(RPMBUILD ${RPMBUILD} CACHE INTERNAL "")
     find_program(DPKG dpkg)
-    if (DPKG)
+    if(DPKG)
         list(APPEND CPACK_GENERATOR DEB)
-    endif ()
+    endif()
     set(DPKG ${DPKG} CACHE INTERNAL "")
     set(CPACK_SOURCE_GENERATOR "TGZ;TBZ2")
-elseif (WIN32)
+elseif(WIN32)
     set(CPACK_GENERATOR "NSIS")
     set(CPACK_SOURCE_GENERATOR "ZIP")
-endif ()
+endif()
 
 include(CPack)
 

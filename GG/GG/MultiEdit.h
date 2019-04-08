@@ -62,17 +62,21 @@ class GG_API MultiEdit : public Edit
 public:
     /** \name Structors */ ///@{
     /** Ctor. */
-    MultiEdit(const std::string& str, const boost::shared_ptr<Font>& font,
-              Clr color, Flags<MultiEditStyle> style = MULTI_LINEWRAP, Clr text_color = CLR_BLACK,
-              Clr interior = CLR_ZERO);
+    MultiEdit(const std::string& str, const std::shared_ptr<Font>& font,
+              Clr color, Flags<MultiEditStyle> style = MULTI_LINEWRAP,
+              Clr text_color = CLR_BLACK, Clr interior = CLR_ZERO);
 
-    /** Dtor. */
     virtual ~MultiEdit();
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ ///@{
-    virtual Pt MinUsableSize() const;
-    virtual Pt ClientLowerRight() const;
+    Pt MinUsableSize() const override;
+
+    Pt ClientLowerRight() const override;
+
+    /** Returns the size to show the whole text without scrollbars. */
+    Pt FullSize() const;
 
     /** Returns the style flags for this MultiEdit. */
     Flags<MultiEditStyle> Style() const;
@@ -87,27 +91,29 @@ public:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void   Render();
+    void Render() override;
 
-    virtual void   SizeMove(const Pt& ul, const Pt& lr);
+    void SizeMove(const Pt& ul, const Pt& lr) override;
 
-    virtual void   SelectAll();
-    virtual void   DeselectAll();
-    virtual void   SetText(const std::string& str);
+    void SelectAll() override;
+    void DeselectAll() override;
+    void SetText(const std::string& str) override;
 
     /** Sets the style flags for this MultiEdit to \a style. */
-    void           SetStyle(Flags<MultiEditStyle> style);
+    void SetStyle(Flags<MultiEditStyle> style);
 
     /** Sets the maximum number of rows of text that the control will keep.
         ALL_LINES indicates no limit. */
-    void           SetMaxLinesOfHistory(std::size_t max);
+    void SetMaxLinesOfHistory(std::size_t max);
 
     /** Sets scroll position, bound by valid range of scrolls of this MultiEdit. */
-    void           SetScrollPosition(Pt pt);
+    void SetScrollPosition(Pt pt);
 
     /** Sets how much to scroll when scrolled using the mousewheel. */
-    void           SetVScrollWheelIncrement(unsigned int increment);
-    void           SetHScrollWheelIncrement(unsigned int increment);
+    void SetVScrollWheelIncrement(unsigned int increment);
+    void SetHScrollWheelIncrement(unsigned int increment);
+
+    void AcceptPastedText(const std::string& text) override;
     //@}
 
     /** A sentinel value that indicates that there is no limit on the number
@@ -121,7 +127,7 @@ public:
 protected:
     /** \name Accessors */ ///@{
     /** Returns true if >= 1 characters are selected. */
-    virtual bool MultiSelected() const;
+    bool MultiSelected() const override;
 
     /** Returns the width of the scrollbar on the right side of the control (0
         if none). */
@@ -147,7 +153,7 @@ protected:
         of the first character of the first formatting tag is returned instead.
         Not range-checked. */
     CPSize CharIndexOf(std::size_t row, CPSize char_idx,
-                       const std::vector<Font::LineData>* line_data = 0) const;
+                       const std::vector<Font::LineData>* line_data = nullptr) const;
 
     /** Returns the the x-coordinate of the beginning of row \a row, in
         cleint-space coordinates.  Not range-checked. */
@@ -193,11 +199,11 @@ protected:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys);
-    virtual void MouseWheel(const Pt& pt, int move, Flags<ModKey> mod_keys);
-    virtual void KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
-    virtual void TextInput(const std::string* text);
+    void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys) override;
+    void MouseWheel(const Pt& pt, int move, Flags<ModKey> mod_keys) override;
+    void KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys) override;
+    void TextInput(const std::string* text) override;
 
     /** Recreates the vertical and horizontal scrolls as needed. */
     void RecreateScrolls();
@@ -211,7 +217,7 @@ protected:
         this function, the scroll positions will be reset. */
     void PreserveTextPositionOnNextSetText();
 
-    virtual std::pair<CPSize, CPSize> GetDoubleButtonDownWordIndices(CPSize char_index);
+    std::pair<CPSize, CPSize> GetDoubleButtonDownWordIndices(CPSize char_index) override;
     //@}
 
     /** The width used to create the control's vertical and horizontal
@@ -219,7 +225,6 @@ protected:
     static const unsigned int SCROLL_WIDTH;
 
 private:
-    void    Init();
     void    ValidateStyle();
     void    ClearSelected();   ///< Clears (deletes) selected characters, as when a del, backspace, or character is entered
     void    AdjustView();      ///< Makes sure the caret ends up in view after an arbitrary move or SetText()
@@ -240,8 +245,8 @@ private:
 
     std::size_t     m_max_lines_history;
 
-    Scroll*         m_vscroll;
-    Scroll*         m_hscroll;
+    std::shared_ptr<Scroll>         m_vscroll;
+    std::shared_ptr<Scroll>         m_hscroll;
     unsigned int    m_vscroll_wheel_scroll_increment;
     unsigned int    m_hscroll_wheel_scroll_increment;
 

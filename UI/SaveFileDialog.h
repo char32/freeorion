@@ -1,5 +1,3 @@
-// -*- C++ -*-
-//SaveFileDialog.h
 #ifndef _SaveFileDialog_h_
 #define _SaveFileDialog_h_
 
@@ -11,6 +9,8 @@
 
 #include "CUIWnd.h"
 
+#include <boost/filesystem/path.hpp>
+
 class SaveFileRow;
 class SaveFileListBox;
 struct PreviewInformation;
@@ -21,56 +21,62 @@ struct PreviewInformation;
  */
 class SaveFileDialog : public CUIWnd {
 public:
-    /** \name Structors */ //@{
-    /// Constructor for local browsing
-    /// @param extension The extension to enforce on the file name
-    /// @param load If set to true, only allow choosing existing files
-    /// @param relative Return a relative file name
-    SaveFileDialog(const std::string& extension, bool load = false);
+    enum class Purpose {Save, Load};
+    enum class SaveType {SinglePlayer, MultiPlayer};
 
-    /// Contruct for getting the previews from the server
-    SaveFileDialog(bool load = false);
-    ~SaveFileDialog(); //!< dtor
+    /** \name Structors */ //@{
+    SaveFileDialog(const Purpose purpose = Purpose::Load, const SaveType type = SaveType::SinglePlayer);
+
+    void CompleteConstruction() override;
+    ~SaveFileDialog();
     //@}
 
     /** \name Mutators */ //@{
-    virtual void ModalInit(); //< Called when dialog is shown. Overrides
-    virtual void KeyPress(GG::Key key, boost::uint32_t key_code_point,
-                          GG::Flags<GG::ModKey> mod_keys);
+    void ModalInit() override;
+
+    void KeyPress(GG::Key key, std::uint32_t key_code_point, GG::Flags<GG::ModKey> mod_keys) override;
+
+    /** Update the previews with \p preview_info*/
+    void SetPreviewList(const PreviewInformation& preview_info);
     //@}
 
     /// Get the chosen save files full path
     std::string Result() const;
 
 protected:
-    virtual GG::Rect CalculatePosition() const;
+    GG::Rect CalculatePosition() const override;
 
 private:
     void Init();
 
     void Confirm();                         //!< when m_save_btn button is pressed
     void AskDelete();                       //!< when a file is trying to be deleted
-    void DoubleClickRow(GG::ListBox::iterator row);
+    void DoubleClickRow(GG::ListBox::iterator row, const GG::Pt& pt, const GG::Flags<GG::ModKey>& mod);
     void Cancel();                          //!< when m_load_btn button is pressed
     void SelectionChanged(const GG::ListBox::SelectionSet& files);      //!< When file selection changes.
     void UpdateDirectory(const std::string& newdir);                    //!< Change current directory
-    void DirectoryDropdownSelect(GG::DropDownList::iterator selection); //!< On remote directory select
 
+    /** Either directly update from the local save directory, or request the
+        server for save preview information*/
     void UpdatePreviewList();
+    /** Update the preview list from a local save directory*/
+    void SetPreviewList(const boost::filesystem::path& path);
+    /** Update the previews with preview info set by \p setup_preview_info*/
+    void SetPreviewListCore(const std::function<void ()>& setup_preview_info);
+
     bool CheckChoiceValidity();                         //!< Disables confirm if filename invalid. Returns false if not valid.
     void FileNameEdited(const std::string& filename);   //!< Called when the filename changes
     void DirectoryEdited(const std::string& filename);  //!< Called when the directory text changes
 
-    std::string GetDirPath() const;         //!< Gets the current directory path string clean of display decorations
-    void        SetDirPath(const std::string& path); //!< Sets the shown directory path, applying decorations if applicable
+    std::string GetDirPath() const;                     //!< Gets the current directory path string clean of display decorations
+    void        SetDirPath(const std::string& path);    //!< Sets the shown directory path, applying decorations if applicable
 
-    GG::Layout*         m_layout;           //!< The layout of the dialog
+    std::shared_ptr<GG::Layout>         m_layout;           //!< The layout of the dialog;
 
-    SaveFileListBox*    m_file_list;        //!< The list of available saves
-    GG::Edit*           m_name_edit;        //!< The file name edit control
-    GG::Edit*           m_current_dir_edit; //!< The editor for the save directory
-    GG::DropDownList*   m_remote_dir_dropdown; //!< Dropdown to select remote dir
-    GG::Button*         m_confirm_btn;      //!< Button to confirm choice
+    std::shared_ptr<SaveFileListBox>    m_file_list;        //!< The list of available saves
+    std::shared_ptr<GG::Edit>           m_name_edit;        //!< The file name edit control;
+    std::shared_ptr<GG::Edit>           m_current_dir_edit; //!< The editor for the save directory;
+    std::shared_ptr<GG::Button>         m_confirm_btn;      //!< Button to confirm choice;
 
     std::string         m_loaded_dir;       //!< The directory whose contents are currently shown
     std::string         m_extension;        //!< The save game file name extension

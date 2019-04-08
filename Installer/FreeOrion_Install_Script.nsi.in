@@ -29,7 +29,7 @@ SetCompressor bzip2
 !insertmacro MUI_PAGE_INSTFILES
 ; Finish page
 !define MUI_FINISHPAGE_RUN "$$INSTDIR\freeorion.exe"
-;!define MUI_FINISHPAGE_RUN_PARAMETERS "--fullscreen 1"
+;!define MUI_FINISHPAGE_RUN_PARAMETERS "--video.fullscreen.enabled 1"
 !insertmacro MUI_PAGE_FINISH
 
 ; Uninstaller pages
@@ -65,12 +65,12 @@ Section "MainSection" SEC01
   File "..\FreeorionD.exe"
   File "..\Freeorion.exe"
   File "..\FreeOrion.ico"
-  File "..\changelog.txt"
+  File "..\ChangeLog.md"
 
   File /r /x .git "..\default"
 
   CreateDirectory "$$SMPROGRAMS\FreeOrion"
-  CreateShortCut "$$SMPROGRAMS\FreeOrion\FreeOrion Fullscreen.lnk" "$$INSTDIR\freeorion.exe" "--fullscreen"
+  CreateShortCut "$$SMPROGRAMS\FreeOrion\FreeOrion Fullscreen.lnk" "$$INSTDIR\freeorion.exe" "--video.fullscreen.enabled 1"
   CreateShortCut "$$SMPROGRAMS\FreeOrion\FreeOrion Windowed.lnk" "$$INSTDIR\freeorion.exe"
 
   CreateShortCut "$$DESKTOP\FreeOrion.lnk" "$$INSTDIR\freeorion.exe"
@@ -113,7 +113,7 @@ Section Uninstall
   Delete "$$INSTDIR\FreeorionD.exe"
   Delete "$$INSTDIR\Freeorion.exe"
   Delete "$$INSTDIR\FreeOrion.ico"
-  Delete "$$INSTDIR\changelog.txt"
+  Delete "$$INSTDIR\ChangeLog.md"
 
   RMDir /r "$$INSTDIR\default"
 
@@ -135,3 +135,23 @@ Section Uninstall
   DeleteRegKey HKLM "$${PRODUCT_DIR_REGKEY}"
   SetAutoClose true
 SectionEnd
+
+Function .onInit
+  ReadRegStr $$R0 HKLM "$${PRODUCT_UNINST_KEY}" "UninstallString"
+  StrCmp $$R0 "" fin_onInit
+
+  MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION \
+  "$${PRODUCT_NAME} is already installed. $$\n$$\nClick `OK` to run the \
+  uninstall dialog (recommended) $$\nor click `Cancel` to continue." \
+  IDOK uninst_onInit
+  Goto fin_onInit
+
+  uninst_onInit:
+  ClearErrors
+  InitPluginsDir
+  CopyFiles "$$R0" "$$pluginsdir"
+  ExecWait '$$pluginsdir\Uninstall.exe _?=$$INSTDIR'
+
+  fin_onInit:
+
+FunctionEnd

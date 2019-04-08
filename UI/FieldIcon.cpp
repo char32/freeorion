@@ -11,7 +11,6 @@
 #include <GG/StaticGraphic.h>
 #include <GG/DynamicGraphic.h>
 #include <GG/WndEvent.h>
-#include <GG/Menu.h>
 
 ////////////////////////////////////////////////
 // FieldIcon
@@ -19,24 +18,21 @@
 FieldIcon::FieldIcon(int field_id) :
     GG::Control(GG::X0, GG::Y0, GG::X1, GG::Y1),
     m_field_id(field_id),
-    m_selection_indicator(0),
-    m_mouseover_indicator(0),
+    m_selection_indicator(nullptr),
+    m_mouseover_indicator(nullptr),
     m_selected(false),
-    m_name(0)
+    m_name(nullptr)
 {
     Refresh();
 }
 
-FieldIcon::~FieldIcon() {
-    delete m_selection_indicator;
-    delete m_mouseover_indicator;
-    delete m_name;
-}
+FieldIcon::~FieldIcon()
+{}
 
 int FieldIcon::FieldID() const
 { return m_field_id; }
 
-const boost::shared_ptr<GG::Texture>& FieldIcon::FieldTexture() const
+const std::shared_ptr<GG::Texture>& FieldIcon::FieldTexture() const
 { return m_texture; }
 
 void FieldIcon::LButtonDown(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys)
@@ -79,7 +75,7 @@ void FieldIcon::SizeMove(const GG::Pt& ul, const GG::Pt& lr) {
 }
 
 void FieldIcon::Refresh() {
-    TemporaryPtr<const Field> field = GetField(m_field_id);
+    std::shared_ptr<const Field> field = GetField(m_field_id);
     if (!field)
         return;
     m_texture = ClientUI::FieldTexture(field->FieldTypeName());
@@ -98,9 +94,7 @@ void FieldIcon::RClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) {
     if (!Disabled())
         RightClickedSignal(m_field_id);
 
-    GG::MenuItem menu_contents;
-
-    TemporaryPtr<const Field> field = GetField(m_field_id);
+    std::shared_ptr<const Field> field = GetField(m_field_id);
     if (!field)
         return;
     const std::string& field_type_name = field->FieldTypeName();
@@ -108,14 +102,10 @@ void FieldIcon::RClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) {
         return;
 
     std::string popup_label = boost::io::str(FlexibleFormat(UserString("ENC_LOOKUP")) % UserString(field_type_name));
-    menu_contents.next_level.push_back(GG::MenuItem(popup_label, 1, false, false));
-    GG::PopupMenu popup(pt.x, pt.y, ClientUI::GetFont(), menu_contents, ClientUI::TextColor(),
-                        ClientUI::WndOuterBorderColor(), ClientUI::WndColor(), ClientUI::EditHiliteColor());
-
-    if (!popup.Run() || popup.MenuID() != 1)
-        return;
-
-    ClientUI::GetClientUI()->ZoomToFieldType(field_type_name);
+    auto popup = GG::Wnd::Create<CUIPopupMenu>(pt.x, pt.y);
+    auto pedia_lookup_field_type_action = [field_type_name]() { ClientUI::GetClientUI()->ZoomToFieldType(field_type_name); };
+    popup->AddMenuItem(GG::MenuItem(popup_label, false, false, pedia_lookup_field_type_action));
+    popup->Run();
 }
 
 void FieldIcon::LDoubleClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) {

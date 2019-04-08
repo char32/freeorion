@@ -4,11 +4,13 @@
 #include "../util/Logger.h"
 #include "../util/Random.h"
 #include "../util/AppInterface.h"
+#include "../util/GameRules.h"
 #include "Fleet.h"
 #include "Predicates.h"
 #include "ShipDesign.h"
 #include "Species.h"
 #include "Universe.h"
+#include "Enums.h"
 #include "../Empire/Empire.h"
 #include "../Empire/EmpireManager.h"
 
@@ -17,28 +19,16 @@
 class Species;
 const Species* GetSpecies(const std::string& name);
 
-Ship::Ship() :
-    m_design_id(ShipDesign::INVALID_DESIGN_ID),
-    m_fleet_id(INVALID_OBJECT_ID),
-    m_ordered_scrapped(false),
-    m_ordered_colonize_planet_id(INVALID_OBJECT_ID),
-    m_ordered_invade_planet_id(INVALID_OBJECT_ID),
-    m_ordered_bombard_planet_id(INVALID_OBJECT_ID),
-    m_last_turn_active_in_combat(INVALID_GAME_TURN),
-    m_produced_by_empire_id(ALL_EMPIRES)
+Ship::Ship()
 {}
 
 Ship::Ship(int empire_id, int design_id, const std::string& species_name,
            int produced_by_empire_id/* = ALL_EMPIRES*/) :
     m_design_id(design_id),
-    m_fleet_id(INVALID_OBJECT_ID),
-    m_ordered_scrapped(false),
-    m_ordered_colonize_planet_id(INVALID_OBJECT_ID),
-    m_ordered_invade_planet_id(INVALID_OBJECT_ID),
-    m_ordered_bombard_planet_id(INVALID_OBJECT_ID),
-    m_last_turn_active_in_combat(INVALID_GAME_TURN),
     m_species_name(species_name),
-    m_produced_by_empire_id(produced_by_empire_id)
+    m_produced_by_empire_id(produced_by_empire_id),
+    m_arrived_on_turn(CurrentTurn()),
+    m_last_resupplied_on_turn(CurrentTurn())
 {
     if (!GetShipDesign(design_id))
         throw std::invalid_argument("Attempted to construct a Ship with an invalid design id");
@@ -66,22 +56,29 @@ Ship::Ship(int empire_id, int design_id, const std::string& species_name,
     AddMeter(METER_TRADE);
 
     const std::vector<std::string>& part_names = Design()->Parts();
-    for (std::size_t i = 0; i < part_names.size(); ++i) {
-        if (part_names[i] != "") {
-            const PartType* part = GetPartType(part_names[i]);
+    for (const std::string& part_name : part_names) {
+        if (!part_name.empty()) {
+            const PartType* part = GetPartType(part_name);
             if (!part) {
-                ErrorLogger() << "Ship::Ship couldn't get part with name " << part_names[i];
+                ErrorLogger() << "Ship::Ship couldn't get part with name " << part_name;
                 continue;
             }
 
             switch (part->Class()) {
-            case PC_SHORT_RANGE:
-            case PC_MISSILES:
-            case PC_FIGHTERS:
-            case PC_POINT_DEFENSE:
             case PC_COLONY:
             case PC_TROOPS: {
-                m_part_meters[std::make_pair(METER_CAPACITY, part->Name())];
+                m_part_meters[{METER_CAPACITY, part->Name()}];
+                break;
+            }
+            case PC_DIRECT_WEAPON:      // capacity is damage, secondary stat is shots per attack
+            case PC_FIGHTER_HANGAR: {   // capacity is how many fighters contained, secondary stat is damage per fighter attack
+                m_part_meters[{METER_SECONDARY_STAT, part->Name()}];
+                m_part_meters[{METER_MAX_SECONDARY_STAT, part->Name()}];
+                // intentionally no break here
+            }
+            case PC_FIGHTER_BAY: {      // capacity is how many fighters launched per combat round
+                m_part_meters[{METER_CAPACITY, part->Name()}];
+                m_part_meters[{METER_MAX_CAPACITY, part->Name()}];
                 break;
             }
             default:
@@ -95,17 +92,17 @@ Ship* Ship::Clone(int empire_id) const {
     Visibility vis = GetUniverse().GetObjectVisibilityByEmpire(this->ID(), empire_id);
 
     if (!(vis >= VIS_BASIC_VISIBILITY && vis <= VIS_FULL_VISIBILITY))
-        return 0;
+        return nullptr;
 
     Ship* retval = new Ship();
-    retval->Copy(TemporaryFromThis(), empire_id);
+    retval->Copy(shared_from_this(), empire_id);
     return retval;
 }
 
-void Ship::Copy(TemporaryPtr<const UniverseObject> copied_object, int empire_id) {
-    if (copied_object == this)
+void Ship::Copy(std::shared_ptr<const UniverseObject> copied_object, int empire_id) {
+    if (copied_object.get() == this)
         return;
-    TemporaryPtr<const Ship> copied_ship = boost::dynamic_pointer_cast<const Ship>(copied_object);
+    auto copied_ship = std::dynamic_pointer_cast<const Ship>(copied_object);
     if (!copied_ship) {
         ErrorLogger() << "Ship::Copy passed an object that wasn't a Ship";
         return;
@@ -113,39 +110,47 @@ void Ship::Copy(TemporaryPtr<const UniverseObject> copied_object, int empire_id)
 
     int copied_object_id = copied_object->ID();
     Visibility vis = GetUniverse().GetObjectVisibilityByEmpire(copied_object_id, empire_id);
-    std::set<std::string> visible_specials = GetUniverse().GetObjectVisibleSpecialsByEmpire(copied_object_id, empire_id);
+    auto visible_specials = GetUniverse().GetObjectVisibleSpecialsByEmpire(copied_object_id, empire_id);
 
     UniverseObject::Copy(copied_object, vis, visible_specials);;
 
     if (vis >= VIS_BASIC_VISIBILITY) {
         if (this->m_fleet_id != copied_ship->m_fleet_id) {
             // as with other containers, removal from the old container is triggered by the contained Object; removal from System is handled by UniverseObject::Copy
-            if (TemporaryPtr<Fleet> oldFleet = GetFleet(this->m_fleet_id)) 
-                oldFleet->RemoveShip(this->ID());
-            this->m_fleet_id =              copied_ship->m_fleet_id; // as with other containers (Systems), actual insertion into fleet ships set is handled by the fleet
+            if (auto old_fleet = GetFleet(this->m_fleet_id))
+                old_fleet->RemoveShips({this->ID()});
+            this->m_fleet_id = copied_ship->m_fleet_id; // as with other containers (Systems), actual insertion into fleet ships set is handled by the fleet
         }
 
         if (vis >= VIS_PARTIAL_VISIBILITY) {
             if (this->Unowned())
-                this->m_name =              copied_ship->m_name;
+                this->m_name =                  copied_ship->m_name;
 
-            this->m_design_id =             copied_ship->m_design_id;
-            for (PartMeterMap::const_iterator it = copied_ship->m_part_meters.begin();
-                 it != copied_ship->m_part_meters.end(); ++it)
-            { this->m_part_meters[it->first]; }
-            this->m_species_name =          copied_ship->m_species_name;
+            this->m_design_id =                 copied_ship->m_design_id;
+            this->m_part_meters =               copied_ship->m_part_meters;
+            this->m_species_name =              copied_ship->m_species_name;
+
+            this->m_last_turn_active_in_combat= copied_ship->m_last_turn_active_in_combat;
+            this->m_produced_by_empire_id =     copied_ship->m_produced_by_empire_id;
+            this->m_arrived_on_turn =           copied_ship->m_arrived_on_turn;
+            this->m_last_resupplied_on_turn =   copied_ship->m_last_resupplied_on_turn;
 
             if (vis >= VIS_FULL_VISIBILITY) {
                 this->m_ordered_scrapped =          copied_ship->m_ordered_scrapped;
                 this->m_ordered_colonize_planet_id= copied_ship->m_ordered_colonize_planet_id;
                 this->m_ordered_invade_planet_id  = copied_ship->m_ordered_invade_planet_id;
                 this->m_ordered_bombard_planet_id = copied_ship->m_ordered_bombard_planet_id;
-                this->m_last_turn_active_in_combat= copied_ship->m_last_turn_active_in_combat;
-                this->m_part_meters =               copied_ship->m_part_meters;
-                this->m_produced_by_empire_id =     copied_ship->m_produced_by_empire_id;
             }
         }
     }
+}
+
+bool Ship::HostileToEmpire(int empire_id) const
+{
+    if (OwnedBy(empire_id))
+        return false;
+    return empire_id == ALL_EMPIRES || Unowned() ||
+           Empires().GetDiplomaticStatus(Owner(), empire_id) == DIPLO_WAR;
 }
 
 std::set<std::string> Ship::Tags() const {
@@ -164,8 +169,8 @@ std::set<std::string> Ship::Tags() const {
     if (parts.empty())
         return retval;
 
-    for (std::vector<std::string>::const_iterator part_it = parts.begin(); part_it != parts.end(); ++part_it) {
-        if (const PartType* part = GetPartType(*part_it)) {
+    for (const std::string& part_name : parts) {
+        if (const PartType* part = GetPartType(part_name)) {
             retval.insert(part->Tags().begin(), part->Tags().end());
         }
     }
@@ -182,9 +187,8 @@ bool Ship::HasTag(const std::string& name) const {
             return true;
 
         // check parts for tag
-        const std::vector<std::string>& parts = design->Parts();
-        for (std::vector<std::string>::const_iterator part_it = parts.begin(); part_it != parts.end(); ++part_it) {
-            const PartType* part = GetPartType(*part_it);
+        for (const std::string& part_name : design->Parts()) {
+            const PartType* part = GetPartType(part_name);
             if (part && part->Tags().count(name))
                 return true;
         }
@@ -206,24 +210,23 @@ bool Ship::ContainedBy(int object_id) const {
             ||  object_id == this->SystemID());
 }
 
-std::string Ship::Dump() const {
+std::string Ship::Dump(unsigned short ntabs) const {
     std::stringstream os;
-    os << UniverseObject::Dump();
+    os << UniverseObject::Dump(ntabs);
     os << " design id: " << m_design_id
        << " fleet id: " << m_fleet_id
        << " species name: " << m_species_name
        << " produced by empire id: " << m_produced_by_empire_id
-       << " fighters: ";
-    //typedef std::map<std::pair<MeterType, std::string>, Meter> PartMeters;
-    os << " part meters: ";
-    for (PartMeterMap::const_iterator it = m_part_meters.begin(); it != m_part_meters.end();) {
-        const std::string part_name = it->first.second;
-        MeterType meter_type = it->first.first;
-        const Meter& meter = it->second;
-        ++it;
-        os << UserString(part_name) << " "
-           << UserString(EnumToString(meter_type))
-           << ": " << meter.Current() << "  ";
+       << " arrived on turn: " << m_arrived_on_turn
+       << " last resupplied on turn: " << m_last_resupplied_on_turn;
+    if (!m_part_meters.empty()) {
+        os << " part meters: ";
+        for (const auto& entry : m_part_meters) {
+            const std::string part_name = entry.first.second;
+            MeterType meter_type = entry.first.first;
+            const Meter& meter = entry.second;
+            os << part_name << " " << meter_type << ": " << meter.Current() << "  ";
+        }
     }
     return os.str();
 }
@@ -243,6 +246,14 @@ bool Ship::IsArmed() const {
     const ShipDesign* design = Design();
     if (design)
         return design->IsArmed();
+    else
+        return false;
+}
+
+bool Ship::HasFighters() const {
+    const ShipDesign* design = Design();
+    if (design)
+        return design->HasFighters();
     else
         return false;
 }
@@ -268,7 +279,7 @@ bool Ship::CanBombard() const {
 }
 
 float Ship::Speed() const
-{ return CurrentMeterValue(METER_SPEED); }
+{ return InitialMeterValue(METER_SPEED); }
 
 float Ship::ColonyCapacity() const {
     float retval = 0.0f;
@@ -277,11 +288,7 @@ float Ship::ColonyCapacity() const {
     if (!design)
         return retval;
 
-    const std::vector<std::string>& parts = design->Parts();
-    for (std::vector<std::string>::const_iterator part_it = parts.begin();
-         part_it != parts.end(); ++part_it)
-    {
-        const std::string& part_name = *part_it;
+    for (const std::string& part_name : design->Parts()) {
         if (part_name.empty())
             continue;
         const PartType* part_type = GetPartType(part_name);
@@ -291,7 +298,7 @@ float Ship::ColonyCapacity() const {
         if (part_class != PC_COLONY)
             continue;
         // add capacity for all instances of colony parts to accumulator
-        retval += this->CurrentPartMeterValue(METER_CAPACITY, part_name);
+        retval += this->InitialPartMeterValue(METER_CAPACITY, part_name);
     }
 
     return retval;
@@ -304,11 +311,7 @@ float Ship::TroopCapacity() const {
     if (!design)
         return retval;
 
-    const std::vector<std::string>& parts = design->Parts();
-    for (std::vector<std::string>::const_iterator part_it = parts.begin();
-         part_it != parts.end(); ++part_it)
-    {
-        const std::string& part_name = *part_it;
+    for (const std::string& part_name : design->Parts()) {
         if (part_name.empty())
             continue;
         const PartType* part_type = GetPartType(part_name);
@@ -318,10 +321,15 @@ float Ship::TroopCapacity() const {
         if (part_class != PC_TROOPS)
             continue;
         // add capacity for all instances of colony parts to accumulator
-        retval += this->CurrentPartMeterValue(METER_CAPACITY, part_name);
+        retval += this->InitialPartMeterValue(METER_CAPACITY, part_name);
     }
 
     return retval;
+}
+
+bool Ship::CanHaveTroops() const {
+    const ShipDesign* design = Design();
+    return design ? design->HasTroops() : false;
 }
 
 const std::string& Ship::PublicName(int empire_id) const {
@@ -344,66 +352,15 @@ const std::string& Ship::PublicName(int empire_id) const {
         return UserString("OBJ_SHIP");
 }
 
-TemporaryPtr<UniverseObject> Ship::Accept(const UniverseObjectVisitor& visitor) const
-{ return visitor.Visit(boost::const_pointer_cast<Ship>(boost::static_pointer_cast<const Ship>(TemporaryFromThis()))); }
-
-float Ship::NextTurnCurrentMeterValue(MeterType type) const {
-    const Meter* meter = UniverseObject::GetMeter(type);
-    if (!meter)
-        throw std::invalid_argument("Ship::NextTurnCurrentMeterValue passed meter type that the Ship does not have: " + boost::lexical_cast<std::string>(type));
-    float current_meter_value = meter->Current();
-
-    //if (type == METER_FUEL) {
-    //    // todo: consider fleet movement or being stationary, which may partly replenish fuel
-    //    // todo: consider fleet passing through or being in a supplied system, which replenishes fuel
-    //}
-
-    if (type == METER_SHIELD) {
-        if (m_last_turn_active_in_combat >= CurrentTurn())
-            return std::max(0.0f,   // battle just happened. shields limited to max shield, but don't regen
-                            std::min(current_meter_value,
-                                     UniverseObject::GetMeter(METER_MAX_SHIELD)->Current()));
-        else                        // shields regneerate to max shield
-            return UniverseObject::GetMeter(METER_MAX_SHIELD)->Current();
-    }
-
-
-    // ResourceCenter-like resource meter growth...
-
-    MeterType target_meter_type = INVALID_METER_TYPE;
-    switch (type) {
-    case METER_TARGET_INDUSTRY:
-    case METER_TARGET_RESEARCH:
-    case METER_TARGET_TRADE:
-        return current_meter_value;
-        break;
-    case METER_INDUSTRY:    target_meter_type = METER_TARGET_INDUSTRY;      break;
-    case METER_RESEARCH:    target_meter_type = METER_TARGET_RESEARCH;      break;
-    case METER_TRADE:       target_meter_type = METER_TARGET_TRADE;         break;
-    default:
-        return UniverseObject::NextTurnCurrentMeterValue(type);
-    }
-
-    const Meter* target_meter = UniverseObject::GetMeter(target_meter_type);
-    if (!target_meter)
-        throw std::runtime_error("Ship::NextTurnCurrentMeterValue dealing with invalid meter type: " + boost::lexical_cast<std::string>(type));
-    float target_meter_value = target_meter->Current();
-
-    // meter growth or decay towards target is one per turn.
-    if (target_meter_value > current_meter_value)
-        return std::min(current_meter_value + 1.0f, target_meter_value);
-    else if (target_meter_value < current_meter_value)
-        return std::max(target_meter_value, current_meter_value - 1.0f);
-    else
-        return current_meter_value;
-}
+std::shared_ptr<UniverseObject> Ship::Accept(const UniverseObjectVisitor& visitor) const
+{ return visitor.Visit(std::const_pointer_cast<Ship>(std::static_pointer_cast<const Ship>(shared_from_this()))); }
 
 const Meter* Ship::GetPartMeter(MeterType type, const std::string& part_name) const
 { return const_cast<Ship*>(this)->GetPartMeter(type, part_name); }
 
 Meter* Ship::GetPartMeter(MeterType type, const std::string& part_name) {
-    Meter* retval = 0;
-    PartMeterMap::iterator it = m_part_meters.find(std::make_pair(type, part_name));
+    Meter* retval = nullptr;
+    auto it = m_part_meters.find({type, part_name});
     if (it != m_part_meters.end())
         retval = &it->second;
     return retval;
@@ -421,46 +378,162 @@ float Ship::InitialPartMeterValue(MeterType type, const std::string& part_name) 
     return 0.0f;
 }
 
-float Ship::TotalWeaponsDamage(float shield_DR /* = 0.0 */) const {
+float Ship::SumCurrentPartMeterValuesForPartClass(MeterType type, ShipPartClass part_class) const {
+    float retval = 0.0f;
+
+    const ShipDesign* design = GetShipDesign(m_design_id);
+    if (!design)
+        return retval;
+
+    const auto& parts = design->Parts();
+    if (parts.empty())
+        return retval;
+
+    std::map<std::string, int> part_counts;
+    for (const std::string& part : parts)
+        part_counts[part]++;
+
+    for (const auto& part_meter : m_part_meters) {
+        if (part_meter.first.first != type)
+            continue;
+        const std::string& part_name = part_meter.first.second;
+        if (part_counts[part_name] < 1)
+            continue;
+        const PartType* part_type = GetPartType(part_name);
+        if (!part_type)
+            continue;
+        if (part_class == part_type->Class())
+            retval += part_meter.second.Current() * part_counts[part_name];
+    }
+
+    return retval;
+}
+
+float Ship::FighterCount() const {
+    float retval = 0.0f;
+    for (const auto& entry : m_part_meters) {
+        if (entry.first.first != METER_CAPACITY)
+            continue;
+        const PartType* part_type = GetPartType(entry.first.second);
+        if (!part_type || part_type->Class() != PC_FIGHTER_HANGAR)
+            continue;
+        retval += entry.second.Current();
+    }
+
+    return retval;
+}
+
+float Ship::FighterMax() const {
+    float retval = 0.0f;
+    for (const auto& entry : m_part_meters) {
+        //std::map<std::pair<MeterType, std::string>, Meter>
+        if (entry.first.first != METER_MAX_CAPACITY)
+            continue;
+        const PartType* part_type = GetPartType(entry.first.second);
+        if (!part_type || part_type->Class() != PC_FIGHTER_HANGAR)
+            continue;
+        retval += entry.second.Current();
+    }
+
+    return retval;
+}
+
+float Ship::TotalWeaponsDamage(float shield_DR, bool include_fighters) const {
     // sum up all individual weapons' attack strengths
-    float total_attack = 0.0;
-    std::vector<float> all_weapons_damage = AllWeaponsDamage(shield_DR);
-    for (std::vector<float>::iterator it = all_weapons_damage.begin(); it != all_weapons_damage.end(); ++it)
-        total_attack += *it;
+    float total_attack = 0.0f;
+    auto all_weapons_damage = AllWeaponsDamage(shield_DR, include_fighters);
+    for (float attack : all_weapons_damage)
+        total_attack += attack;
     return total_attack;
 }
 
-std::vector<float> Ship::AllWeaponsDamage(float shield_DR /* = 0.0 */) const {
+namespace {
+    std::vector<float> WeaponDamageImpl(const Ship* ship, const ShipDesign* design,
+                                        float DR, bool max, bool include_fighters)
+    {
+        std::vector<float> retval;
+
+        if (!ship || !design)
+            return retval;
+        const std::vector<std::string>& parts = design->Parts();
+        if (parts.empty())
+            return retval;
+
+        MeterType METER = max ? METER_MAX_CAPACITY : METER_CAPACITY;
+        MeterType SECONDARY_METER = max ? METER_MAX_SECONDARY_STAT : METER_SECONDARY_STAT;
+
+        float fighter_damage = 0.0f;
+        int fighter_launch_capacity = 0;
+        int available_fighters = 0;
+
+        // for each weapon part, get its damage meter value
+        for (const std::string& part_name : parts) {
+            const PartType* part = GetPartType(part_name);
+            if (!part)
+                continue;
+            ShipPartClass part_class = part->Class();
+
+            // get the attack power for each weapon part.
+            if (part_class == PC_DIRECT_WEAPON) {
+                float part_attack = ship->CurrentPartMeterValue(METER, part_name);  // used within loop that updates meters, so need current, not initial values
+                float part_shots = ship->CurrentPartMeterValue(SECONDARY_METER, part_name);
+                if (part_attack > DR)
+                    retval.push_back((part_attack - DR)*part_shots);
+
+            } else if (part_class == PC_FIGHTER_BAY && include_fighters) {
+                // launch capacity determined by capacity of bay
+                fighter_launch_capacity += static_cast<int>(ship->CurrentPartMeterValue(METER, part_name));
+
+            } else if (part_class == PC_FIGHTER_HANGAR && include_fighters) {
+                // attack strength of a ship's fighters determined by the hangar...
+                fighter_damage = ship->CurrentPartMeterValue(SECONDARY_METER, part_name);  // assuming all hangars have the same damage...
+                available_fighters = std::max(0, static_cast<int>(ship->CurrentPartMeterValue(METER, part_name)));  // stacked meter
+            }
+        }
+
+        if (!include_fighters || fighter_damage <= 0.0f || available_fighters <= 0 || fighter_launch_capacity <= 0)
+            return retval;
+
+        int fighter_shots = std::min(available_fighters, fighter_launch_capacity);  // how many fighters launched in bout 1
+        available_fighters -= fighter_shots;
+        int launched_fighters = fighter_shots;
+        int num_bouts = GetGameRules().Get<int>("RULE_NUM_COMBAT_ROUNDS");
+        int remaining_bouts = num_bouts - 2;  // no attack for first round, second round already added
+        while (remaining_bouts > 0) {
+            int fighters_launched_this_bout = std::min(available_fighters, fighter_launch_capacity);
+            available_fighters -= fighters_launched_this_bout;
+            launched_fighters += fighters_launched_this_bout;
+            fighter_shots += launched_fighters;
+            --remaining_bouts;
+        }
+
+        // how much damage does a fighter shot do?
+        fighter_damage = std::max(0.0f, fighter_damage);
+
+        retval.push_back(fighter_damage * fighter_shots / num_bouts);    // divide by bouts because fighter calculation is for a full combat, but direct firefor one attack
+
+        return retval;
+    }
+}
+
+std::vector<float> Ship::AllWeaponsDamage(float shield_DR, bool include_fighters) const {
     std::vector<float> retval;
 
     const ShipDesign* design = GetShipDesign(m_design_id);
     if (!design)
         return retval;
-    const std::vector<std::string>& parts = design->Parts();
 
-    // for each weapon part, get its damage meter value
-    for (std::vector<std::string>::const_iterator part_it = parts.begin();
-         part_it != parts.end(); ++part_it)
-    {
-        const std::string& part_name = *part_it;
-        const PartType* part = GetPartType(part_name);
-        if (!part)
-            continue;
-        ShipPartClass part_class = part->Class();
+    return WeaponDamageImpl(this, design, shield_DR, false, include_fighters);
+}
 
-        // get the attack power for each weapon part
-        float part_attack = 0.0;
+std::vector<float> Ship::AllWeaponsMaxDamage(float shield_DR , bool include_fighters) const {
+    std::vector<float> retval;
 
-        if (part_class == PC_SHORT_RANGE    || part_class == PC_POINT_DEFENSE ||
-            part_class == PC_MISSILES       || part_class == PC_FIGHTERS)
-        {
-            part_attack = this->CurrentPartMeterValue(METER_CAPACITY, part_name);
-        }
+    const ShipDesign* design = GetShipDesign(m_design_id);
+    if (!design)
+        return retval;
 
-        if (part_attack > shield_DR)
-            retval.push_back(part_attack-shield_DR);
-    }
-    return retval;
+    return WeaponDamageImpl(this, design, shield_DR, true, include_fighters);
 }
 
 void Ship::SetFleetID(int fleet_id) {
@@ -470,15 +543,57 @@ void Ship::SetFleetID(int fleet_id) {
     }
 }
 
+void Ship::SetArrivedOnTurn(int turn) {
+    if (m_arrived_on_turn != turn) {
+        m_arrived_on_turn = turn;
+        StateChangedSignal();
+    }
+}
+
+void Ship::BackPropagateMeters() {
+    UniverseObject::BackPropagateMeters();
+
+    // ship part meter back propagation, since base class function doesn't do this...
+    for (auto& entry : m_part_meters)
+        entry.second.BackPropagate();
+}
+
 void Ship::Resupply() {
+    m_last_resupplied_on_turn = CurrentTurn();
+
     Meter* fuel_meter = UniverseObject::GetMeter(METER_FUEL);
     const Meter* max_fuel_meter = UniverseObject::GetMeter(METER_MAX_FUEL);
     if (!fuel_meter || !max_fuel_meter) {
         ErrorLogger() << "Ship::Resupply couldn't get fuel meters!";
-        return;
+    } else {
+        fuel_meter->SetCurrent(max_fuel_meter->Current());
+        fuel_meter->BackPropagate();
     }
 
-    fuel_meter->SetCurrent(max_fuel_meter->Current());
+    // set all part capacities equal to any associated max capacity
+    // this "upgrades" any direct-fire weapon parts to their latest-allowed
+    // strengths, and replaces any lost fighters
+    for (auto& entry : m_part_meters) {
+        const auto& part_name = entry.first.second;
+        MeterType meter_type = entry.first.first;
+        MeterType paired_meter_type = INVALID_METER_TYPE;
+        switch(meter_type) {
+        case METER_CAPACITY:        paired_meter_type = METER_MAX_CAPACITY;         break;
+        case METER_SECONDARY_STAT:  paired_meter_type = METER_MAX_SECONDARY_STAT;   break;
+        default:
+            break;
+        }
+        if (paired_meter_type == INVALID_METER_TYPE)
+            continue;
+        auto max_it = m_part_meters.find({paired_meter_type, part_name});
+        if (max_it == m_part_meters.end())
+            continue;
+
+        const Meter& max_meter = max_it->second;
+
+        entry.second.SetCurrent(max_meter.Current());
+        entry.second.BackPropagate();
+    }
 }
 
 void Ship::SetSpecies(const std::string& species_name) {
@@ -532,21 +647,80 @@ void Ship::ResetTargetMaxUnpairedMeters() {
 
     UniverseObject::GetMeter(METER_DETECTION)->ResetCurrent();
     UniverseObject::GetMeter(METER_SPEED)->ResetCurrent();
-    UniverseObject::GetMeter(METER_SPEED)->ResetCurrent();
+    //UniverseObject::GetMeter(METER_STEALTH)->ResetCurrent(); redundant with base class function
 
-    for (PartMeterMap::iterator it = m_part_meters.begin(); it != m_part_meters.end(); ++it)
-    { it->second.ResetCurrent(); }
+    // max meters are always treated as target/max meters.
+    // other meters may be unpaired if there is no associated max or target meter
+    for (auto& entry : m_part_meters) {
+        const auto& part_name = entry.first.second;
+        MeterType meter_type = entry.first.first;
+        MeterType paired_meter_type = INVALID_METER_TYPE;
+
+        switch(meter_type) {
+        case METER_MAX_CAPACITY:
+        case METER_MAX_SECONDARY_STAT:
+            entry.second.ResetCurrent();
+            continue;
+            break;
+        case METER_CAPACITY:        paired_meter_type = METER_MAX_CAPACITY;         break;
+        case METER_SECONDARY_STAT:  paired_meter_type = METER_MAX_SECONDARY_STAT;   break;
+        default:
+            continue;
+            break;
+        }
+
+        auto max_it = m_part_meters.find({paired_meter_type, part_name});
+        if (max_it != m_part_meters.end())
+            continue;   // is a max/target meter associated with the meter, so don't treat this a target/max
+
+        // no associated target/max meter, so treat this meter as unpaired
+        entry.second.ResetCurrent();
+    }
 }
 
-void Ship::PopGrowthProductionResearchPhase() {
-    UniverseObject::PopGrowthProductionResearchPhase();
+void Ship::ResetPairedActiveMeters() {
+    UniverseObject::ResetPairedActiveMeters();
 
-    UniverseObject::GetMeter(METER_SHIELD)->SetCurrent(Ship::NextTurnCurrentMeterValue(METER_SHIELD));
-    UniverseObject::GetMeter(METER_INDUSTRY)->SetCurrent(Ship::NextTurnCurrentMeterValue(METER_INDUSTRY));
-    UniverseObject::GetMeter(METER_RESEARCH)->SetCurrent(Ship::NextTurnCurrentMeterValue(METER_RESEARCH));
-    UniverseObject::GetMeter(METER_TRADE)->SetCurrent(Ship::NextTurnCurrentMeterValue(METER_TRADE));
+    // meters are paired only if they are not max/target meters, and there is an
+    // associated max/target meter
+    for (auto& entry : m_part_meters) {
+        const auto& part_name = entry.first.second;
+        MeterType meter_type = entry.first.first;
+        MeterType paired_meter_type = INVALID_METER_TYPE;
 
-    StateChangedSignal();
+        switch(meter_type) {
+        case METER_MAX_CAPACITY:
+        case METER_MAX_SECONDARY_STAT:
+            continue;   // is a max/target meter
+            break;
+        case METER_CAPACITY:        paired_meter_type = METER_MAX_CAPACITY;         break;
+        case METER_SECONDARY_STAT:  paired_meter_type = METER_MAX_SECONDARY_STAT;   break;
+        default:
+            continue;   // no associated max/target meter
+            break;
+        }
+
+        auto max_it = m_part_meters.find({paired_meter_type, part_name});
+        if (max_it == m_part_meters.end())
+            continue;   // no associated max/target meter
+
+        // has an associated max/target meter.
+        //std::map<std::pair<MeterType, std::string>, Meter>::iterator
+        entry.second.SetCurrent(entry.second.Initial());
+    }
+}
+
+void Ship::SetShipMetersToMax() {
+    UniverseObject::GetMeter(METER_MAX_FUEL)->SetCurrent(Meter::LARGE_VALUE);
+    UniverseObject::GetMeter(METER_MAX_SHIELD)->SetCurrent(Meter::LARGE_VALUE);
+    UniverseObject::GetMeter(METER_MAX_STRUCTURE)->SetCurrent(Meter::LARGE_VALUE);
+    UniverseObject::GetMeter(METER_FUEL)->SetCurrent(Meter::LARGE_VALUE);
+    UniverseObject::GetMeter(METER_SHIELD)->SetCurrent(Meter::LARGE_VALUE);
+    UniverseObject::GetMeter(METER_STRUCTURE)->SetCurrent(Meter::LARGE_VALUE);
+
+    // some part capacity meters may have an associated max capacity...
+    for (auto& entry : m_part_meters)
+        entry.second.SetCurrent(Meter::LARGE_VALUE);
 }
 
 void Ship::ClampMeters() {
@@ -567,28 +741,51 @@ void Ship::ClampMeters() {
 
     UniverseObject::GetMeter(METER_DETECTION)->ClampCurrentToRange();
     UniverseObject::GetMeter(METER_SPEED)->ClampCurrentToRange();
-    UniverseObject::GetMeter(METER_SPEED)->ClampCurrentToRange();
 
-    for (PartMeterMap::iterator it = m_part_meters.begin(); it != m_part_meters.end(); ++it)
-        it->second.ClampCurrentToRange();
+    // clamp most part meters to basic range limits
+    for (auto& entry : m_part_meters) {
+        MeterType meter_type = entry.first.first;
+        switch(meter_type) {
+        case METER_MAX_CAPACITY:
+        case METER_MAX_SECONDARY_STAT:
+            entry.second.ClampCurrentToRange();
+        default:
+            break;
+        }
+    }
+
+    // special case extra clamping for paired active meters dependent
+    // on their associated max meter...
+    for (auto& entry : m_part_meters) {
+        const auto& part_name = entry.first.second;
+        MeterType meter_type = entry.first.first;
+        MeterType paired_meter_type = INVALID_METER_TYPE;
+        switch(meter_type) {
+        case METER_CAPACITY:        paired_meter_type = METER_MAX_CAPACITY;         break;
+        case METER_SECONDARY_STAT:  paired_meter_type = METER_MAX_SECONDARY_STAT;   break;
+        default:
+            break;
+        }
+        if (paired_meter_type == INVALID_METER_TYPE)
+            continue;
+        auto max_it = m_part_meters.find({paired_meter_type, part_name});
+        if (max_it == m_part_meters.end())
+            continue;
+
+        const Meter& max_meter = max_it->second;
+        entry.second.ClampCurrentToRange(Meter::DEFAULT_VALUE, max_meter.Current());
+    }
 }
 
 ////////////////////
 // Free Functions //
 ////////////////////
 std::string NewMonsterName() {
-    static std::vector<std::string> monster_names;
+    static std::vector<std::string> monster_names = UserStringList("MONSTER_NAMES");
     static std::map<std::string, int> monster_names_used;
-    if (monster_names.empty()) {
-        // load monster names from stringtable
-        std::list<std::string> monster_names_list;
-        UserStringList("MONSTER_NAMES", monster_names_list);
 
-        monster_names.reserve(monster_names_list.size());
-        std::copy(monster_names_list.begin(), monster_names_list.end(), std::back_inserter(monster_names));
-        if (monster_names.empty()) // safety check to ensure not leaving list empty in case of stringtable failure
-            monster_names.push_back(UserString("MONSTER"));
-    }
+    if (monster_names.empty())
+        monster_names.push_back(UserString("MONSTER"));
 
     // select name randomly from list
     int monster_name_index = RandSmallInt(0, static_cast<int>(monster_names.size()) - 1);

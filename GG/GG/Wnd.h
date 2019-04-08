@@ -33,8 +33,12 @@
 #include <GG/Exception.h>
 #include <GG/Flags.h>
 
+#include <boost/signals2/trackable.hpp>
+
 #include <list>
 #include <set>
+#include <vector>
+#include <memory>
 
 
 namespace GG {
@@ -114,6 +118,15 @@ extern GG_API const WndFlag NO_WND_FLAGS;
     undesirable, and control is needed over the order in which children are
     layered, MoveChildUp() and MoveChildDown() provide such control.
 
+    <br>Windows are owned by the GUI, as top level or modal windows, owned by
+    their parent windows as children, or during a drag drop operation jointly
+    owned by the GUI and the originating/accepting window.  Changes of ownership
+    are indicated by passing a shared_ptr.  Other objects should use weak_ptr to
+    refer to windows that they do not wish to preserve beyond its natural demise.
+    This avoids "leaking" a window by storing a shared_ptr to a window that is
+    no longer part of the hierarchy.  This would prevent a window from being
+    removed from memory, event processing, etc.
+
     <h3>Effects of Window-Creation Flags</h3>
 
     <br>Resizable() windows are able to be stretched by the user by dragging
@@ -142,6 +155,23 @@ extern GG_API const WndFlag NO_WND_FLAGS;
 
     <br>Note that OnTop() and Modal() flags only apply to top-level
     (Parent()-less) Wnds.
+
+    <h3>Resource Management</h3>
+    Wnd uses std::shared_ptr and std::weak_ptr to manage its resources.
+
+    Parent windows point to their children with shared_ptr and own the children.
+    All other pointers should be non-owning weak_ptr to prevent leaks and/or
+    referencing windows already removed from the hierarchy.
+
+    Each window uses shared_from_this() to refer to itself.  The internal
+    weak_ptr from shared_from_this is not constructed until after the Wnd is
+    assigned to at least one shared_ptr.  Consequently, neither AttachChild()
+    nor SetLayout() can be called from within a constructor.
+
+    A default factory function Create<T> is provided that creates the shared_ptr
+    and then calls CompleteConstruction() in order to assemble the children.  A
+    dervied class can override CompleteConstruction() to correctly assemble its
+    children.
 
     <h3>Signal Considerations</h3>
 
@@ -194,6 +224,37 @@ extern GG_API const WndFlag NO_WND_FLAGS;
     current.  Note the use of the phrase "client-area children".  This refers
     to children entirely within the client area of the window.
 
+    <h3>Frame Timing</h3>
+
+    <br>Each frame is a cycle culminating in rendering the screen.  The
+    following things happen, in order:
+      + events from the GUI and the data sources are handled
+      + PreRender() is called to update layout if required.
+      + Render() is called.
+
+    Wnd does not distinguish between events from the GUI and events from the
+    data sources.
+
+    PreRender() and Render() are only called if the window is visible.
+
+    PreRender() defers all layout changes until after all events have been
+    handled.  This improves performance by preventing event handling causing
+    multiple layout actions between calls to Render().  PreRender() allows Wnd
+    to perform any required expensive updates only once per frame.
+
+    PreRender() prevents bugs caused by early events in a frame changing the
+    layout so that later events trigger on a layout different from the layout
+    visible to the player.  This is a change from the original GG behavior.
+    Core parts of GG will continue to immediately update layout until
+    peripheral parts are updated to expect deferred updates.
+
+    The default implementation of PreRender() only clears the flag set by RequirePreRender().
+    For a class to defer its layout to the prerender phase it needs to override PreRender() and
+    implement its layout changes in PreRender().
+
+    Legacy GG did not have a prerender phase and all layout changes were immediate.  Any Wnd class
+    that does not override PreRender() will update layout immediately when executing mutating functions.
+
     <h3>Browse Info</h3>
 
     <br>Browse info is a non-interactive informational window that pops up
@@ -224,7 +285,8 @@ extern GG_API const WndFlag NO_WND_FLAGS;
     complete customization, each Wnd may have one installed as well.  The
     GetStyleFactory() method returns the one installed in the Wnd, if one
     exists, or the GUI-wide one otherwise. */
-class GG_API Wnd : public boost::signals2::trackable
+class GG_API Wnd : public boost::signals2::trackable,
+                   public std::enable_shared_from_this<Wnd>
 {
 public:
     /** \brief The data necessary to represent a browse info mode.
@@ -240,10 +302,10 @@ public:
 
         /** The BrowseInfoWnd used to display the browse info for this
             mode. */
-        boost::shared_ptr<BrowseInfoWnd> wnd;
+        std::shared_ptr<BrowseInfoWnd> wnd;
 
         /** The text to display in the BrowseInfoWnd shown for this mode. */
-        std::string                      text;
+        std::string text;
     };
 
     /** The type of the iterator parameters passed to DropsAcceptable(). */
@@ -272,8 +334,41 @@ public:
     };
 
     /** \name Structors */ ///@{
-    virtual ~Wnd(); ///< Virtual dtor.
+    virtual ~Wnd();
     //@}
+
+    /** Create is the default factory which allocates and configures a T type
+        derived from Wnd.  It requires that the T constructor followed by
+        T->CompleteConstruction() produce a correct T. */
+    template <typename T, typename... Args>
+    static std::shared_ptr<T> Create(Args&&... args)
+    {
+        // This intentionally doesn't use std::make_shared in order to make lazy cleanup of
+        // weak_ptrs a low priority.
+
+        // std::make_shared<T> might depending on
+        // the stdlib implementation allocate a single block of memory for the
+        // shared_ptr control block and T.  This is efficient in terms of
+        // number of memory allocations.  However, after the shared_ptr count
+        // decreases to zero any existing weak_ptrs will still prevent the
+        // block of memory from being released.
+
+        // std::shared_ptr<T>(new T()) allocates the memory for T and the
+        // shared_ptr control block in two separate allocations.  When the
+        // shared_ptr count decreases to zero the memory allocated for T is
+        // immediately released.
+
+        // Allocating shared_ptr in this manner means any floating weak_ptrs
+        // will not prevent more that a smart pointer control block worth of
+        // memory from being released.
+        std::shared_ptr<T> wnd(new T(std::forward<Args>(args)...));
+        wnd->CompleteConstruction();
+        return wnd;
+    }
+
+    /** CompleteConstruction() should be overriden to complete construction of derived classes that
+        need a fully formed weak_from_this() (e.g. to call AttachChild()) to be correctly constructed. */
+    virtual void CompleteConstruction() {};
 
     /** \name Accessors */ ///@{
     /** Returns true iff a click over this window does not pass through.  Note
@@ -311,21 +406,17 @@ public:
     /** Returns true iff this Wnd will be rendered if it is registered. */
     bool Visible() const;
 
+    /** Returns true if this Wnd will be pre-rendered. */
+    bool PreRenderRequired() const;
+
     /** Returns the name of this Wnd.  This name is not used by GG in any way;
         it only exists for user convenience. */
-     const std::string& Name() const;
+    const std::string& Name() const;
 
     /** Returns the string key that defines the type of data that this Wnd
         represents in drag-and-drop drags.  Returns an empty string when this
         Wnd cannot be drag-and-dropped. */
     const std::string& DragDropDataType() const;
-
-    /** Sets the \a second member of each iterator to true or false,
-        indicating whether the Wnd in the \a first member would be accepted if
-        dropped on this Wnd at \a pt. */
-    virtual void DropsAcceptable(DropsAcceptableIter first,
-                                 DropsAcceptableIter last,
-                                 const Pt& pt) const;
 
     /** Returns the upper-left corner of window in \a screen \a coordinates
         (taking into account parent's screen position, if any) */
@@ -351,10 +442,6 @@ public:
 
     X Width() const;  ///< Returns width of window.
     Y Height() const; ///< Returns height of window.
-
-    /** Returns the position of this window in the z-order (root (non-child)
-        windows only). */
-    int ZOrder() const;
 
     /** Returns a \a Pt packed with width in \a x and height in \a y. */
     Pt Size() const;
@@ -404,16 +491,16 @@ public:
 
     /** Returns child list; the list is const, but the children may be
         manipulated. */
-    const std::list<Wnd*>& Children() const;
+    const std::list<std::shared_ptr<Wnd>>& Children() const;
 
     /** Returns the window's parent (may be null). */
-    Wnd* Parent() const;
+    std::shared_ptr<Wnd> Parent() const;
 
     /** Returns the earliest ancestor window (may be null). */
-    Wnd* RootParent() const;
+    std::shared_ptr<Wnd> RootParent() const;
 
     /** Returns the layout for the window, if any. */
-    Layout* GetLayout() const;
+    std::shared_ptr<Layout> GetLayout() const;
 
     /** Returns the layout containing the window, if any. */
     Layout* ContainingLayout() const;
@@ -425,7 +512,7 @@ public:
         corresponding Wnd is shown superimposed over this Wnd and its
         children.  Set the first time cutoff to 0 for immediate browse info
         display. */
-    const std::vector<BrowseInfoMode>&  BrowseModes() const;
+    const std::vector<BrowseInfoMode>& BrowseModes() const;
 
     /** Returns the text to display for browse info mode \a mode.  \throw
         std::out_of_range May throw std::out_of_range if \a mode is not a
@@ -434,10 +521,13 @@ public:
 
     /** Returns the currently-installed style factory if none exists, or the
         GUI-wide one otherwise. */
-    const boost::shared_ptr<StyleFactory>& GetStyleFactory() const;
+    const std::shared_ptr<StyleFactory>& GetStyleFactory() const;
 
     /** Returns the region under point \a pt. */
     virtual WndRegion WindowRegion(const Pt& pt) const;
+
+    /** Adjusts \p ul and \p lr to correct for minsize and maxsize.*/
+    void ClampRectWithMinAndMaxSize(Pt& ul, Pt& lr) const;
     //@}
 
     /** \name Mutators */ ///@{
@@ -453,11 +543,15 @@ public:
         UpperLeft(). */
     virtual void StartingChildDragDrop(const Wnd* wnd, const Pt& offset);
 
-    /** When the user drops Wnds onto this Wnd, DropsAcceptable() is passed
-        the list of dropped Wnds.  The Wnds marked acceptable by
-        DropsAcceptable() are then passed to AcceptDrops(), which handles the
-        receipt of one or more drag-and-drop wnds into this Wnd. */
-    virtual void AcceptDrops(const std::vector<Wnd*>& wnds, const Pt& pt);
+    /** When the user drops Wnds onto this Wnd, a DragDropHere event is
+        generated, which determines which of the dropped Wnds are acceptable
+        by the dropped-on Wnd by calling DropsAcceptable. The acceptable Wnds
+        are then passed to AcceptDrops(), which handles the receipt of one or
+        more drag-and-drop wnds into this Wnd.
+
+        The shared_ptrs are passed by value to allow the compiler to move rvalues.
+    */
+    virtual void AcceptDrops(const Pt& pt, std::vector<std::shared_ptr<Wnd>> wnds, Flags<ModKey> mod_keys);
 
     /** Handles the cancellation of the dragging of one or more child windows,
         whose dragging was established by the most recent call to
@@ -471,14 +565,12 @@ public:
 
     /** Handles the removal of one or more child windows that have been
         dropped onto another window which has accepted them as drops via
-        DropsAcceptable().  The accepting window retains ownership, so this
-        function must not delete the children.  \note
+        DropsAcceptable().  The accepting window retains ownership.  \note
         CancellingChildDragDrop() and ChildrenDraggedAway() are always called
         in that order, and are always called at the end of any drag-and-drop
         sequence performed on a child of this Wnd, whether the drag-and-drop
         is successful or not. */
-    virtual void ChildrenDraggedAway(const std::vector<Wnd*>& wnds,
-                                     const Wnd* destination);
+    virtual void ChildrenDraggedAway(const std::vector<Wnd*>& wnds, const Wnd* destination);
 
     /** Sets a name for this Wnd.  This name is not used by GG in any way; it
         only exists for user convenience. */
@@ -486,11 +578,11 @@ public:
 
     /** Suppresses rendering of this window (and possibly its children) during
         render loop. */
-    virtual void Hide(bool children = true);
+    virtual void Hide();
 
     /** Enables rendering of this window (and possibly its children) during
         render loop. */
-    virtual void Show(bool children = true);
+    virtual void Show();
 
     /** Called during Run(), after a modal window is registered, this is the
         place that subclasses should put specialized modal window
@@ -515,41 +607,45 @@ public:
     void Resize(const Pt& sz);
 
     /** Sets the minimum allowable size of window \a pt. */
-    void SetMinSize(const Pt& sz);
+    virtual void SetMinSize(const Pt& sz);
 
     /** Sets the maximum allowable size of window \a pt. */
-    void SetMaxSize(const Pt& sz);
+    virtual void SetMaxSize(const Pt& sz);
 
     /** Places \a wnd in child ptr list, sets's child's \a m_parent member to
-        \a this. */
-    void AttachChild(Wnd* wnd);
+        \a this. This takes ownership of \p wnd. */
+    void AttachChild(std::shared_ptr<Wnd> wnd);
 
     /** Places \a wnd at the end of the child ptr list, so it is rendered last
         (on top of the other children). */
     void MoveChildUp(Wnd* wnd);
+    void MoveChildUp(const std::shared_ptr<Wnd>& wnd);
 
     /** Places \a wnd at the beginning of the child ptr list, so it is
         rendered first (below the other children). */
     void MoveChildDown(Wnd* wnd);
+    void MoveChildDown(const std::shared_ptr<Wnd>& wnd);
 
-    /** Removes \a wnd from child ptr list, sets child's m_parent = 0. */
+    /** Removes \a wnd from the child ptr list and resets child's m_parent. */
     void DetachChild(Wnd* wnd);
+    void DetachChild(const std::shared_ptr<Wnd>& wnd);
 
-    /** Removes all Wnds from child ptr list, sets childrens' m_parent = 0. */
+    /** Remove \p wnd from the child ptr list and reset \p wnd. */
+    template <typename T>
+    void DetachChildAndReset(T& wnd)
+    {
+        DetachChild(wnd);
+        wnd.reset();
+    }
+
+    /** Removes all Wnds from child ptr list and resets all childrens' m_parents. */
     void DetachChildren();
 
-    /** Removes, detaches, and deletes \a wnd; does nothing if wnd is not in
-        the child list. */
-    void DeleteChild(Wnd* wnd);
-
-    /** Removes, detaches, and deletes all Wnds in the child list. */
-    void DeleteChildren();
-
     /** Adds \a wnd to the front of the event filtering chain. */
-    void InstallEventFilter(Wnd* wnd);
+    void InstallEventFilter(const std::shared_ptr<Wnd>& wnd);
 
     /** Removes \a wnd from the filter chain. */
-    void RemoveEventFilter(Wnd* wnd);
+    void RemoveEventFilter(const std::shared_ptr<Wnd>& wnd);
 
     /** Places the window's client-area children in a horizontal layout,
         handing ownership of the window's client-area children over to the
@@ -568,7 +664,7 @@ public:
 
     /** Sets \a layout as the layout for the window.  Removes any current
         layout which may exist, and deletes all client-area child windows. */
-    void SetLayout(Layout* layout);
+    void SetLayout(const std::shared_ptr<Layout>& layout);
 
     /** Removes the window's layout, handing ownership of all its children
         back to the window, with the sizes and positions they had before the
@@ -579,7 +675,7 @@ public:
     /** Removes the window's layout, including all attached children, and
         returns it.  If no layout exists for the window, no action is
         taken. */
-    Layout* DetachLayout();
+    std::shared_ptr<Layout> DetachLayout();
 
     /** Sets the margin that should exist between the outer edges of the
         windows in the layout and the edge of the client area.  If no layout
@@ -589,6 +685,21 @@ public:
     /** Sets the margin that should exist between the windows in the layout.
         If no layout exists for the window, this has no effect. */
     void SetLayoutCellMargin(unsigned int margin);
+
+    /** Update Wnd prior to Render().
+
+        PreRender() is called before Render() if RequirePreRender() was called.
+        The default PreRender() resets the flag from RequirePreRender().
+        Wnd::PreRender() should be called in any overrides to reset
+        RequirePreRender().
+
+        In the GUI processing loop the PreRender() of child windows whose
+        RequirePreRender() flag is set will have been called before their
+        parent PreRender(). */
+    virtual void PreRender();
+
+    /** Require that PreRender() be called to update layout before the next Render(). */
+    virtual void RequirePreRender();
 
     /** Draws this Wnd.  Note that Wnds being dragged for a drag-and-drop
         operation are rendered twice -- once in-place as normal, once in the
@@ -604,7 +715,7 @@ public:
     virtual bool Run();
 
     /** Ends the current execution of Run(), if any. */
-    void EndRun();
+    virtual void EndRun();
 
     /** Sets the time cutoff (in milliseconds) for a browse info mode.  If \a
         mode is not less than the current number of modes, extra modes will be
@@ -616,7 +727,7 @@ public:
     /** Sets the Wnd that is used to show browse info about this Wnd in the
         browse info mode \a mode.  \throw std::out_of_range May throw
         std::out_of_range if \a mode is not a valid browse mode. */
-    void SetBrowseInfoWnd(const boost::shared_ptr<BrowseInfoWnd>& wnd, std::size_t mode = 0);
+    void SetBrowseInfoWnd(const std::shared_ptr<BrowseInfoWnd>& wnd, std::size_t mode = 0);
 
     /** Removes the Wnd that is used to show browse info about this Wnd in the
         browse info mode \a mode (but does nothing to the mode itself).
@@ -640,7 +751,7 @@ public:
     void SetBrowseModes(const std::vector<BrowseInfoMode>& modes);
 
     /** Sets the currently-installed style factory. */
-    void SetStyleFactory(const boost::shared_ptr<StyleFactory>& factory);
+    void SetStyleFactory(const std::shared_ptr<StyleFactory>& factory);
     //@}
 
 
@@ -655,11 +766,11 @@ public:
     /** Returns the single BrowseInfoWnd to place in the browse modes during
         Wnd construction.  This returns a TextBoxBrowseInfoWnd with a default
         parameterization. */
-    static const boost::shared_ptr<BrowseInfoWnd>& DefaultBrowseInfoWnd();
+    static const std::shared_ptr<BrowseInfoWnd>& DefaultBrowseInfoWnd();
 
     /** Sets the single BrowseInfoWnd to place in the browse modes during Wnd
         construction. */
-    static void SetDefaultBrowseInfoWnd(const boost::shared_ptr<BrowseInfoWnd>& browse_info_wnd);
+    static void SetDefaultBrowseInfoWnd(const std::shared_ptr<BrowseInfoWnd>& browse_info_wnd);
 
     /** \name Exceptions */ ///@{
     /** The base class for Wnd exceptions. */
@@ -672,6 +783,12 @@ public:
     //@}
 
 protected:
+    /** Sets the \a second member of each iterator to true or false,
+        indicating whether the Wnd in the \a first member would be accepted if
+        dropped on this Wnd at \a pt. */
+    virtual void DropsAcceptable(DropsAcceptableIter first, DropsAcceptableIter last,
+                                 const Pt& pt, Flags<ModKey> mod_keys) const;
+
     /** The states a Wnd may be in, with respect to drag-and-drop operations.
         Wnds may wish to consider the current state when rendering to provide
         visual feedback to the user. */
@@ -693,7 +810,7 @@ protected:
     };
 
     /** \name Structors */ ///@{
-    Wnd(); ///< Default ctor.
+    Wnd();
 
     /** Ctor that allows a size and position to be specified, as well as
         creation flags. */
@@ -799,19 +916,26 @@ protected:
     virtual void MouseWheel(const Pt& pt, int move, Flags<ModKey> mod_keys);
 
     /** Respond to the cursor entering the Wnd's coords while dragging
-        drag-and-drop Wnds.  The Pts in \a drag_drop_wnds are the Wnds'
-        offsets from \a pt. */
-    virtual void DragDropEnter(const Pt& pt, const std::map<Wnd*, Pt>& drag_drop_wnds,
+        drag-and-drop Wnds.  \a drop_wnds_acceptable will have the bools
+        set to true or valse to indicate whether this Wnd can accept the
+        dragged wnds as a drop. */
+    virtual void DragDropEnter(const Pt& pt, std::map<const Wnd*, bool>& drop_wnds_acceptable,
                                Flags<ModKey> mod_keys);
 
     /** Respond to cursor moving about within the Wnd, or to cursor lingering
         within the Wnd for a long period of time, while dragging drag-and-drop
         Wnds.  A DragDropHere() message will not be generated the first time
         the cursor enters the window's area.  In that case, a DragDropEnter()
-        message is generated The Pts in \a drag_drop_wnds are the Wnds'
-        offsets from \a pt. */
-    virtual void DragDropHere(const Pt& pt, const std::map<Wnd*, Pt>& drag_drop_wnds,
+        message is generated.  \a drop_wnds_acceptable will have the bools
+        set to true or valse to indicate whether this Wnd can accept the
+        dragged wnds as a drop. */
+    virtual void DragDropHere(const Pt& pt, std::map<const Wnd*, bool>& drop_wnds_acceptable,
                               Flags<ModKey> mod_keys);
+
+    /** Polls this Wnd about whether the Wnds in \a drop_wnds_acceptable will
+        be accpeted by this Wnd by calling DropsAcceptable(...) */
+    virtual void CheckDrops(const Pt& pt, std::map<const Wnd*, bool>& drop_wnds_acceptable,
+                            Flags<ModKey> mod_keys);
 
     /** Respond to cursor leaving the Wnd's bounds while dragging
         drag-and-drop Wnds. */
@@ -825,14 +949,14 @@ protected:
         KeyPress(), not KeyRelease(); in fact, by default no Wnd class does
         anything at all on a KeyRelease event.  \note \a key_code_point will
         be zero if Unicode support is unavailable. */
-    virtual void KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
+    virtual void KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys);
 
     /** Respond to up-keystrokes (focus window only).  A window may receive
         KeyRelease() messages passed up to it from its children.  For
         instance, Control-derived classes pass KeyRelease() messages to their
         Parent() windows by default.  \note \a key_code_point will be zero if
         Unicode support is unavailable. */
-    virtual void KeyRelease(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
+    virtual void KeyRelease(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys);
 
     /** Respond to text input regardless of the method. Focus window only.
         A window may receive TextInput() messages passed up to it from its
@@ -877,10 +1001,12 @@ protected:
         called.  \note This function is only useful when
         GetChildClippingMode() is ClipToClientAndWindowSeparately. */
     void EndNonclientClipping();
+
+    virtual void SetParent(const std::shared_ptr<Wnd>& wnd);
     //@}
 
     /** Modal Wnd's set this to true to stop modal loop. */
-    bool m_done;
+    bool m_done = false;
 
 private:
     void ValidateFlags();              ///< Sanity-checks the window creation flags
@@ -889,36 +1015,39 @@ private:
     virtual void BeginNonclientClippingImpl();
     virtual void EndNonclientClippingImpl();
 
+    /** Code common to DetachChild and DetachChildren. */
+    void DetachChildCore(Wnd* wnd);
 
-    Wnd*              m_parent;        ///< Ptr to this window's parent; may be 0
-    std::string       m_name;          ///< A user-significant name for this Wnd
-    std::list<Wnd*>   m_children;      ///< List of ptrs to child windows kept in order of decreasing area
-    int               m_zorder;        ///< Where this window is in the z-order (root (non-child) windows only)
-    bool              m_visible;
-    std::string       m_drag_drop_data_type; ///< The type of drag-and-drop data this Wnd represents, if any. If empty/blank, indicates that this Wnd cannot be drag-dropped.
-    ChildClippingMode m_child_clipping_mode;
-    bool              m_non_client_child;
-    Pt                m_upperleft;     ///< Upper left point of window
-    Pt                m_lowerright;    ///< Lower right point of window
-    Pt                m_min_size;      ///< Minimum window size Pt(0, 0) (= none) by default
-    Pt                m_max_size;      ///< Maximum window size Pt(1 << 30, 1 << 30) (= none) by default
+    /// m_parent may be expired or null if there is no parent.  m_parent will reset itself if expired.
+    mutable std::weak_ptr<Wnd>      m_parent;
+    std::string                     m_name = "";                ///< A user-significant name for this Wnd
+    std::list<std::shared_ptr<Wnd>> m_children;                 ///< List of ptrs to child windows kept in order of decreasing area
+    bool                            m_visible = true;
+    bool                            m_needs_prerender = false;  ///< Indicates if Wnd needs a PreRender();
+    std::string                     m_drag_drop_data_type = ""; ///< The type of drag-and-drop data this Wnd represents, if any. If empty/blank, indicates that this Wnd cannot be drag-dropped.
+    ChildClippingMode               m_child_clipping_mode;
+    bool                            m_non_client_child = false;
+    Pt                              m_upperleft;                ///< Upper left point of window
+    Pt                              m_lowerright;               ///< Lower right point of window
+    Pt                              m_min_size;                 ///< Minimum window size Pt(0, 0) (= none) by default
+    Pt                              m_max_size;                 ///< Maximum window size Pt(1 << 30, 1 << 30) (= none) by default
 
     /** The Wnds that are filtering this Wnd's events. These are in reverse
         order: top of the stack is back(). */
-    std::vector<Wnd*> m_filters;
+    std::vector<std::weak_ptr<Wnd>> m_filters;
 
-    std::set<Wnd*>    m_filtering;         ///< The Wnds in whose filter chains this Wnd lies
-    Layout*           m_layout;            ///< The layout for this Wnd, if any
-    Layout*           m_containing_layout; ///< The layout that contains this Wnd, if any
-    std::vector<BrowseInfoMode>
-                      m_browse_modes;      ///< The browse info modes for this window
+    std::set<std::weak_ptr<Wnd>, std::owner_less<std::weak_ptr<Wnd>>>
+                                    m_filtering;                ///< The Wnds in whose filter chains this Wnd lies
+    mutable std::weak_ptr<Layout>   m_layout;                   ///< The layout for this Wnd, if any
+    mutable std::weak_ptr<Layout>   m_containing_layout;        ///< The layout that contains this Wnd, if any
+    std::vector<BrowseInfoMode>     m_browse_modes;             ///< The browse info modes for this window
 
-    boost::shared_ptr<StyleFactory>
-                      m_style_factory;     ///< The style factory to use when creating dialogs or child controls
+    /** The style factory to use when creating dialogs or child controls. */
+    std::shared_ptr<StyleFactory>   m_style_factory;
 
     /** Flags supplied at window creation for clickability, dragability,
         resizability, etc. */
-    Flags<WndFlag> m_flags;
+    Flags<WndFlag>                  m_flags;
 
     /** The default time to set for the first (and only) value in
         m_browse_mode_times during Wnd contruction */
@@ -926,12 +1055,11 @@ private:
 
     /** The default BrowseInfoWmd to set for the first (and only) value in
         m_browse_mode_times during Wnd contruction */
-    static boost::shared_ptr<BrowseInfoWnd> s_default_browse_info_wnd;
+    static std::shared_ptr<BrowseInfoWnd> s_default_browse_info_wnd;
 
-    friend class GUI;   ///< GUI needs access to \a m_zorder, m_children, etc.
+    friend class GUI;   ///< GUI needs access to \a m_children, etc.
     friend struct GUIImpl;
     friend class Timer; ///< Timer needs to be able to call HandleEvent
-    friend class ZList; ///< ZList needs access to \a m_zorder in order to order windows
 };
 
 } // namespace GG

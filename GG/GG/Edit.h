@@ -32,6 +32,8 @@
 #include <GG/ClrConstants.h>
 #include <GG/TextControl.h>
 
+#include <boost/signals2/signal.hpp>
+
 
 namespace GG {
 
@@ -70,14 +72,17 @@ public:
 
     /** \name Structors */ ///@{
     /** Ctor. Height is determined from the font and point size used. */
-    Edit(const std::string& str, const boost::shared_ptr<Font>& font, Clr color,
+    Edit(const std::string& str, const std::shared_ptr<Font>& font, Clr color,
          Clr text_color = CLR_BLACK, Clr interior = CLR_ZERO);
     //@}
 
     /** \name Accessors */ ///@{
-    virtual Pt MinUsableSize() const;
-    virtual Pt ClientUpperLeft() const;
-    virtual Pt ClientLowerRight() const;
+    Pt MinUsableSize() const override;
+    Pt ClientUpperLeft() const override;
+    Pt ClientLowerRight() const override;
+
+    /** Returns the minimum usable size if the text were reflowed into a \a width box.*/
+    Pt MinUsableSize(X width) const override;
 
     /** Returns the current position of the cursor (first selected character
         to one past the last selected one). */
@@ -103,9 +108,9 @@ public:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void Render();
+    void Render() override;
 
-    virtual void SetColor(Clr c);
+    void SetColor(Clr c) override;
 
     /** Sets the interior color of the control. */
     void SetInteriorColor(Clr c);
@@ -132,11 +137,15 @@ public:
     /** Deselects text */
     virtual void DeselectAll();
 
-    virtual void SetText(const std::string& str);
+    void SetText(const std::string& str) override;
 
     /** Replaces selected text with, or inserts at cursor, the text in \a text. */
     virtual void AcceptPastedText(const std::string& text);
     //@}
+
+    /** The number of pixels to leave between the text and the control's
+        frame. */
+    static const int PIXEL_MARGIN;
 
 protected:
     /** \name Accessors */ ///@{
@@ -176,17 +185,21 @@ protected:
     /** Returns the cursor position at the time of the most recent
         double-button-down. */
     std::pair<CPSize, CPSize> DoubleButtonDownCursorPos() const;
+
+    /** Return the index of the last LineData() or 0 if LineData is empty.
+     Allows index based Edit to handle empty line data.*/
+    std::vector<GG::Font::LineData>::size_type NumLines() const;
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys);
-    virtual void LButtonUp(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void LClick(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
-    virtual void TextInput(const std::string* text);
-    virtual void GainingFocus();
-    virtual void LosingFocus();
+    void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys) override;
+    void LButtonUp(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LClick(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys) override;
+    void TextInput(const std::string* text) override;
+    void GainingFocus() override;
+    void LosingFocus() override;
 
     /** Does a bit more than its name suggests.  Records the current time, and
         if it's within GUI::DoubleClickInterval() of the last button down
@@ -208,10 +221,6 @@ protected:
         called in LClick() and LButtonUp() overrides. */
     void ClearDoubleButtonDownMode();
     //@}
-
-    /** The number of pixels to leave between the text and the control's
-        frame. */
-    static const int PIXEL_MARGIN;
 
     /** If .first == .second, the caret is drawn before character at
         m_cursor_pos.first; otherwise, the range is selected (when range is
@@ -235,9 +244,14 @@ private:
 };
 
 void GG_API GetTranslatedCodePoint(Key key,
-                                   boost::uint32_t key_code_point,
+                                   std::uint32_t key_code_point,
                                    Flags<ModKey> mod_keys,
                                    std::string& translated_code_point);
+
+CPSize GG_API NextWordEdgeFrom(const std::string& text,
+                               CPSize from_position,
+                               bool search_right = true);
+
 
 } // namespace GG
 

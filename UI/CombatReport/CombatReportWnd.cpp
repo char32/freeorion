@@ -3,46 +3,64 @@
 #include "../CUIControls.h"
 #include "../../util/i18n.h"
 #include "../../util/Logger.h"
+#include "../../util/VarText.h"
 #include "../../universe/ShipDesign.h"
 
 #include "CombatReportData.h"
 #include "GraphicalSummary.h"
 #include "CombatLogWnd.h"
 
-#include <GG/TabWnd.h>
 #include <GG/Layout.h>
+#include <GG/ScrollPanel.h>
+#include <GG/TabWnd.h>
+
 
 // The implementation class for CombatReportWnd
-class CombatReportWnd::CombatReportPrivate {
+class CombatReportWnd::Impl {
 public:
-    CombatReportPrivate(CombatReportWnd& wnd):
+    Impl(CombatReportWnd& wnd):
         m_wnd(wnd),
-        m_tabs(new GG::TabWnd(GG::X0, GG::Y0, GG::X1, GG::Y1, ClientUI::GetFont(), ClientUI::CtrlColor(), ClientUI::TextColor())),
-        m_graphical(new GraphicalSummaryWnd()),
-        m_log(new CombatLogWnd()),
+        m_tabs(GG::Wnd::Create<GG::TabWnd>(GG::X0, GG::Y0, GG::X1, GG::Y1, ClientUI::GetFont(),
+                                           ClientUI::CtrlColor(), ClientUI::TextColor())),
+        m_graphical(GG::Wnd::Create<GraphicalSummaryWnd>()),
+        m_log(GG::Wnd::Create<CombatLogWnd>(m_wnd.ClientWidth(), m_wnd.ClientHeight())),
+        m_log_scroller(
+            GG::Wnd::Create<GG::ScrollPanel>(
+                GG::X0, GG::Y0, m_tabs->ClientWidth(), m_tabs->ClientHeight(), m_log)),
         m_min_size(GG::X0, GG::Y0)
     {
+        m_log->SetFont(ClientUI::GetFont());
+        m_log_scroller->SetBackgroundColor(ClientUI::CtrlColor());
+
         m_tabs->AddWnd(m_graphical, UserString("COMBAT_SUMMARY"));
-        m_tabs->AddWnd(m_log, UserString("COMBAT_LOG"));
+        m_tabs->AddWnd(m_log_scroller, UserString("COMBAT_LOG"));
         m_wnd.AttachChild(m_tabs);
 
-        GG::Connect(m_log->LinkClickedSignal,       &CombatReportPrivate::HandleLinkClick,          this);
-        GG::Connect(m_log->LinkDoubleClickedSignal, &CombatReportPrivate::HandleLinkDoubleClick,    this);
-        GG::Connect(m_log->LinkRightClickedSignal,  &CombatReportPrivate::HandleLinkDoubleClick,    this);
+        m_log->LinkClickedSignal.connect(
+            boost::bind(&Impl::HandleLinkClick, this, _1, _2));
+        m_log->LinkDoubleClickedSignal.connect(
+            boost::bind(&Impl::HandleLinkDoubleClick, this, _1, _2));
+        m_log->LinkRightClickedSignal.connect(
+            boost::bind(&Impl::HandleLinkDoubleClick, this, _1, _2));
+        m_log->WndChangedSignal.connect(
+            boost::bind(&Impl::HandleWindowChanged, this));
 
         // Catch the window-changed signal from the tab bar so that layout
         // updates can be performed for the newly-selected window.
-        GG::Connect(m_tabs->WndChangedSignal,
-                    boost::bind(&CombatReportPrivate::HandleTabChanged, this));
+        m_tabs->TabChangedSignal.connect(
+            boost::bind(&Impl::HandleTabChanged, this, _1));
 
         // This can be called whether m_graphical is the selected window or
         // not, but it will still only use the min size of the selected window.
-        GG::Connect(m_graphical->MinSizeChangedSignal,
-                    boost::bind(&CombatReportPrivate::UpdateMinSize, this));
+        m_graphical->MinSizeChangedSignal.connect(
+            boost::bind(&Impl::UpdateMinSize, this));
     }
 
     void SetLog(int log_id) {
         m_graphical->SetLog(log_id);
+
+        m_log->SetFont(ClientUI::GetFont());
+        m_log_scroller->ScrollTo(GG::Y0);
         m_log->SetLog(log_id);
     }
 
@@ -50,12 +68,16 @@ public:
         // Leave space for the resize tab.
         m_tabs->SizeMove(GG::Pt(GG::X0, GG::Y0),
                          GG::Pt(m_wnd.ClientWidth(),
-                                m_wnd.ClientHeight() - GG::Y(INNER_BORDER_ANGLE_OFFSET)) );
+                                m_wnd.ClientHeight() - GG::Y(INNER_BORDER_ANGLE_OFFSET)));
 
         // Only update the selected window.
         if (GraphicalSummaryWnd* graphical_wnd =
                dynamic_cast<GraphicalSummaryWnd*>(m_tabs->CurrentWnd())) {
             graphical_wnd->DoLayout();
+        } else if (auto log_wnd = dynamic_cast<GG::ScrollPanel*>(m_tabs->CurrentWnd())) {
+            log_wnd->SizeMove(GG::Pt(GG::X0, GG::Y0),
+                         GG::Pt(m_wnd.ClientWidth(),
+                                m_wnd.ClientHeight() - GG::Y(INNER_BORDER_ANGLE_OFFSET)));
         }
     }
 
@@ -93,6 +115,8 @@ public:
                 ClientUI::GetClientUI()->ZoomToBuildingType(data);
             } else if (link_type == VarText::FIELD_TYPE_TAG) {
                 ClientUI::GetClientUI()->ZoomToFieldType(data);
+            } else if (link_type == VarText::METER_TYPE_TAG) {
+                ClientUI::GetClientUI()->ZoomToMeterTypeArticle(data);
             } else if (link_type == VarText::SPECIAL_TAG) {
                 ClientUI::GetClientUI()->ZoomToSpecial(data);
             } else if (link_type == VarText::SHIP_HULL_TAG) {
@@ -108,7 +132,7 @@ public:
             }
 
         } catch (const boost::bad_lexical_cast&) {
-            ErrorLogger() << "CombatReportPrivate::HandleLinkClick caught lexical cast exception for link type: " << link_type << " and data: " << data;
+            ErrorLogger() << "CombatReport::HandleLinkClick caught lexical cast exception for link type: " << link_type << " and data: " << data;
         }
 
     }
@@ -121,33 +145,32 @@ public:
     { return m_min_size; }
 
 private:
-    CombatReportWnd&        m_wnd;
-    GG::TabWnd*             m_tabs;
-    GraphicalSummaryWnd*    m_graphical;//< Graphical summary
-    CombatLogWnd*           m_log;      //< Detailed log
-    GG::Pt                  m_min_size; //< Minimum size according to the contents, is not constrained by the app window size
-
-    void SetFocus(int id)
-    { DebugLogger() << "SetFocus " << id; }
-
-    void RectangleEnter(int data) {
-        DebugLogger() << "RectangleHover " << data;
-        SetFocus(data);
-    }
+    CombatReportWnd&                        m_wnd;
+    std::shared_ptr<GG::TabWnd>             m_tabs;
+    std::shared_ptr<GraphicalSummaryWnd>    m_graphical;//< Graphical summary
+    std::shared_ptr<CombatLogWnd>           m_log;      //< Detailed log
+    std::shared_ptr<GG::ScrollPanel>        m_log_scroller;
+    GG::Pt                                  m_min_size; //< Minimum size according to the contents, is not constrained by the app window size
 
     void UpdateMinSize() {
         m_min_size = GG::Pt(GG::X0, GG::Y0);
-
         m_min_size += m_wnd.Size() - m_wnd.ClientSize();
 
         // The rest of this function could use m_tabs->MinUsableSize instead of
         // dealing with the children of m_tabs directly, but that checks the
         // MinUsableSize of _all_ child windows, not just the currently
         // selected one.
-        m_min_size += m_tabs->CurrentWnd()->MinUsableSize();
+        if (auto graphical_wnd = dynamic_cast<GraphicalSummaryWnd*>(m_tabs->CurrentWnd())) {
+            m_min_size += graphical_wnd->MinUsableSize();
+        } else {
+            // The log uses the GG::Layout which incorrectly reports
+            // the current size as the minimum size. So use an arbitrary
+            // minimum size of 20 characters by 1 line height
+            // m_min_size += m_log_scroller->MinUsableSize();
+            m_min_size += GG::Pt(ClientUI::GetFont()->SpaceWidth()*20, ClientUI::GetFont()->Height());
+        }
 
-        std::list<GG::Wnd*>::const_iterator layout_begin =
-            m_tabs->GetLayout()->Children().begin();
+        auto&& layout_begin = m_tabs->GetLayout()->Children().begin();
         // First object in the layout should be the tab bar.
         if (layout_begin != m_tabs->GetLayout()->Children().end()) {
             GG::Pt tab_min_size = (*layout_begin)->MinUsableSize();
@@ -166,12 +189,18 @@ private:
         }
     }
 
-    void HandleTabChanged() {
+    void HandleWindowChanged() {
         // Use the minimum size of the newly selected window.
         UpdateMinSize();
 
-        // Make sure that the newly selected window gets an update.
         DoLayout();
+    }
+
+    void HandleTabChanged(size_t tabnum) {
+        if (tabnum == 1)
+            m_log->HandleMadeVisible();
+
+        HandleWindowChanged();
     }
 };
 
@@ -179,8 +208,13 @@ CombatReportWnd::CombatReportWnd(const std::string& config_name) :
     CUIWnd(UserString("COMBAT_REPORT_TITLE"),
            GG::INTERACTIVE | GG::RESIZABLE | GG::DRAGABLE | GG::ONTOP | CLOSABLE,
            config_name, false),
-    m_impl(0)
-{ m_impl.reset(new CombatReportPrivate(*this)); }
+    m_impl(nullptr)
+{}
+
+void CombatReportWnd::CompleteConstruction() {
+    m_impl.reset(new Impl(*this));
+    CUIWnd::CompleteConstruction();
+}
 
 CombatReportWnd::~CombatReportWnd()
 {}
@@ -193,7 +227,7 @@ void CombatReportWnd::CloseClicked()
 
 void CombatReportWnd::SizeMove(const GG::Pt& ul, const GG::Pt& lr) {
     GG::Pt new_size = GG::Pt(std::max(lr.x - ul.x, m_impl->GetMinSize().x),
-                             std::max(lr.y - ul.y, m_impl->GetMinSize().y) );
+                             std::max(lr.y - ul.y, m_impl->GetMinSize().y));
 
     CUIWnd::SizeMove(ul, ul + new_size);
     m_impl->DoLayout();

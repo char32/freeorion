@@ -1,0 +1,42 @@
+Species
+    name = "SP_GISGUFGTHRIM"
+    description = "SP_GISGUFGTHRIM_DESC"
+    gameplay_description = "SP_GISGUFGTHRIM_GAMEPLAY_DESC"
+    Native
+    CanProduceShips
+
+    tags = [ "ORGANIC" "BAD_INDUSTRY" "GOOD_RESEARCH" "AVERAGE_SUPPLY" "BAD_ATTACKTROOPS" "PEDIA_ORGANIC_SPECIES_CLASS" ]
+
+    foci = [
+        [[HAS_INDUSTRY_FOCUS]]
+        [[HAS_RESEARCH_FOCUS]]
+        [[HAS_GROWTH_FOCUS]]
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    preferredfocus = "FOCUS_RESEARCH"
+
+    effectsgroups = [
+        [[BAD_INDUSTRY]]
+        [[GOOD_RESEARCH]]
+        [[AVERAGE_STOCKPILE]]
+
+        [[AVERAGE_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[AVERAGE_SUPPLY]]
+        [[BAD_DEFENSE_TROOPS]]
+        [[BAD_OFFENSE_TROOPS]]
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[STANDARD_SHIP_SHIELDS]]
+    ]
+
+    [[TOXIC_STANDARD_EP]]
+
+    graphic = "icons/species/gis-guf-gthrim.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

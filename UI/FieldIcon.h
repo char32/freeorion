@@ -1,10 +1,10 @@
-// -*- C++ -*-
-//FieldIcon.h
 #ifndef _FieldIcon_h_
 #define _FieldIcon_h_
 
 #include <GG/GGFwd.h>
 #include <GG/Control.h>
+
+#include <boost/signals2/signal.hpp>
 
 
 /** A control that allows interaction with a field. This class allows user
@@ -14,32 +14,47 @@
 class FieldIcon : public GG::Control {
 public:
     //! \name Structors //!@{
-    FieldIcon(int field_id);                                    //!< basid ctor
-    ~FieldIcon();                                               //!< dtor
+    FieldIcon(int field_id);
+
+    ~FieldIcon();
     //!@}
 
     //! \name Accessors //!@{
-    int                 FieldID() const;                        //!< returns ID of system this icon represents
-    const boost::shared_ptr<GG::Texture>& FieldTexture() const; //!< returns the field texture
+    /** Checks to see if point lies inside in-system fleet buttons before
+        checking parent InWindow method. */
+    bool InWindow(const GG::Pt& pt) const override;
 
-    virtual bool        InWindow(const GG::Pt& pt) const;       //!< Overrides GG::Wnd::InWindow. Checks to see if point lies inside in-system fleet buttons before checking main InWindow method.
+    int                 FieldID() const;                        //!< returns ID of system this icon represents
+
+    /** Returns the field texture. */
+    const std::shared_ptr<GG::Texture>& FieldTexture() const;
     //!@}
 
     //! \name Mutators //!@{
-    virtual void    LButtonDown(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    LDrag(const GG::Pt& pt, const GG::Pt& move, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    LButtonUp(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    SizeMove(const GG::Pt& ul, const GG::Pt& lr);
-    void            Refresh();
-    virtual void    Render();
+    void LButtonDown(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
 
-    virtual void    LClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    RClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    LDoubleClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    RDoubleClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    MouseEnter(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    MouseLeave();
-    virtual void    MouseWheel(const GG::Pt& pt, int move, GG::Flags<GG::ModKey> mod_keys);
+    void LDrag(const GG::Pt& pt, const GG::Pt& move, GG::Flags<GG::ModKey> mod_keys) override;
+    void LButtonUp(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void SizeMove(const GG::Pt& ul, const GG::Pt& lr) override;
+
+    void Render() override;
+
+    void LClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void RClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void LDoubleClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void RDoubleClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void MouseEnter(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void MouseLeave() override;
+
+    void MouseWheel(const GG::Pt& pt, int move, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void            Refresh();
 
     void            SetSelected(bool selected = true);   //!< shows/hides the selection indicator over this field
 
@@ -55,11 +70,14 @@ private:
     void            PositionFieldName();
 
     int                             m_field_id;                 //!< the Field associated with this FieldIcon
-    boost::shared_ptr<GG::Texture>  m_texture;                  //!< field texture
-    GG::DynamicGraphic*             m_selection_indicator;      //!< shown to indicate system is selected in sidepanel
-    GG::StaticGraphic*              m_mouseover_indicator;      //!< shown when the mouse cursor is over the system
+
+    /** Field texture. */
+    std::shared_ptr<GG::Texture> m_texture;
+
+    std::shared_ptr<GG::DynamicGraphic>             m_selection_indicator;      //!< shown to indicate system is selected in sidepanel;
+    std::shared_ptr<GG::StaticGraphic>              m_mouseover_indicator;      //!< shown when the mouse cursor is over the system;
     bool                            m_selected;                 //!< is this icon presently selected / should it show m_selected_indicator
-    GG::Label*                      m_name;                     //!< the control that holds the name of the system
+    std::shared_ptr<GG::Label>                      m_name;                     //!< the control that holds the name of the system;
 };
 
 #endif // _SystemIcon_h_

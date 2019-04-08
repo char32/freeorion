@@ -30,35 +30,19 @@
 #define _GG_DrawUtil_h_
 
 #include <GG/Base.h>
-
+#include <GG/ClrConstants.h>
 
 namespace GG {
-
     /** Calls the appropriate version of glColor*() with \a clr. */
     GG_API void glColor(Clr clr);
 
-    /** Calls the appropriate version of glVertex*() with \a pt. */
-    GG_API void glVertex(const Pt& pt);
-
-    /** Calls the appropriate version of glVertex*() with \a x and \a y. */
-    GG_API void glVertex(X x, Y y);
-
-    /** Calls the appropriate version of glVertex*() with \a x and \a y. */
-    GG_API void glVertex(X_d x, Y_d y);
-
-    /** Calls the appropriate version of glVertex*() with \a x and \a y. */
-    GG_API void glVertex(X x, Y_d y);
-
-    /** Calls the appropriate version of glVertex*() with \a x and \a y. */
-    GG_API void glVertex(X_d x, Y y);
-
     /** Returns the lightened version of color clr.  LightColor leaves the
-        alpha channel unchanged, and multiplies the other channels by a some
+        alpha channel unchanged, and multiplies the other channels by some
         factor.  (The factor is defined within LightColor().) */
     GG_API Clr LightColor(Clr clr);
 
     /** Returns the darkened version of color clr.  DarkColor leaves the alpha
-        channel unchanged, and divides the other channels by a some factor.
+        channel unchanged, and divides the other channels by some factor.
         (The factor is defined within DarkColor().) */
     GG_API Clr DarkColor(Clr clr);
 
@@ -82,6 +66,10 @@ namespace GG {
         There must be an outstanding call to BeginScissorClipping(). */
     GG_API void EndScissorClipping();
 
+    /** Returns the most recently begun and not yet ended scissor clipping
+        region. */
+    GG_API Rect ActiveScissorClippingRegion();
+
     /** Sets up a GL stencil, so that anything inside of the screen region
         defined by points \a inner_ul and \a inner_lr, or outside of the
         screen region defined by points \a outer_ul and \a outer_lr, is
@@ -92,13 +80,26 @@ namespace GG {
         no more than GL_STENCIL_BITS - 1 nested calls to
         BeginStencilClipping() currently outstanding (each nested call uses a
         separate bit in the stencil buffer). */
-    GG_API void BeginStencilClipping(Pt inner_ul, Pt inner_lr,
-                                     Pt outer_ul, Pt outer_lr);
+    GG_API void BeginStencilClipping(Pt inner_ul, Pt inner_lr, Pt outer_ul, Pt outer_lr);
 
     /** Ends the current GL stencil, restoring GL stencil state to what it was
         before the corresponding call to BeginScissorClipping().  \pre There
         must be an outstanding call to BeginStencilClipping(). */
     GG_API void EndStencilClipping();
+
+    /** Renders a line between the two specified points, with the specified
+        color and thickness. */
+    GG_API void Line(Pt pt1, Pt pt2, Clr color, float thick = 1.0f);
+
+    /** Renders line between specified coordinates. */
+    GG_API void Line(X x1, Y y1, X x2, Y y2);
+
+    /** Renders a triangle between the specified points, with the specified
+        color and (if specified) border color and thickness. */
+    GG_API void Triangle(Pt pt1, Pt pt2, Pt pt3, Clr color, Clr border_color = CLR_ZERO, float border_thick = 1.0f);
+
+    /** Renders triangle between the specified coordinates. */
+    GG_API void Triangle(X x1, Y y1, X x2, Y y2, X x3, Y y3, bool filled = false);
 
     /** Renders a rectangle starting at ul and ending just before lr, and
         assumes that OpenGL in in a "2D" state.  The border is drawn in the
@@ -155,7 +156,6 @@ namespace GG {
     /** Using the same techniques as in Bubble(), creates a rounded, bubbly
         rectangle. */
     GG_API void BubbleRectangle(Pt ul, Pt lr, Clr color, bool up, unsigned int corner_radius = 5);
-
 }
 
 #endif

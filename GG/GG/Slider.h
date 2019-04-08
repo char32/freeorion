@@ -50,7 +50,7 @@ class WndEvent;
     drag a tab to a desired setting; it is somewhat like a Scroll.  Sliders
     can be either vertical or horizontal, but cannot switch between the two.
     Unlike vertical Scrolls, whose values increase downward, vertical Sliders
-    increase upward by default.  Note that it is acceptible to define a range
+    increase upward by default.  Note that it is acceptable to define a range
     that increases from min to max, or one that decreases from min to max;
     both are legal. */
 template <class T>
@@ -70,11 +70,12 @@ public:
 
     /** \name Structors */ ///@{
     Slider(T min, T max, Orientation orientation, Clr color,
-           unsigned int tab_width, unsigned int line_width = 5, Flags<WndFlag> flags = INTERACTIVE); ///< ctor
+           unsigned int tab_width, unsigned int line_width = 5, Flags<WndFlag> flags = INTERACTIVE);
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ ///@{
-    virtual Pt           MinUsableSize() const;
+    Pt MinUsableSize() const override;
 
     T                    Posn() const;           ///< returns the current tab position
     std::pair<T, T>      SliderRange() const;    ///< returns the defined possible range of control
@@ -93,10 +94,10 @@ public:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void   Render();
-    virtual void   SizeMove(const Pt& ul, const Pt& lr);
-    virtual void   Disable(bool b = true);
-    virtual void   SetColor(Clr c);
+    void Render() override;
+    void SizeMove(const Pt& ul, const Pt& lr) override;
+    void Disable(bool b = true) override;
+    void SetColor(Clr c) override;
 
     void           SizeSlider(T min, T max); ///< sets the logical range of the control; \a min must not equal \a max
     void           SetMax(T max);            ///< sets the maximum value of the control
@@ -119,10 +120,9 @@ protected:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void LClick(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
-
-    virtual bool EventFilter(Wnd* w, const WndEvent& event);
+    void LClick(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys) override;
+    bool EventFilter(Wnd* w, const WndEvent& event) override;
 
     void MoveTabToPosn(); ///< moves the tab to the current logical position
     //@}
@@ -146,7 +146,7 @@ private:
     unsigned int              m_line_width;
     unsigned int              m_tab_width;
     int                       m_tab_drag_offset;
-    Button*                   m_tab;
+    std::shared_ptr<Button>   m_tab;
     bool                      m_dragging_tab;
 };
 
@@ -173,13 +173,18 @@ Slider<T>::Slider(T min, T max, Orientation orientation,
     m_dragging_tab(false)
 {
     Control::SetColor(color);
+}
+
+template <class T>
+void Slider<T>::CompleteConstruction()
+{
     AttachChild(m_tab);
-    m_tab->InstallEventFilter(this);
+    m_tab->InstallEventFilter(shared_from_this());
     SizeMove(UpperLeft(), LowerRight());
 
     if (INSTRUMENT_ALL_SIGNALS) {
-        Connect(SlidSignal, SlidEcho("Slider<T>::SlidSignal"));
-        Connect(SlidAndStoppedSignal, SlidEcho("Slider<T>::SlidAndStoppedSignal"));
+        SlidSignal.connect(SlidEcho("Slider<T>::SlidSignal"));
+        SlidAndStoppedSignal.connect(SlidEcho("Slider<T>::SlidAndStoppedSignal"));
     }
 }
 
@@ -294,7 +299,7 @@ void Slider<T>::SetPageSize(T size)
 
 template <class T>
 Button* Slider<T>::Tab() const
-{ return m_tab; }
+{ return m_tab.get(); }
 
 template <class T>
 T Slider<T>::PtToPosn(const Pt& pt) const
@@ -321,7 +326,7 @@ void Slider<T>::LClick(const Pt& pt, Flags<ModKey> mod_keys)
 { SlideToImpl(m_posn < PtToPosn(pt) ? m_posn + PageSize() : m_posn - PageSize(), true); }
 
 template <class T>
-void Slider<T>::KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys)
+void Slider<T>::KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys)
 {
     if (!Disabled()) {
         switch (key) {
@@ -367,7 +372,7 @@ void Slider<T>::KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> 
 template <class T>
 bool Slider<T>::EventFilter(Wnd* w, const WndEvent& event)
 {
-    if (w == m_tab) {
+    if (w == m_tab.get()) {
         switch (event.Type()) {
         case WndEvent::LDrag: {
             if (!Disabled()) {
@@ -406,8 +411,8 @@ bool Slider<T>::EventFilter(Wnd* w, const WndEvent& event)
 template <class T>
 void Slider<T>::MoveTabToPosn()
 {
-    assert(m_range_min <= m_posn && m_posn <= m_range_max ||
-           m_range_max <= m_posn && m_posn <= m_range_min);
+    assert((m_range_min <= m_posn && m_posn <= m_range_max) ||
+           (m_range_max <= m_posn && m_posn <= m_range_min));
     double fractional_distance = static_cast<double>(m_posn - m_range_min) / (m_range_max - m_range_min);
     int tab_width = m_orientation == VERTICAL ? Value(m_tab->Height()) : Value(m_tab->Width());
     int line_length = (m_orientation == VERTICAL ? Value(Height()) : Value(Width())) - tab_width;

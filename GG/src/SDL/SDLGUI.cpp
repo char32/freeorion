@@ -323,7 +323,7 @@ namespace {
         target.w = width;
         target.h = height;
         target.format = 0; // DOn't care
-        target.driverdata = 0;
+        target.driverdata = nullptr;
         target.refresh_rate = 0;
         SDL_DisplayMode closest;
         SDL_GetClosestDisplayMode(display_id, &target, &closest);
@@ -349,9 +349,8 @@ namespace {
 
         // This sets up the world coordinate space with the origin in the
         // upper-left corner and +x and +y directions right and down,
-        // respectively.  Note that this call leaves the depth of the viewing
-        // volume is only 1 (from 0.0 to 1.0), which is fine for GG's purposes.
-        glOrtho(0.0, width, height, 0.0, 0.0, width);
+        // respectively.
+        glOrtho(0.0, width, height, 0.0, -100.0, 100.0);
 
         glMatrixMode(GL_MODELVIEW);
         glPushMatrix();
@@ -360,25 +359,23 @@ namespace {
         glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     }
 
-    struct QuitSignal : public std::exception {
-        QuitSignal (int exit_code_) :
-        std::exception(), exit_code(exit_code_) {}
-
-        virtual const char* what() const throw (){
-            return "Quitting application";
-        }
+    struct QuitSignal {
+        QuitSignal(int exit_code_) :
+            exit_code(exit_code_)
+        {}
 
         int exit_code;
     };
 
-    class FramebufferFailedException : public std::exception{
+    class FramebufferFailedException : public std::exception {
     public:
         FramebufferFailedException(GLenum status):
-            m_status(status) {}
+            m_status(status)
+        {}
 
-        virtual const char * what(){
+        const char* what() const noexcept override {
             switch (m_status) {
-                case GL_FRAMEBUFFER_UNSUPPORTED:
+                case GL_FRAMEBUFFER_UNSUPPORTED_EXT:
                     return "The requested framebuffer format was unsupported";
                 case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT_EXT:
                     return "One of the framebuffer attachments is incomplete.";
@@ -394,12 +391,14 @@ namespace {
 }
 
 namespace GG {
-    class Framebuffer{
+    class Framebuffer {
     public:
         /// Construct a framebuffer of dimensions \a size.
         /// \throws FramebufferFailedException if using framebuffers is not going to work.
-        Framebuffer(GG::Pt size):
-        m_id(0), m_texture(0), m_depth_rbo(0)
+        Framebuffer(GG::Pt size) :
+            m_id(0),
+            m_texture(0),
+            m_depth_rbo(0)
         {
             int width = Value(size.x);
             int height = Value(size.y);
@@ -413,7 +412,7 @@ namespace GG {
             glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_FALSE);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, 0);
+                         GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
             glBindTexture(GL_TEXTURE_2D, 0);
 
             // create a renderbuffer object to store depth and stencil info
@@ -426,16 +425,16 @@ namespace GG {
             glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, m_id);
 
             // attach the texture to FBO color attachment point
-            glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,        // 1. fbo target: GL_FRAMEBUFFER
+            glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,        // 1. fbo target: GL_FRAMEBUFFER_EXT
                                       GL_COLOR_ATTACHMENT0_EXT,  // 2. attachment point
                                       GL_TEXTURE_2D,         // 3. tex target: GL_TEXTURE_2D
                                       m_texture,             // 4. tex ID
                                       0);                    // 5. mipmap level: 0(base)
 
             // attach the renderbuffer to depth attachment point
-            glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT,     // 1. fbo target: GL_FRAMEBUFFER
+            glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT,     // 1. fbo target: GL_FRAMEBUFFER_EXT
                                          GL_DEPTH_ATTACHMENT_EXT,
-                                         GL_RENDERBUFFER_EXT,     // 3. rbo target: GL_RENDERBUFFER
+                                         GL_RENDERBUFFER_EXT,     // 3. rbo target: GL_RENDERBUFFER_EXT
                                          m_depth_rbo);              // 4. rbo ID
 
             // the same render buffer has the stencil data in other bits
@@ -454,19 +453,18 @@ namespace GG {
             glBindFramebufferEXT (GL_FRAMEBUFFER_EXT, 0);
         }
 
-        GLuint OpenGLId(){
-            return m_id;
-        }
+        GLuint OpenGLId()
+        { return m_id; }
 
-        GLuint TextureId() {
-            return m_texture;
-        }
+        GLuint TextureId()
+        { return m_texture; }
 
-        ~Framebuffer(){
+        ~Framebuffer() {
             glDeleteFramebuffersEXT(1, &m_id);
             glDeleteRenderbuffersEXT(1, &m_depth_rbo);
             glDeleteTextures(1, &m_texture);
         }
+
     private:
         GLuint m_id;
         GLuint m_texture;
@@ -476,8 +474,7 @@ namespace GG {
 
 // member functions
 SDLGUI::SDLGUI(int w/* = 1024*/, int h/* = 768*/, bool calc_FPS/* = false*/, const std::string& app_name/* = "GG"*/,
-               int x, int y, bool fullscreen, bool fake_mode_change
-) :
+               int x, int y, bool fullscreen, bool fake_mode_change) :
     GUI(app_name),
     m_app_width(w),
     m_app_height(h),
@@ -486,9 +483,10 @@ SDLGUI::SDLGUI(int w/* = 1024*/, int h/* = 768*/, bool calc_FPS/* = false*/, con
     m_fullscreen(fullscreen),
     m_fake_mode_change(fake_mode_change),
     m_display_id(0),
-    m_window(NULL),
+    m_window(nullptr),
+    m_gl_context(nullptr),
     m_done(false),
-    m_framebuffer(NULL),
+    m_framebuffer(nullptr),
     m_key_map()
 {
     SDLInit();
@@ -528,10 +526,8 @@ std::string SDLGUI::ClipboardText() const {
 void SDLGUI::operator()()
 { GUI::operator()(); }
 
-void SDLGUI::Exit(int code)
-{
-    throw QuitSignal(code);
-}
+void SDLGUI::ExitApp(int code)
+{ throw QuitSignal(code); }
 
 void SDLGUI::SetWindowTitle(const std::string& title)
 { SDL_SetWindowTitle(m_window, title.c_str()); }
@@ -544,6 +540,7 @@ void SDLGUI::SetVideoMode(X width, Y height, bool fullscreen, bool fake_mode_cha
     m_app_width = width;
     m_app_height = height;
     SDL_SetWindowFullscreen(m_window, 0);
+    glViewport(0, 0, Value(width), Value(height));
     if (fullscreen) {
         if (!m_fake_mode_change) {
             Pt resulting_size = SetSDLFullscreenSize(m_window, m_display_id, Value(width), Value(height));
@@ -567,9 +564,8 @@ SDLGUI* SDLGUI::GetGUI()
 Key SDLGUI::GGKeyFromSDLKey(const SDL_Keysym& key)
 {
     Key retval = GGK_UNKNOWN;
-    if (m_key_map.find(key.sym) != m_key_map.end()) {
+    if (m_key_map.count(key.sym))
         retval = m_key_map[key.sym];
-    }
     int shift = key.mod & KMOD_SHIFT;
     int caps_lock = key.mod & KMOD_CAPS;
 
@@ -619,33 +615,45 @@ void SDLGUI::SDLInit()
 {
     InitializeKeyMap(m_key_map);
 
-    int sdl_status = SDL_Init(SDL_INIT_VIDEO);
-    if(sdl_status < 0) {
-        std::cerr << "Failed to initialize sdl. SDL_Init returned: " << sdl_status << std::endl;
-        Exit(1);
-    }
+    SDLMinimalInit();
 
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
 
     // Create the window with a temporary size.
     // Use the same code for the real size initialization that is used for resizing the window
     // to avoid duplicated effort.
     m_window = SDL_CreateWindow(AppName().c_str(), Value(m_initial_x), Value(m_initial_y),
-                                Value(m_app_width), Value(m_app_height), SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+                                Value(m_app_width), Value(m_app_height), SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
+    if (m_window)
+        m_gl_context = SDL_GL_CreateContext(m_window);
+    GLenum glew_status = glewInit();
 
-    if (m_window == 0) {
-        std::cerr << "Video mode set failed: " << SDL_GetError() << std::endl;
-        Exit(1);
-    }
-    m_gl_context = SDL_GL_CreateContext(m_window);
+    if (!m_window || !m_gl_context || GLEW_OK != glew_status) {
+        std::string msg;
+        if (!m_window) {
+            msg = "Unable to create window.";
+            msg += "\n\nSDL reported:\n";
+            msg += SDL_GetError();
+        } else if (!m_gl_context) {
+            msg = "Unable to create accelerated OpenGL 2.0 context.";
+            msg += "\n\nSDL reported:\n";
+            msg += SDL_GetError();
+        } else {
+            msg = "Unable to load OpenGL entry points.";
+            msg += "\n\nGLEW reported:\n";
+            msg += reinterpret_cast<const char*>(glewGetErrorString(glew_status));
+        }
 
-    GLenum error = glewInit();
-    if(error != GLEW_OK){
-        std::cerr << "Glew initialization failed: " << error << " = " << glewGetErrorString(error) << std::endl;
-        Exit(1);
+        SDL_ShowSimpleMessageBox(
+            SDL_MESSAGEBOX_ERROR, "OpenGL initialization error", msg.c_str(), nullptr);
+        std::cerr << msg << std::endl;
+        ExitApp(1);
     }
+
+    SDL_ShowWindow(m_window);
 
     SDL_ShowCursor(false);
 
@@ -655,11 +663,13 @@ void SDLGUI::SDLInit()
 
     // Now we can use the standard resizing call to make our window the size it belongs.
     SetVideoMode(m_app_width, m_app_height, m_fullscreen, m_fake_mode_change);
+
+    SDL_EnableScreenSaver();
 }
 
 void SDLGUI::GLInit()
 {
-    double ratio = Value(m_app_width * 1.0) / Value(m_app_height);
+    double ratio = Value(m_app_width) * 1.0 / Value(m_app_height);
 
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
@@ -682,7 +692,7 @@ void SDLGUI::HandleSystemEvents()
         bool send_to_gg = false;
         EventType gg_event = MOUSEMOVE;
         Key key = GGK_UNKNOWN;
-        boost::uint32_t key_code_point = 0;
+        std::uint32_t key_code_point = 0;
         Flags<ModKey> mod_keys = GetSDLModKeys();
         // In GiGi some events contain mouse position info,
         // where the corresponding sdl event does not.
@@ -751,22 +761,31 @@ void SDLGUI::HandleSystemEvents()
                     }
                     // If faking resolution change, we need to listen to this event
                     // to size the buffer correctly for the screen.
-                    if(m_fullscreen && m_fake_mode_change){
+                    if (m_fullscreen && m_fake_mode_change) {
                         ResetFramebuffer();
                     }
                 case SDL_WINDOWEVENT_RESIZED:
                     // Alt-tabbing and other things give dubious resize events while in fullscreen mode.
                     // ignore them
                     if (!m_fullscreen) {
-                        WindowResizedSignal (X (event.window.data1), Y (event.window.data2));
+                        WindowResizedSignal(X(event.window.data1), Y(event.window.data2));
                     }
                     break;
                 case SDL_WINDOWEVENT_FOCUS_GAINED:
+                    FocusChangedSignal(true);
+                    break;
                 case SDL_WINDOWEVENT_FOCUS_LOST:
-                    FocusChangedSignal();
+                    FocusChangedSignal(false);
                     break;
                 case SDL_WINDOWEVENT_MOVED:
-                    WindowMovedSignal ( X(event.window.data1), Y(event.window.data2) );
+                    WindowMovedSignal(X(event.window.data1), Y(event.window.data2));
+                    break;
+                case SDL_WINDOWEVENT_MINIMIZED:
+                case SDL_WINDOWEVENT_MAXIMIZED:
+                case SDL_WINDOWEVENT_RESTORED:
+                    break;
+                case SDL_WINDOWEVENT_CLOSE:
+                    WindowClosingSignal();
                     break;
             }
             break;
@@ -783,22 +802,23 @@ void SDLGUI::HandleNonGGEvent(const SDL_Event& event)
 {
     switch (event.type) {
     case SDL_QUIT:
-        Exit(0);
+        AppQuittingSignal();
         break;
     }
 }
 
 void SDLGUI::RenderBegin()
 {
-    if(m_fake_mode_change && m_fullscreen) {
+    if (m_fake_mode_change && m_fullscreen) {
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, m_framebuffer->OpenGLId());
     }
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glViewport(0, 0, Value(m_app_width), Value(m_app_height));
 }
 
 void SDLGUI::RenderEnd()
 {
-    if(m_fake_mode_change && m_fullscreen) {
+    if (m_fake_mode_change && m_fullscreen) {
         // Return to rendering on the real screen
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
         // Clear the real screen
@@ -831,7 +851,12 @@ void SDLGUI::FinalCleanup()
 {
     if (m_gl_context){
         SDL_GL_DeleteContext(m_gl_context);
-        m_gl_context = 0;
+        m_gl_context = nullptr;
+    }
+
+    if (m_window) {
+        SDL_DestroyWindow(m_window);
+        m_window = nullptr;
     }
 }
 
@@ -850,24 +875,27 @@ void SDLGUI::Run()
         Initialize();
         ModalEventPump pump(m_done);
         pump();
-    } catch (QuitSignal&) {
-        // Normal exit
+    } catch (const QuitSignal& e) {
+        if (e.exit_code != 0)
+            throw;
+
+        // This is the normal exit path from Run()
+        // Do not put exit(0) or ExitApp(0) here.
         return;
-    } catch (const std::invalid_argument& e) {
-        std::cerr << "std::invalid_argument exception caught in GUI::Run(): " << e.what() << std::endl;
-        Exit(1);
-    } catch (const std::runtime_error& e) {
-        std::cerr << "std::runtime_error exception caught in GUI::Run(): " << e.what() << std::endl;
-        Exit(1);
-    } catch (const ExceptionBase& e) {
-        std::cerr << "GG exception (subclass " << e.type() << ") caught in GUI::Run(): " << e.what() << std::endl;
-        Exit(1);
     }
+}
+
+bool SDLGUI::AppHasMouseFocus() const {
+    auto window_flags = SDL_GetWindowFlags(m_window);
+
+    return window_flags & SDL_WINDOW_MOUSE_FOCUS;
 }
 
 std::vector<std::string> SDLGUI::GetSupportedResolutions() const
 {
     std::vector<std::string> mode_vec;
+
+    SDLMinimalInit();
 
     unsigned valid_mode_count = SDL_GetNumDisplayModes(m_display_id);
 
@@ -880,7 +908,7 @@ std::vector<std::string> SDLGUI::GetSupportedResolutions() const
             if (SDL_GetDisplayMode(m_display_id, i, &mode) != 0) {
                 SDL_Log("SDL_GetDisplayMode failed: %s", SDL_GetError());
             } else {
-                mode_vec.push_back(boost::io::str(boost::format("%1% x %2% @ %3%") % mode.w % mode.h % SDL_BITSPERPIXEL(mode.format)));
+                mode_vec.push_back(boost::io::str(boost::format("%1% x %2%") % mode.w % mode.h));
             }
         }
     }
@@ -888,24 +916,57 @@ std::vector<std::string> SDLGUI::GetSupportedResolutions() const
     return mode_vec;
 }
 
-Pt SDLGUI::GetDefaultResolution (int display_id)
-{ return GetDefaultResolutionStatic(display_id); }
-
-Pt SDLGUI::GetDefaultResolutionStatic(int display_id)
+void SDLGUI::SDLMinimalInit()
 {
-    // Must initialize sdl here to be able to query the default screen resolution
     if (!SDL_WasInit(SDL_INIT_VIDEO)) {
-        if(SDL_Init(SDL_INIT_VIDEO) < 0) {
+        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
             std::cerr << "SDL initialization failed: " << SDL_GetError() << std::endl;
             throw std::runtime_error("Failed to initialize SDL");
         }
     }
-
-    SDL_DisplayMode mode;
-    SDL_GetDesktopDisplayMode(display_id, &mode);
-    Pt resolution(X(mode.w), Y(mode.h));
-    return resolution;
 }
+
+Pt SDLGUI::GetDefaultResolution(int display_id) const
+{ return GetDefaultResolutionStatic(display_id); }
+
+Pt SDLGUI::GetDefaultResolutionStatic(int display_id)
+{
+    SDLMinimalInit();
+
+    if (display_id >= 0 && display_id < SDL_GetNumVideoDisplays()) {
+        SDL_DisplayMode mode;
+        SDL_GetDesktopDisplayMode(display_id, &mode);
+        Pt resolution(X(mode.w), Y(mode.h));
+        return resolution;
+    } else {
+        return Pt(X0, Y0);
+    }
+}
+
+int SDLGUI::NumVideoDisplaysStatic()
+{
+    SDLMinimalInit();
+    return SDL_GetNumVideoDisplays();
+}
+
+int SDLGUI::MaximumPossibleDimension(bool is_width) {
+    int dim = 0;
+
+    int num_displays = NumVideoDisplaysStatic();
+    for (int i_display = 0; i_display < num_displays; ++i_display) {
+        SDL_Rect r;
+        if (SDL_GetDisplayBounds(i_display, &r) == 0) {
+            dim += is_width ? r.w : r.h;
+        }
+    }
+    return dim;
+}
+
+int SDLGUI::MaximumPossibleWidth()
+{ return MaximumPossibleDimension(true); }
+
+int SDLGUI::MaximumPossibleHeight()
+{ return MaximumPossibleDimension(false); }
 
 void SDLGUI::RelayTextInput(const SDL_TextInputEvent& text, GG::Pt mouse_pos)
 {
@@ -917,17 +978,19 @@ void SDLGUI::RelayTextInput(const SDL_TextInputEvent& text, GG::Pt mouse_pos)
     std::string text_string(current, last);
 
     // pass each utf-8 character as a separate event
-    while (current != last)
-    { HandleGGEvent(TEXTINPUT, GGK_UNKNOWN, utf8::next(current, last), Flags<ModKey>(), mouse_pos, Pt (X0, Y0), &text_string); }
+    while (current != last) {
+        HandleGGEvent(TEXTINPUT, GGK_UNKNOWN, utf8::next(current, last), Flags<ModKey>(),
+                      mouse_pos, Pt(X0, Y0), &text_string);
+    }
 }
 
 void SDLGUI::ResetFramebuffer()
 {
-    m_framebuffer.reset(NULL);
+    m_framebuffer.reset();
     if (m_fake_mode_change && m_fullscreen) {
         try {
             m_framebuffer.reset(new Framebuffer(Pt(m_app_width, m_app_height)));
-        } catch (FramebufferFailedException ex) {
+        } catch (const FramebufferFailedException& ex) {
             std::cerr << "Fake resolution change failed. Reason: \"" << ex.what() << "\". Reverting to real resolution change." << std::endl;
             m_fake_mode_change = false;
         }

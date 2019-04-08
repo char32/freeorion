@@ -61,16 +61,16 @@ Scroll::Scroll(Orientation orientation, Clr color, Clr interior) :
     m_range_max(99),
     m_line_sz(5),
     m_page_sz(25),
-    m_tab(0),
-    m_incr(0),
-    m_decr(0),
+    m_tab(nullptr),
+    m_incr(nullptr),
+    m_decr(nullptr),
     m_initial_depressed_region(SBR_NONE),
     m_depressed_region(SBR_NONE),
     m_dragging_tab(false),
     m_tab_dragged(false)
 {
     Control::SetColor(color);
-    boost::shared_ptr<StyleFactory> style = GetStyleFactory();
+    const auto& style = GetStyleFactory();
     if (m_orientation == VERTICAL) {
         m_decr = style->NewScrollUpButton(color);
         m_incr = style->NewScrollDownButton(color);
@@ -80,20 +80,24 @@ Scroll::Scroll(Orientation orientation, Clr color, Clr interior) :
         m_incr = style->NewScrollRightButton(color);
         m_tab = style->NewHScrollTabButton(color);
     }
+}
+
+void Scroll::CompleteConstruction()
+{
     if (m_decr) {
         AttachChild(m_decr);
-        Connect(m_decr->LeftClickedSignal, boost::bind(&Scroll::ScrollLineIncrDecrImpl, this, true, -1));
+        m_decr->LeftClickedSignal.connect(boost::bind(&Scroll::ScrollLineIncrDecrImpl, this, true, -1));
     }
     if (m_incr) {
         AttachChild(m_incr);
-        Connect(m_incr->LeftClickedSignal, boost::bind(&Scroll::ScrollLineIncrDecrImpl, this, true, 1));
+        m_incr->LeftClickedSignal.connect(boost::bind(&Scroll::ScrollLineIncrDecrImpl, this, true, 1));
     }
     AttachChild(m_tab);
-    m_tab->InstallEventFilter(this);
+    m_tab->InstallEventFilter(shared_from_this());
 
     if (INSTRUMENT_ALL_SIGNALS) {
-        Connect(ScrolledSignal, ScrolledEcho("Scroll::ScrolledSignal"));
-        Connect(ScrolledAndStoppedSignal, ScrolledEcho("Scroll::ScrolledAndStoppedSignal"));
+        ScrolledSignal.connect(ScrolledEcho("Scroll::ScrolledSignal"));
+        ScrolledAndStoppedSignal.connect(ScrolledEcho("Scroll::ScrolledAndStoppedSignal"));
     }
 
     DoLayout();
@@ -308,13 +312,13 @@ Scroll::ScrollRegion Scroll::RegionUnder(const Pt& pt)
 }
 
 Button* Scroll::TabButton() const
-{ return m_tab; }
+{ return m_tab.get(); }
 
 Button* Scroll::IncrButton() const
-{ return m_incr; }
+{ return m_incr.get(); }
 
 Button* Scroll::DecrButton() const
-{ return m_decr; }
+{ return m_decr.get(); }
 
 void Scroll::LButtonDown(const Pt& pt, Flags<ModKey> mod_keys)
 {
@@ -371,7 +375,7 @@ void Scroll::MouseHere(const Pt& pt, Flags<ModKey> mod_keys)
 
 bool Scroll::EventFilter(Wnd* w, const WndEvent& event)
 {
-    if (w == m_tab) {
+    if (w == m_tab.get()) {
         switch (event.Type()) {
         case WndEvent::LDrag: {
             if (!Disabled()) {
@@ -428,7 +432,7 @@ void Scroll::UpdatePosn()
 void Scroll::MoveTabToPosn()
 {
     int start_tabspace = 0; // the tab's lowest posible extent
-    if(m_decr)
+    if (m_decr)
         start_tabspace = (m_orientation == VERTICAL ?
                           Value(m_decr->Size().y) :
                           Value(m_decr->Size().x));
@@ -455,7 +459,7 @@ void Scroll::ScrollLineIncrDecrImpl(bool signal, int lines)
         if (static_cast<int>(m_posn + move) <= static_cast<int>(m_range_max - m_page_sz))
             m_posn += move;
         else
-            m_posn = m_range_max - (m_page_sz - 1);
+            m_posn = m_range_max - m_page_sz;
     } else {
         if (static_cast<int>(m_posn + move) >= m_range_min)
             m_posn += move;

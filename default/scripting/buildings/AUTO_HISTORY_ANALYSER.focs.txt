@@ -1,0 +1,37 @@
+BuildingType
+    name = "BLD_AUTO_HISTORY_ANALYSER"
+    description = "BLD_AUTO_HISTORY_ANALYSER_DESC"
+    buildcost = 100 * [[BUILDING_COST_MULTIPLIER]]
+    buildtime = 5
+    location = And [
+        Planet
+        Contains Building name = "BLD_CULTURE_ARCHIVES"
+        Not Contains Building name = "BLD_AUTO_HISTORY_ANALYSER"
+        OwnedBy empire = Source.Owner
+        TargetPopulation low = 1
+    ]
+    EnqueueLocation = [[ENQUEUE_BUILD_ONE_PER_PLANET]]
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                Object id = Source.PlanetID
+                Planet
+                NOT Population high = 0
+                OwnedBy empire = Source.Owner
+            ]
+            activation = And [
+                ContainedBy And [
+                    Planet
+                    Contains Building name = "BLD_CULTURE_ARCHIVES"
+                ]
+            ]
+            priority = [[VERY_LATE_PRIORITY]]
+            effects = [
+                SetTargetResearch value = Value + 5
+            ]
+    ]
+    icon = "icons/building/science1.png"
+
+#include "/scripting/common/enqueue.macros"
+#include "/scripting/common/priorities.macros"
+#include "/scripting/common/base_prod.macros"

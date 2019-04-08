@@ -81,14 +81,15 @@ public:
     /** \name Structors */ ///@{
     /** Ctor that does not required height. Height is determined from the font
         and point size used.*/
-    Spin(T value, T step, T min, T max, bool edits, const boost::shared_ptr<Font>& font, Clr color,
-         Clr text_color = CLR_BLACK);
+    Spin(T value, T step, T min, T max, bool edits, const std::shared_ptr<Font>& font,
+         Clr color, Clr text_color = CLR_BLACK);
+    void CompleteConstruction() override;
 
-    ~Spin(); // dtor
+    ~Spin();
     //@}
 
     /** \name Accessors */ ///@{
-    virtual Pt MinUsableSize() const;
+    Pt MinUsableSize() const override;
 
     T      Value() const;              ///< returns the current value of the control's text
     T      StepSize() const;           ///< returns the step size of the control
@@ -107,32 +108,25 @@ public:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void Render();
-
-    virtual void SizeMove(const Pt& ul, const Pt& lr);
-
-    virtual void Disable(bool b = true);
-    virtual void SetColor(Clr c);
-
+    void Render() override;
+    void SizeMove(const Pt& ul, const Pt& lr) override;
+    void Disable(bool b = true) override;
+    void SetColor(Clr c) override;
     void Incr();  ///< increments the value of the control's text by StepSize(), up to at most MaxValue()
     void Decr();  ///< decrements the value of the control's text by StepSize(), down to at least MinValue()
 
-    /** sets the value of the control's text to \a value, locked to the range [MinValue(), MaxValue()]*/
+    /** sets the value of the control's text to \a value, locked to the
+      * range [MinValue(), MaxValue()]*/
     void SetValue(T value);
+    void SetStepSize(T step);           ///< sets the step size of the control to \a step
+    void SetMinValue(T value);          ///< sets the minimum value of the control to \a value
+    void SetMaxValue(T value);          ///< sets the maximum value of the control to \a value
 
-    void SetStepSize(T step);   ///< sets the step size of the control to \a step
-    void SetMinValue(T value);  ///< sets the minimum value of the control to \a value
-    void SetMaxValue(T value);  ///< sets the maximum value of the control to \a value
-
-    /** turns on or off the mode that allows the user to edit the value in the spinbox directly. */
-    void AllowEdits(bool b = true);
-
-    void SetButtonWidth(X width); ///< sets the width used for the up and down buttons
-
-    void SetTextColor(Clr c);          ///< sets the text color
-    void SetInteriorColor(Clr c);      ///< sets the interior color of the control
-    void SetHiliteColor(Clr c);        ///< sets the color used to render hiliting around selected text
-    void SetSelectedTextColor(Clr c);  ///< sets the color used to render selected text   
+    void SetButtonWidth(X width);       ///< sets the width used for the up and down buttons
+    void SetTextColor(Clr c);           ///< sets the text color
+    void SetInteriorColor(Clr c);       ///< sets the interior color of the control
+    void SetHiliteColor(Clr c);         ///< sets the color used to render hiliting around selected text
+    void SetSelectedTextColor(Clr c);   ///< sets the color used to render selected text   
     //@}
 
 protected:
@@ -147,15 +141,16 @@ protected:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
-    virtual void MouseWheel(const Pt& pt, int move, Flags<ModKey> mod_keys);
-
-    virtual bool EventFilter(Wnd* w, const WndEvent& event);
+    void KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys) override;
+    void MouseWheel(const Pt& pt, int move, Flags<ModKey> mod_keys) override;
+    bool EventFilter(Wnd* w, const WndEvent& event) override;
+    virtual void SetEditTextFromValue();
     //@}
+
+    std::shared_ptr<Edit>      m_edit;
 
 private:
     void ConnectSignals();
-    void Init(const boost::shared_ptr<Font>& font, Clr color, Clr text_color);
     void ValueUpdated(const std::string& val_text);
     void IncrImpl(bool signal);
     void DecrImpl(bool signal);
@@ -168,11 +163,10 @@ private:
 
     bool       m_editable;
 
-    Edit*      m_edit;
-    Button*    m_up_button;
-    Button*    m_down_button;
+    std::shared_ptr<Button>    m_up_button;
+    std::shared_ptr<Button>    m_down_button;
 
-    X          m_button_width;
+    X          m_button_width = GG::X(15);
 
     static void ValueChangedEcho(const T& value);
 };
@@ -180,23 +174,39 @@ private:
 
 // template implementations
 template<class T>
-Spin<T>::Spin(T value, T step, T min, T max, bool edits, const boost::shared_ptr<Font>& font, Clr color,
+Spin<T>::Spin(T value, T step, T min, T max, bool edits, const std::shared_ptr<Font>& font, Clr color,
               Clr text_color/* = CLR_BLACK*/) :
     Control(X0, Y0, X1, font->Height() + 2 * PIXEL_MARGIN, INTERACTIVE),
     m_value(value),
     m_step_size(step),
     m_min_value(min),
     m_max_value(max),
-    m_editable(edits),
-    m_edit(0),
-    m_up_button(0),
-    m_down_button(0),
-    m_button_width(15)
+    m_editable(edits)
 {
-    Init(font, color, text_color);
+    const auto& style = GetStyleFactory();
+    Control::SetColor(color);
+    m_edit = style->NewSpinEdit("", font, CLR_ZERO, text_color, CLR_ZERO);
+    auto small_font = GUI::GetGUI()->GetFont(font, static_cast<int>(font->PointSize() * 0.75));
+    m_up_button = style->NewSpinIncrButton(small_font, color);
+    m_down_button = style->NewSpinDecrButton(small_font, color);
 
     if (INSTRUMENT_ALL_SIGNALS)
-        Connect(ValueChangedSignal, &ValueChangedEcho);
+        ValueChangedSignal.connect(&ValueChangedEcho);
+}
+
+template<class T>
+void Spin<T>::CompleteConstruction()
+{
+    const auto& style = GetStyleFactory();
+    m_edit->InstallEventFilter(shared_from_this());
+    m_up_button->InstallEventFilter(shared_from_this());
+    m_down_button->InstallEventFilter(shared_from_this());
+    AttachChild(m_edit);
+    AttachChild(m_up_button);
+    AttachChild(m_down_button);
+    ConnectSignals();
+    SizeMove(UpperLeft(), LowerRight());
+    Spin<T>::SetEditTextFromValue();
 }
 
 template<class T>
@@ -356,18 +366,18 @@ void Spin<T>::SetSelectedTextColor(Clr c)
 
 template<class T>
 Button* Spin<T>::UpButton() const
-{ return m_up_button; }
+{ return m_up_button.get(); }
 
 template<class T>
 Button* Spin<T>::DownButton() const
-{ return m_down_button; }
+{ return m_down_button.get(); }
 
 template<class T>
 Edit* Spin<T>::GetEdit() const
-{ return m_edit; }
+{ return m_edit.get(); }
 
 template<class T>
-void Spin<T>::KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys)
+void Spin<T>::KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys)
 {
     switch (key) {
     case GGK_HOME:
@@ -407,9 +417,9 @@ void Spin<T>::MouseWheel(const Pt& pt, int move, Flags<ModKey> mod_keys)
 template<class T>
 bool Spin<T>::EventFilter(Wnd* w, const WndEvent& event)
 {
-    if (w == m_edit) {
+    if (w == m_edit.get()) {
         if (!m_editable && event.Type() == WndEvent::GainingFocus) {
-            GUI::GetGUI()->SetFocusWnd(this);
+            GUI::GetGUI()->SetFocusWnd(shared_from_this());
             return true;
         } else {
             return !m_editable;
@@ -419,30 +429,21 @@ bool Spin<T>::EventFilter(Wnd* w, const WndEvent& event)
 }
 
 template<class T>
-void Spin<T>::ConnectSignals()
+void Spin<T>::SetEditTextFromValue()
 {
-    Connect(m_edit->FocusUpdateSignal, &Spin::ValueUpdated, this);
-    Connect(m_up_button->LeftClickedSignal, boost::bind(&Spin::IncrImpl, this, true));
-    Connect(m_down_button->LeftClickedSignal, boost::bind(&Spin::DecrImpl, this, true));
+    if (m_edit)
+        m_edit->SetText(std::to_string(m_value));
 }
 
 template<class T>
-void Spin<T>::Init(const boost::shared_ptr<Font>& font, Clr color, Clr text_color)
+void Spin<T>::ConnectSignals()
 {
-    boost::shared_ptr<StyleFactory> style = GetStyleFactory();
-    Control::SetColor(color);
-    m_edit = style->NewSpinEdit(boost::lexical_cast<std::string>(m_value), font, CLR_ZERO, text_color, CLR_ZERO);
-    boost::shared_ptr<Font> small_font = GUI::GetGUI()->GetFont(font, static_cast<int>(font->PointSize() * 0.75));
-    m_up_button = style->NewSpinIncrButton(small_font, color);
-    m_down_button = style->NewSpinDecrButton(small_font, color);
-    m_edit->InstallEventFilter(this);
-    m_up_button->InstallEventFilter(this);
-    m_down_button->InstallEventFilter(this);
-    AttachChild(m_edit);
-    AttachChild(m_up_button);
-    AttachChild(m_down_button);
-    ConnectSignals();
-    SizeMove(UpperLeft(), LowerRight());
+    m_edit->FocusUpdateSignal.connect(
+        boost::bind(&Spin::ValueUpdated, this, _1));
+    m_up_button->LeftClickedSignal.connect(
+        boost::bind(&Spin::IncrImpl, this, true));
+    m_down_button->LeftClickedSignal.connect(
+        boost::bind(&Spin::DecrImpl, this, true));
 }
 
 template<class T>
@@ -469,6 +470,7 @@ void Spin<T>::DecrImpl(bool signal)
 template<class T>
 void Spin<T>::SetValueImpl(T value, bool signal)
 {
+    //std::cout << "Spin<T>::SetValueImpl(" << value << ", " << signal << ")" << std::endl;
     T old_value = m_value;
     if (value < m_min_value) {
         m_value = m_min_value;
@@ -477,14 +479,17 @@ void Spin<T>::SetValueImpl(T value, bool signal)
     } else {
         // if the value supplied does not equal a valid value
         if (std::abs(spin_details::mod(static_cast<T>(value - m_min_value), m_step_size)) >
-            std::numeric_limits<T>::epsilon()) {
+            std::numeric_limits<T>::epsilon())
+        {
             // find nearest valid value to the one supplied
             T closest_below =
                 static_cast<T>(
-                    spin_details::div(static_cast<T>(value - m_min_value), m_step_size) *
-                    static_cast<T>(m_step_size + m_min_value));
+                    spin_details::div(static_cast<T>(value - m_min_value), m_step_size)
+                        * m_step_size
+                    + m_min_value);
             T closest_above =
                 static_cast<T>(closest_below + m_step_size);
+            //std::cout << " ... closest below: " << closest_below << "  above: " << closest_above << std::endl;
             m_value =
                 ((value - closest_below) < (closest_above - value) ?
                  closest_below : closest_above);
@@ -492,7 +497,7 @@ void Spin<T>::SetValueImpl(T value, bool signal)
             m_value = value;
         }
     }
-    *m_edit << m_value;
+    SetEditTextFromValue();
     if (signal && m_value != old_value)
         ValueChangedSignal(m_value);
 }

@@ -1,0 +1,24 @@
+Tech
+    name = "LRN_DISTRIB_THOUGHT"
+    description = "LRN_DISTRIB_THOUGHT_DESC"
+    short_description = "RESEARCH_SHORT_DESC"
+    category = "LEARNING_CATEGORY"
+    researchcost = 75 * [[TECH_COST_MULTIPLIER]]
+    researchturns = 5
+    tags = [ "PEDIA_LEARNING_CATEGORY" ]
+    prerequisites = "LRN_PSIONICS"
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                ProductionCenter
+                OwnedBy empire = Source.Owner
+                NOT Population high = 0
+                // Focus type = "FOCUS_RESEARCH"  //Does not require research Focus
+            ]
+            priority = [[EARLY_PRIORITY]]
+            effects = SetTargetResearch value = Value + Target.Population * 0.5 * [[RESEARCH_PER_POP]]
+    ]
+    graphic = "icons/tech/distributed_thought.png"
+
+#include "/scripting/common/base_prod.macros"
+#include "/scripting/common/priorities.macros"

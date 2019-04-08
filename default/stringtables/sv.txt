@@ -1,28 +1,29 @@
 Svenska
 
-#This is the Swedish String Table file for FreeOrion
-#Translate this file to other languages.
+# This is the Swedish String Table file for FreeOrion
+#
+# Notes: to avoid potential conflict with functional keys in other files, do not
+# make any stringtable keys beginning with "FUNCTIONAL_".
+# New Sitreps priorities should be added to
+# `default/customizations/common_user_customizations.txt`.
 
-#################
-# Common        #
-#################
+# semi-randomly collected characters to force font code page loading
+# 肛門オーガズム
+# åřžßąłżęЗыдШит
+# 를와ẵừổ
+# جامعة
+# یای مجهو
 
-#Anyone can use these for basic buttons
 
-BROWSE_BTN
-Bläddra...
+##
+## Common phrases
+##
 
 CANCEL
 Avbryt
 
 DONE
 Klar
-
-CLOSE
-Stäng
-
-LOAD
-Ladda
 
 SAVE
 Spara
@@ -32,9 +33,6 @@ OPEN
 
 OR
 eller
-
-AND
-och
 
 YES
 Ja
@@ -54,12 +52,35 @@ Döp om
 ENTER_NEW_NAME
 Ange nytt namn
 
-CHAT_WHISPER
-viska
 
-##########################
-# Status Update Messages #
-##########################
+##
+## Major errors
+##
+
+
+##
+## Predefined Ship Designs (located in default/scripting/ship_designs/)
+##
+
+
+##
+## Monsters
+##
+
+
+##
+## Fields
+##
+
+
+##
+## Predefined starting fleets
+##
+
+
+##
+## Status update messages
+##
 
 SERVER_WONT_START
 Servern kunde inte starta.
@@ -70,21 +91,13 @@ Servern svarar inte.
 SERVER_LOST
 Förbindelsen till servern har förlorats.
 
-SERVER_GAME_END
-Servern har meddelat att spelet är slut. Hejsvejs.
-
 PLAYER_DISCONNECTED
 Spelare %1% har inte längre förbindelse med servern.
 
-PLAYER_DEFEATED
-Du har blivit besegrad.
 
-EMPIRE_DEFEATED
-%1%-imperiet har gått under.
-
-######################################
-# Command Line and OptionsDB Options #
-######################################
+##
+## Command-line and options database entries
+##
 
 OPTIONS_DB_HELP
 Skriv ut detta hjälpmeddelande.
@@ -94,12 +107,6 @@ Väljer bakgrundsspår att spela.
 
 OPTIONS_DB_FULLSCREEN
 Starta spelet i fullskärmsläge.
-
-OPTIONS_DB_UI_CHAT_HIDE_INTERVAL
-Tidsintervall, i sekunder, efter vilket chattfönstret i flerspelarläget kommer att stängas om inget läggs till i det. Ett värde av 0 anger att fönstret aldrig kommer stängas.
-
-OPTIONS_DB_UI_CHAT_EDIT_HISTORY
-Antalet utgående meddelanden att behålla i chatthistoriken.
 
 OPTIONS_DB_GALAXY_MAP_GAS
 Rendera en gasliknande effekt runt systemen som ger galaxen en form. Detta kan orsaka spelet går långsammare på en äldre maskin.
@@ -113,14 +120,8 @@ OPTIONS_DB_APP_WIDTH
 OPTIONS_DB_APP_HEIGHT
 Ändrar lodrät programupplösning.
 
-OPTIONS_DB_COLOR_DEPTH
-Ändrar skärmens färgdjup, i bitar per pixel.
-
 OPTIONS_DB_SHOW_FPS
 Växlar mellan att visa FPS, på eller av.
-
-OPTIONS_DB_UI_SOUND_ENABLED
-Växlar användargränssnittljud, på eller av.
 
 OPTIONS_DB_UI_SOUND_VOLUME
 Volymen (0 till 255) som användargränssnittljudeffekterna kommer att spelas upp med.
@@ -185,9 +186,10 @@ Antalet stjärnfarleder i galaxen som kommer att genereras.
 OPTIONS_DB_GAMESETUP_SPECIALS_FREQUENCY
 Förekomsten av specialare i galaxen som kommer att genereras.
 
-#################
-# File Dialog   #
-#################
+
+##
+## File dialog
+##
 
 FILE_DLG_FILES
 Fil(er):
@@ -195,14 +197,8 @@ Fil(er):
 FILE_DLG_FILE_TYPES
 Typ(er):
 
-FILE_DLG_MALFORMED_FILENAME
-Ogiltigt filnamn.
-
 FILE_DLG_OVERWRITE_PROMPT
 %1% existerar redan.\nVill du skriva över den?
-
-FILE_DLG_INVALID_FILENAME
-"%1%"\när ett ogiltigt filnamn.
 
 FILE_DLG_FILENAME_IS_A_DIRECTORY
 "%1%"\när en katalog.
@@ -210,16 +206,18 @@ FILE_DLG_FILENAME_IS_A_DIRECTORY
 FILE_DLG_FILE_DOES_NOT_EXIST
 Fil "%1%"\nexisterar inte.
 
-#################
-# Intro Screen  #
-#################
 
-#Window title####
+##
+## Color selection dialog
+##
+
+
+##
+## Intro screen
+##
 
 INTRO_WINDOW_TITLE
 FreeOrion Huvudmeny
-
-#Button names####
 
 INTRO_BTN_SINGLE_PLAYER
 Enspelarläge
@@ -242,24 +240,16 @@ Medverkande
 INTRO_BTN_EXIT
 Avsluta
 
-#Error Messages####
-
 ERR_CONNECT_TIMED_OUT
 Kunde inte få något svar från servern
 
-ERR_VERSION_MISMATCH
-'''Kan inte ansluta till servern eftersom denna klient använder en annan version av följande inställningar och/eller källfiler: '''
 
-########################
-# Server Setup Screen  #
-########################
-
-#Window title####
+##
+## Server Setup Screen
+##
 
 SCONNECT_WINDOW_TITLE
 Anslut till server
-
-#Static labels####
 
 LAN_GAME_LABEL
 Lan-spel på:
@@ -270,8 +260,6 @@ Internet-spel på:
 PLAYER_NAME_LABEL
 Spelarens namn
 
-#Button names####
-
 HOST_GAME_BN
 Skapa nytt spel
 
@@ -281,15 +269,13 @@ Anslut till spel
 REFRESH_LIST_BN
 Uppdatera lista
 
-########################
-# Multiplayer Lobby    #
-########################
+
+##
+## Multiplayer lobby
+##
 
 MPLOBBY_WINDOW_TITLE
 Flerspelarinställningar
-
-MPLOBBY_HOST_ABORTED_GAME
-Värden för spelet har avslutat pågående spel.
 
 MULTIPLAYER_GAME_START_CONDITIONS
 Unikt namn och färg på imperier krävs
@@ -303,18 +289,13 @@ Ladda spel
 START_GAME_BN
 Starta spel
 
-########################
-# Galaxy Setup Screen  #
-########################
 
-#Window title####
+##
+## Galaxy Setup Screen
+##
 
 GSETUP_WINDOW_TITLE
 Galaxinställningar
-
-#Strings
-GSETUP_GRAPHICS_FILES
-Grafiska filer
 
 GSETUP_EMPIRE_NAME
 Imperiets namn
@@ -325,58 +306,76 @@ Imperiets färg
 GSETUP_NUMBER_AIS
 Antalet AI-spelare
 
-#Drop-down list labels and choices####
-
 GSETUP_STARS
 Stjärnor
+
 GSETUP_SHAPE
 Galaxform
+
 GSETUP_AGE
 Galaxålder
+
 GSETUP_STARLANE_FREQ
 Stjärnfarledsförekomst
+
 GSETUP_PLANET_DENSITY
 Planettäthet
+
 GSETUP_SPECIALS_FREQ
 Specialförekomst
 
+# A galaxy shape to select when generating a universe.
 GSETUP_2ARM
 Spiral, 2 armar
+
+# A galaxy shape to select when generating a universe.
 GSETUP_3ARM
 Spiral, 3 armar
+
+# A galaxy shape to select when generating a universe.
 GSETUP_4ARM
 Spiral, 4 armar
+
+# A galaxy shape to select when generating a universe.
 GSETUP_CLUSTER
 Anhopad
+
+# A galaxy shape to select when generating a universe.
 GSETUP_ELLIPTICAL
 Elliptisk
 
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_NONE
 Inga
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_LOW
 Låg
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_MEDIUM
 Medel
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_HIGH
 Hög
 
+# A galaxy age to select when generating a universe.
 GSETUP_YOUNG
 Ung
+
+# A galaxy age to select when generating a universe.
 GSETUP_MATURE
 Mogen
+
+# A galaxy age to select when generating a universe.
 GSETUP_ANCIENT
 Uråldrig
 
-#Error messages####
 
-GSETUP_ERR_NOEXIST
-existerar inte.
-
-###########################
-# About Dialog            #
-###########################
-
-#License button text####
+##
+## About dialog
+##
 
 LICENSE
 Licens
@@ -384,15 +383,13 @@ Licens
 ABOUT_WINDOW_TITLE
 Om FreeOrion
 
-CREDITS
-Medverkande
-
 FREEORION_VISION
 FreeOrion, ett öppet källkods-spel baserat på Master of Orion, är ett turordningsbaserat spel om episk rymdstrategi som bygger på den klassiska '4X'-modellen genom att inkludera element som nationsuppbyggnad från spel så som Europa Universalis 2 och en allsidig motor för taktiska strider. Då dess anpassningsbara, öppna, design tillåter en hög grad av personalisering av spelmotorn och spelets handling, vill personerna bakom FreeOrion främja skapandet av ett storskaligt och levande universum.
 
-###########################
-# Game Menu               #
-###########################
+
+##
+## In-game menu
+##
 
 GAME_MENU_WINDOW_TITLE
 Meny
@@ -409,9 +406,15 @@ Resignera
 GAME_MENU_SAVE_FILES
 Sparfiler
 
-###########################
-# Game Options            #
-###########################
+
+##
+## Save game dialog
+##
+
+
+##
+## Game options
+##
 
 OPTIONS_TITLE
 Inställningar
@@ -424,12 +427,6 @@ Snabbstäng fönster
 
 OPTIONS_MISC_UI
 Övriga användargränssnittsinställningar
-
-OPTIONS_SINGLEPLAYER
-Enspelarläge
-
-OPTIONS_MULTIPLAYER
-Flerspelarläge
 
 OPTIONS_AUTOSAVE_TURNS_BETWEEN
 Antal drag mellan automatisk sparning
@@ -446,13 +443,10 @@ Typsnittstorlek
 OPTIONS_FONT_TITLE
 Fönsterrubrik
 
-OPTIONS_TECH_SPACING
-Teknologiutrymmen
-
-OPTIONS_HORIZONTAL
+OPTIONS_TECH_SPACING_HORIZONTAL
 Vågrät
 
-OPTIONS_VERTICAL
+OPTIONS_TECH_SPACING_VERTICAL
 Lodrät
 
 OPTIONS_TOOLTIP_DELAY
@@ -463,9 +457,6 @@ Bildskärmsläge  (kräver omstart)
 
 OPTIONS_VIDEO_MODE_LIST_DESCRIPTION
 Sets screen resolution and bits per pixel in one step; set this to "Custom" to set width, height, and bits per pixel individually.
-
-OPTIONS_VIDEO_SETTINGS
-Videoinställningar
 
 OPTIONS_FULLSCREEN
 Fullskärm
@@ -478,15 +469,6 @@ Begränsa FPS
 
 OPTIONS_MAX_FPS
 Max-FPS
-
-OPTIONS_CHAT
-Chatt
-
-OPTIONS_CHAT_HISTORY
-Chatthistorik
-
-OPTIONS_CHAT_HIDE
-Fördröjning när chattfönstret döljs
 
 OPTIONS_GALAXY_MAP
 Galaxkarta
@@ -524,9 +506,6 @@ Fönsterljud
 OPTIONS_SOUND_BUTTON
 Knappljud
 
-OPTIONS_SOUND_FLEET
-Flottknappljud
-
 OPTIONS_SOUND_ALERT
 Varning
 
@@ -553,9 +532,6 @@ Fyllnad
 
 OPTIONS_BORDER_COLOR
 Kant
-
-OPTIONS_INTERIOR_COLOR
-Innandöme
 
 OPTIONS_WINDOW_COLORS
 Fönster
@@ -608,9 +584,6 @@ Förloppsindikator
 OPTIONS_PROGRESS_BACKGROUND_COLOR
 Bakgrund
 
-OPTIONS_ANY_FILE
-Alla filer
-
 OPTIONS_FOLDER_SETTINGS
 Resursfiler
 
@@ -629,10 +602,12 @@ Musikfiler
 OPTIONS_SOUND_FILE
 Ljudfiler
 
-#################
-# Main Map      #
-#################
 
+##
+## Main map window
+##
+
+# %1% current turn number.
 MAP_BTN_TURN_UPDATE
 Drag
 
@@ -651,54 +626,69 @@ Produktion
 MAP_BTN_DESIGN
 Formgivning
 
-#################
-# SidePanel     #
-#################
 
-SIDE_PANEL
-Sidpanel
+##
+## Side panel/System information
+##
 
-SP_SYSTEM_PRODUCTION
-Systemproduktion
 
-##Planet Panel#############
+##
+## Side panel/Planet panel
+##
 
 PLANET_PANEL
 Planetpanel
-PL_ASTEROID_BELT
-Asteroidbälte
-PL_UNINHABITED
-Obebodd
-PL_SIZE
-Storlek
+
+# %1% size of the population this planet is colonized with.
+# %2% maximum population this planet can support.
 PL_COLONIZE
 Kolonisera
 
-## Buildings Panel##########
 
-BP_INCOMPLETE_BUILDING_TOOLTIP
-%1% (Påbörjad)\n\n%2%
+##
+## Side panel/Resources panel
+##
 
-BP_COMPLETE_BUILDING_TOOLTIP
-%1%\n\n%2%
 
-## General Tooltips#########
+##
+## Side panel/Specials panel
+##
+
+
+##
+## Side panel/Buildings panel
+##
+
+
+##
+## General tooltips
+##
 
 TT_CHANGE
 Förändring
 
+# %1% name of the owning empire.
+# %2% FIXME
 TT_TECH
 %1% Teknik <i>%2%</i>
 
+# %1% name of the planet, where the building is located.
+# %2% FIXME
 TT_BUILDING
 %1% Byggnad <i>%2%</i>
 
+# %1% FIXME
+# %2% FIXME
 TT_SHIP_HULL
 %1% Skeppsskrov <i>%2%</i>
 
+# %1% FIXME
+# %2% FIXME
 TT_SHIP_PART
 %1% Ship Part <i>%2%</i>
 
+# %1% FIXME
+# %2% FIXME
 TT_SPECIAL
 Special <i>%1%</i>
 
@@ -711,10 +701,12 @@ Döp om planet
 SP_ENTER_NEW_PLANET_NAME
 Ange nytt namn på planet
 
-#################
-# Fleet Window  #
-#################
 
+##
+## Fleet window
+##
+
+# %1% system name where this fleet is moving to.
 FW_FLEET_MOVING_TO
 På väg mot %1%, ETA %2%
 
@@ -724,72 +716,57 @@ Aldrig
 FW_FLEET_ETA_UNKNOWN
 Okänt
 
-FW_SHIP_CLASS
-'''Skeppsklass '''
-
 FW_UNKNOWN_DESIGN_NAME
 Okänt
 
-# the name of the new fleet icon in the fleet listbox
+# Displayed when creating a new fleet by dropping ships into the new fleet slot.
 FW_NEW_FLEET_LABEL
 Ny flotta
 
+# Fleet window title
+# %1% empire, which owns the fleets.
 FW_EMPIRE_FLEETS
 %1%-flottor
 
-FW_HOME_FLEET
-Moderflotta
-
-FW_BATTLE_FLEET
-Stridsflotta
-
-# the name that is used for fleets the player does not control
+# the name that is used for fleets the client's player does not control when
+# the empire is not specified.
 FW_FOREIGN_FLEET
 Främmande flotta
 
-# the name that is used for ships the player does not control
+# the name that is used for ships the client's player does not control when the
+# empire is not specified.
 FW_FOREIGN_SHIP
 Främmande skepp
 
-###############
-# TechTreeWnd #
-###############
+
+##
+## Moderator
+##
+
+
+##
+## Diplomacy
+##
+
+
+##
+## TechTreeWnd
+##
 
 TECH_DISPLAY
 Visa
 
-TECH_NAVIGATION
-Översikt
-
-TECH_TOTAL_COST_STR
-%1% FP / drag @ %2% drag
-
+# %1% research points used this turn.
+# %2% research points available for this turn.
 TECH_TURN_COST_STR
 %1% FP / drag @ %2% drag
 
+# %1% number of remaining turns to complete the technology research.
 TECH_TURNS_LEFT_STR
 %1% drag
 
 TECH_TURNS_LEFT_NEVER
 Aldrig
-
-TECH_WND_TECH_COMPLETED
-AVSLUTAD
-
-TECH_WND_TECH_QUEUED
-Köad
-
-TECH_WND_TECH_INCOMPLETE
-Påbörjat
-
-TECH_WND_TYPE_THEORIES
-Teorier
-
-TECH_WND_TYPE_APPLICATIONS
-Tillämpningar
-
-TECH_WND_TYPE_REFINEMENTS
-Förfiningar
 
 TECH_WND_STATUS_COMPLETED
 Avslutat
@@ -797,15 +774,10 @@ Avslutat
 TECH_WND_STATUS_RESEARCHABLE
 Upptäckbara
 
-TECH_WND_REQUIRES
-Kräver
 
-TECH_WND_UNLOCKS
-Tillåter
-
-#######################
-# ProductionInfoPanel #
-#######################
+##
+## Production info panel
+##
 
 PRODUCTION_INFO_TOTAL_PS_LABEL
 Tillgängliga poäng totalt
@@ -813,31 +785,21 @@ Tillgängliga poäng totalt
 PRODUCTION_INFO_WASTED_PS_LABEL
 Förspillda poäng
 
-PRODUCTION_INFO_PROJECTS_IN_PROGRESS_LABEL
-Pågående projekt
 
-PRODUCTION_INFO_PS_TO_UNDERFUNDED_PROJECTS_LABEL
-Underfinansierade projekt
-
-PRODUCTION_INFO_PROJECTS_IN_QUEUE_LABEL
-Köade projekt
-
-###############
-# ResearchWnd #
-###############
+##
+## Research window
+##
 
 RESEARCH_WND_TITLE
-Forskning
-
-RESEARCH_INFO_PANEL_TITLE
 Forskning
 
 RESEARCH_INFO_RP
 FP
 
-####################
-# BuildSelectorWnd #
-####################
+
+##
+## Build selector window
+##
 
 PRODUCTION_WND_BUILD_ITEMS_TITLE
 Tillverkningsbara föremål
@@ -854,46 +816,34 @@ Tillgängliga
 PRODUCTION_WND_AVAILABILITY_UNAVAILABLE
 Otillgängliga
 
-PRODUCTION_TOTAL_COST_STR
-%1% PP / drag @ %2% drag
-
+# %1% number of turns left to finish the production of an item.
 PRODUCTION_TURNS_LEFT_STR
 %1% drag kvar
 
 PRODUCTION_TURNS_LEFT_NEVER
 Aldrig
 
-PRODUCTION_DETAIL_NUMBER_TO_BUILD
-Mängd
-
 PRODUCTION_DETAIL_ADD_TO_QUEUE
 Lägg till i kö
 
-PRODUCTION_DETAIL_CENTER_ON_BUILD
-Centrera tillverkning
 
-#################
-# ProductionWnd #
-#################
+##
+## Production window
+##
 
 PRODUCTION_WND_TITLE
 Produktion
 
-PRODUCTION_INFO_PANEL_TITLE
-Produktion
 
-###############
-#  DesignWnd  #
-###############
+##
+## Design window
+##
 
 DESIGN_NAME_DEFAULT
 Användardefinierad skeppsritning
 
 DESIGN_DESCRIPTION_DEFAULT
 Beskrivning utav ritning
-
-DESIGN_NO_PART
-Ingen
 
 DESIGN_WND_HULLS
 Empty Hulls
@@ -913,17 +863,18 @@ Ritningsnamn
 DESIGN_WND_DESIGN_DESCRIPTION
 Beskrivning
 
-DESIGN_WND_CONFIRM
-Bekräfta ny ritning
-
 DESIGN_WND_CLEAR
 Rensa från delar
 
-#############################################################
-####               E N C Y C L O P E D I A               ####
-#############################################################
 
-# types of things that can be shown in encyclopedia
+##
+## Statistics
+##
+
+
+##
+## Encyclopedia
+##
 
 ENC_SHIP_PART
 Skeppsdel
@@ -937,43 +888,30 @@ Teknologi
 ENC_BUILDING
 Building
 
-####################
-# Combat Messages  #
-####################
 
-COMBAT_WINDOW_TITLE
-Stridsfönster
+##
+## Combat report
+##
 
-COMBAT_BATTLE
-'''SLAG : '''
 
-COMBAT_MILITARY_SHIPS
-Militära skepp
+##
+## Encyclopedia article categories and short descriptions
+##
 
-COMBAT_CIVILIAN_SHIPS
-Civila skepp
 
-COMBAT_PLANETS
-Planeter
+##
+## Encyclopedia articles
+##
 
-COMBAT_REMAINING
-''' Kvarstående'''
 
-COMBAT_RETREATED
-''' Retirerade'''
+##
+## Guides
+##
 
-COMBAT_DESTROYED
-''' Förintad'''
 
-COMBAT_DEFENSELESS
-''' Försvarslös'''
-
-COMBAT_LOST
-''' Förlorade!'''
-
-####################
-# TurnProgress     #
-####################
+##
+## Turn progress
+##
 
 TURN_PROGRESS_PHASE_FLEET_MOVEMENT
 Förflyttning utav flottor ...
@@ -993,21 +931,39 @@ Utför order ...
 TURN_PROGRESS_PHASE_DOWNLOADING
 Erhåller nya speldata ...
 
-#############################################################
-####                    S I T   R E P                    ####
-#############################################################
 
-#Window title####
+##
+## Messages panel
+##
+
+
+##
+## Players list
+##
+
+
+##
+## Objects window
+##
+
+
+##
+## Objects columns
+##
+
+
+##
+## Filters dialog
+##
+
+
+##
+## Situation report
+##
+## Format: Ideally always start with Location: with ship/fleet names near the end.
 
 SITREP_PANEL_TITLE
 Situationsrapport
-
-## SITREP_PRIORITY_ORDER is an ordered, whitespace separated list, prioritizing
-## these sitreps to be presented in the SitrepPanel in the order set below.
-## Sitreps not specified below will appear in the SitrepPanel following those below.
-
-## ** DO NOT TRANSLATE the contents of SITREP_PRIORITY_ORDER  -- this is a functional entry
-## END OF SITREP_PRIORITY_ORDER
 
 SITREP_SHIP_BUILT
 %ship%, ett nytt skepp, har blivit tillverkat i %system%-systemet.
@@ -1018,7 +974,7 @@ SITREP_BUILDING_BUILT
 SITREP_TECH_RESEARCHED
 %tech% har forskats fram.
 
-SITREP_PLANET_LOST_STARVED_TO_DEATH
+SITREP_PLANET_DEPOPULATED
 Hela populationen på %planet% har svultit ihjäl. Planeten har gått förlorad!
 
 SITREP_PLANET_COLONIZED
@@ -1027,9 +983,25 @@ SITREP_PLANET_COLONIZED
 SITREP_FLEET_ARRIVED_AT_DESTINATION
 %fleet% har anlänt vid %system%-systemet och inväntar ytterligare order.
 
-#############################################################
-####                   S P E C I A L S                   ####
-#############################################################
+
+##
+## Victory/defeat
+##
+
+
+##
+## Random beginner hints
+##
+
+
+##
+## Species
+##
+
+
+##
+## Specials
+##
 
 ANCIENT_RUINS_SPECIAL
 Uråldriga ruiner
@@ -1046,188 +1018,231 @@ Denna planets bana är väldigt excentrisk. Den har ett stort avstånd mellan de
 MINERALS_SPECIAL
 Rik på mineraler
 
-#############################################################
-####        E N U M E R A T I O N   V A L U E S          ####
-#############################################################
 
-# UniverseObjectTypes
+##
+## Enumeration values
+##
 
-# StarTypes
-
+# Star types
 STAR_BLUE
 blå
+
+# Star types
 STAR_WHITE
 vit
+
+# Star types
 STAR_YELLOW
 gul
+
+# Star types
 STAR_RED
 röd
+
+# Star types
 STAR_BLACK
 svart hål
 
-# PlanetTypes
-
+# Planet types
 PT_SWAMP
 sumpmark
+
+# Planet types
 PT_TOXIC
 giftig
+
+# Planet types
 PT_INFERNO
 infernalisk
+
+# Planet types
 PT_RADIATED
 radioaktiv
+
+# Planet types
 PT_BARREN
 karg
+
+# Planet types
 PT_DESERT
 öken
+
+# Planet types
 PT_TERRAN
 jordlik
+
+# Planet types
 PT_OCEAN
 oceanisk
+
+# Planet types
 PT_ASTEROIDS
 asteroider
+
+# Planet types
 PT_GASGIANT
 gasjätte
 
-# Planet Sizes
-
+# Planet sizes
 SZ_TINY
 pytteliten
+
+# Planet sizes
 SZ_SMALL
 liten
+
+# Planet sizes
 SZ_MEDIUM
 mellan
+
+# Planet sizes
 SZ_LARGE
 stor
+
+# Planet sizes
 SZ_HUGE
 enorm
+
+# Planet sizes
 SZ_ASTEROIDS
 asteroider
+
+# Planet sizes
 SZ_GASGIANT
 gasjätte
 
-# PlanetEnvironments
-
+# Planet environments
 PE_UNINHABITABLE
 obebolig
+
+# Planet environments
 PE_HOSTILE
 fientlig
+
+# Planet environments
 PE_POOR
 torftig
+
+# Planet environments
 PE_ADEQUATE
 tillfredställande
+
+# Planet environments
 PE_GOOD
 lämplig
 
-# FocusTypes
-
+# Focus types
 FOCUS_INDUSTRY
 industri
-FOCUS_MINING
-gruvdrift
+
+# Focus types
 FOCUS_RESEARCH
 forskning
+
+# Focus types
 FOCUS_TRADE
 handel
 
-# MeterTypes
-
+# Meter types
 METER_POPULATION
 population
+
+# Meter types
 METER_HEALTH
 hälsa
+
+# Meter types
 METER_INDUSTRY
 industri
+
+# Meter types
 METER_RESEARCH
 forskning
+
+# Meter types
 METER_TRADE
 handel
-METER_MINING
-gruvdrift
+
+# Meter types
 METER_CONSTRUCTION
 konstruktion
+
+# Meter types
 METER_FUEL
 bränsle
+
+# Meter types
 METER_SHIELD
 sköld
+
+# Meter types
 METER_DEFENSE
 försvar
 
-# EmpireAffiliationTypes
-
+# Empire affiliation types
 AFFIL_SELF
 egen
+
+# Empire affiliation types
 AFFIL_ENEMY
 fiende
+
+# Empire affiliation types
 AFFIL_ALLY
 allierad
 
-# UnlockableItemTypes
-
+# Unlockable item types
 UIT_BUILDING
 Byggnad
+
+# Unlockable item types
 UIT_SHIP_PART
 Skeppsdel
+
+# Unlockable item types
 UIT_SHIP_HULL
 Skeppsskrov
 
-# TechTypes
-
-TT_THEORY
-Teorier
-TT_APPLICATION
-Tillämpningar
-TT_REFINEMENT
-Förfiningar
-
-# BuildTypes
-
+# Build types
 BT_BUILDING
 byggnad
+
+# Build types
 BT_SHIP
 skepp
 
-# StockpileTypes
-
-ST_FOOD
-mat
-ST_TRADE
-handel
-
-# Resource Types
-
-# Ship Slot Types
-
+# Ship slot types
 SL_EXTERNAL
 Extern
+
+# Ship slot types
 SL_INTERNAL
 Intern
 
-# Ship Part Classes
-
-PC_SHORT_RANGE
-Kortvidd
-PC_MISSILES
-Missiler
-PC_FIGHTERS
-Jaktskepp
-PC_SHIELD
-Sköldar
+# Ship part classes
 PC_ARMOUR
 Bepansring
+
+# Ship part classes
 PC_DETECTION
 Detektion
+
+# Ship part classes
 PC_STEALTH
 Smygteknik
+
+# Ship part classes
 PC_FUEL
 Bränsle
+
+# Ship part classes
 PC_COLONY
 Kolonisering
 
-#############################################################
-####      ValueRef, Effect, & Condition Descriptions     ####
-#############################################################
 
-# ValueRef
+##
+## FOCS value references, effects & condition descriptions
+##
 
 DESC_VAR_SOURCE
 källa
@@ -1252,8 +1267,10 @@ stjärntyp
 
 DESC_VAR_MAXFUEL
 maximalt bränsle
+
 DESC_VAR_MAXSHIELD
 maximal sköld
+
 DESC_VAR_MAXDEFENSE
 maximalt försvar
 
@@ -1263,41 +1280,131 @@ handelsreserv
 DESC_VAR_OWNER
 ägare
 
-# Conditions
+
+##
+## FOCS condition descriptions
+##
 
 DESC_ALL
 ''' i universumet'''
 
+# %1% name of the empire this condition applies to.
 DESC_EMPIRE_AFFILIATION_SELF
 ''' det tillhör %1%-imperiet'''
 
+# %1% name of the empire this condition does not apply to.
 DESC_EMPIRE_AFFILIATION_SELF_NOT
 ''' det tillhör inte %1%-imperiet'''
 
+# %1% the affiliation the empire should have to the object.
+# %2% name of the empire this condition applies to.
 DESC_EMPIRE_AFFILIATION
 ''' det tillhör en %1% av %2%-imperiet'''
 
-#############################################################
-####            T E C H   C A T A G O R I E S            ####
-#############################################################
+
+##
+## Technology categories
+##
 
 LEARNING_CATEGORY
 Inlärning
+
 PRODUCTION_CATEGORY
 Produktion
+
 CONSTRUCTION_CATEGORY
 Konstruktion
+
 GROWTH_CATEGORY
 Tillväxt
-ECONOMICS_CATEGORY
-Ekonomi
-SHIPS_CATEGORY
-Skepp
 
-#############################################################
-####                  B U I L D I N G S                  ####
-#############################################################
+
+##
+## Technology theories
+##
+
+
+##
+## Technology application
+##
+
+
+##
+## Technology refinement
+##
+
+
+##
+## Buildings
+##
 
 BLD_IMPERIAL_PALACE
 Imperiepalats
 
+
+##
+## Hull and ship part description templates
+##
+
+
+##
+## Ship parts
+##
+
+
+##
+## Ship hulls
+##
+
+
+##
+## Buildings macros
+##
+
+
+##
+## Tech macros
+##
+
+
+##
+## Growth macros
+##
+
+
+##
+## Species picks
+##
+
+
+##
+## Accounting labels
+##
+
+
+##
+## Tags
+##
+
+
+##
+## AI strings
+##
+
+
+##
+## AI diplomacy strings and lists
+##
+
+
+##
+## Hotkey names and descriptions
+##
+
+
+##
+## Name lists
+##
+
+#include "../content_specific_parameters.txt"
+#include "../customizations/common_user_customizations.txt"

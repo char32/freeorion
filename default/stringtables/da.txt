@@ -1,15 +1,23 @@
 Danish
 
-#This is the Danish String Table file for FreeOrion
+# This is the Danish String Table file for FreeOrion
+#
+# Notes: to avoid potential conflict with functional keys in other files, do not
+# make any stringtable keys beginning with "FUNCTIONAL_".
+# New Sitreps priorities should be added to
+# `default/customizations/common_user_customizations.txt`.
 
-#################
-# Common        #
-#################
+# semi-randomly collected characters to force font code page loading
+# 肛門オーガズム
+# åřžßąłżęЗыдШит
+# 를와ẵừổ
+# جامعة
+# یای مجهو
 
-#Anyone can use these for basic buttons
 
-BROWSE_BTN
-Gennemse...
+##
+## Common phrases
+##
 
 CANCEL
 Fortryd
@@ -17,18 +25,38 @@ Fortryd
 DONE
 Luk
 
-CLOSE
-Luk
-
-LOAD
-Indlæs
-
 SAVE
 Gem
 
-##########################
-# Status Update Messages #
-##########################
+
+##
+## Major errors
+##
+
+
+##
+## Predefined Ship Designs (located in default/scripting/ship_designs/)
+##
+
+
+##
+## Monsters
+##
+
+
+##
+## Fields
+##
+
+
+##
+## Predefined starting fleets
+##
+
+
+##
+## Status update messages
+##
 
 SERVER_TIMEOUT
 Serveren svarer ikke
@@ -36,16 +64,28 @@ Serveren svarer ikke
 SERVER_LOST
 Forbindelsen til serveren er mistet.
 
-#################
-# Intro Screen  #
-#################
 
-#Window title####
+##
+## Command-line and options database entries
+##
+
+
+##
+## File dialog
+##
+
+
+##
+## Color selection dialog
+##
+
+
+##
+## Intro screen
+##
 
 INTRO_WINDOW_TITLE
 FreeOrion Hoved Menu
-
-#Button names####
 
 INTRO_BTN_LOAD_GAME
 Indlæs Gammelt Spil
@@ -56,21 +96,16 @@ Omkring
 INTRO_BTN_EXIT
 Afslut
 
-#Error Messages####
-
 ERR_CONNECT_TIMED_OUT
 Fik timeout mens vi prøvede at tilslutte til serveren
 
-########################
-# Server Setup Screen  #
-########################
 
-#Window title####
+##
+## Server Setup Screen
+##
 
 SCONNECT_WINDOW_TITLE
 Tilslut til server
-
-#Static labels####
 
 LAN_GAME_LABEL
 Lan spil på:
@@ -81,8 +116,6 @@ Internet spil på:
 PLAYER_NAME_LABEL
 Spiller navn:
 
-#Button names####
-
 HOST_GAME_BN
 Start et nyt spil
 
@@ -92,15 +125,13 @@ Deltag i et spil
 REFRESH_LIST_BN
 Opdater listen
 
-########################
-# Multiplayer Lobby    #
-########################
+
+##
+## Multiplayer lobby
+##
 
 MPLOBBY_WINDOW_TITLE
 Multiplayer Opsætning
-
-MPLOBBY_HOST_ABORTED_GAME
-Ham der startede spillet har fortrudt
 
 NEW_GAME_BN
 Nyt spil
@@ -111,69 +142,80 @@ Indlæs gammelt spil
 START_GAME_BN
 Start spil
 
-########################
-# Galaxy Setup Screen  #
-########################
 
-#Window title####
+##
+## Galaxy Setup Screen
+##
 
 GSETUP_WINDOW_TITLE
 Galakse Opsætning
 
-#Strings
-GSETUP_GRAPHICS_FILES
-Grafik Filer
-
-#Drop-down list labels and choices####
-
 GSETUP_STARS
 Stjerner
+
 GSETUP_SHAPE
 Galakse Form
+
 GSETUP_AGE
 Galakse Alder
+
 GSETUP_STARLANE_FREQ
 Stjernevejs Hyppighed
+
 GSETUP_PLANET_DENSITY
 Planet Forekomst
+
 GSETUP_SPECIALS_FREQ
 Karak.træks Hyppighed
 
+# A galaxy shape to select when generating a universe.
 GSETUP_2ARM
 Spiral, 2-arme
+
+# A galaxy shape to select when generating a universe.
 GSETUP_3ARM
 Spiral, 3-arme
+
+# A galaxy shape to select when generating a universe.
 GSETUP_4ARM
 Spiral, 4-arme
+
+# A galaxy shape to select when generating a universe.
 GSETUP_CLUSTER
 Kluster
+
+# A galaxy shape to select when generating a universe.
 GSETUP_ELLIPTICAL
 Elliptisk
 
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_NONE
 Ingen
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_LOW
 Lav
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_HIGH
 Høj
 
+# A galaxy age to select when generating a universe.
 GSETUP_YOUNG
 Ung
+
+# A galaxy age to select when generating a universe.
 GSETUP_MATURE
 Voksen
+
+# A galaxy age to select when generating a universe.
 GSETUP_ANCIENT
 Antik
 
-#Error messages####
 
-GSETUP_ERR_NOEXIST
-Eksistere ikke.
-
-###########################
-# About Dialog            #
-###########################
-
-#License button text####
+##
+## About dialog
+##
 
 LICENSE
 Licens
@@ -181,12 +223,10 @@ Licens
 ABOUT_WINDOW_TITLE
 Omkring FreeOrion v0.1a
 
-CREDITS
-Lavet af
 
-###########################
-# Game Menu               #
-###########################
+##
+## In-game menu
+##
 
 GAME_MENU_SAVE
 Gem Spil
@@ -200,57 +240,139 @@ Afslut Spil
 GAME_MENU_SAVE_FILES
 Gemte Spil filer
 
-#################
-# Main Map      #
-#################
 
+##
+## Save game dialog
+##
+
+
+##
+## Game options
+##
+
+
+##
+## Main map window
+##
+
+# %1% current turn number.
 MAP_BTN_TURN_UPDATE
 Tur %1%
 
-#################
-# SidePanel     #
-#################
 
-SP_SYSTEM_PRODUCTION
-System Produktion
+##
+## Side panel/System information
+##
 
-##Planet Panel#############
 
-PL_UNINHABITED
-Ubeboet
+##
+## Side panel/Planet panel
+##
+
+# %1% size of the population this planet is colonized with.
+# %2% maximum population this planet can support.
 PL_COLONIZE
 Kolonisér
 
-#############################################################
-####               E N C Y C L O P E D I A               ####
-#############################################################
 
-# types of things that can be shown in encyclopedia
+##
+## Side panel/Resources panel
+##
 
-# type of thing being shown. %1% is a bit of detail, and %2% is the general type.
-# for example: %1% = "Point Defense" or "Growth" and %2% = "Ship Part" or "Building".
-# %1% may be an empty string for most general types of things that can be shown.
 
-# indication of cost to produce or research thing that is shown. May be omitted if thing shown can't
-# be produced or researched (e.g. specials)
-# %1% will be the max cost per turn (a number, the max amount that can be spent per turn on this thing)
-# %2% will be one of ENC_PP or ENC_RP, depending on whether the thing shown is built or researched
-# %3% will be the minimum number of turns it takes to produce or research the thing shown
+##
+## Side panel/Specials panel
+##
 
-# auto-generated location condition description
 
-# auto-generated effects description. %1% will be the auto-generated effects text. This string should
-# provide an appropriate heading to appear before the auto-generated text.
+##
+## Side panel/Buildings panel
+##
 
-# auto-generated production cost description. %1% will be the auto-generated cost text. This string should
-# provide an appropriate heading to appear before the auto-generated text.
 
-# auto-generated production time description. %1% will be the auto-generated time text. This string should
-# provide an appropriate heading to appear before the auto-generated text.
+##
+## General tooltips
+##
 
-####################
-# TurnProgress     #
-####################
+
+##
+## Fleet window
+##
+
+
+##
+## Moderator
+##
+
+
+##
+## Diplomacy
+##
+
+
+##
+## TechTreeWnd
+##
+
+
+##
+## Production info panel
+##
+
+
+##
+## Research window
+##
+
+
+##
+## Build selector window
+##
+
+
+##
+## Production window
+##
+
+
+##
+## Design window
+##
+
+
+##
+## Statistics
+##
+
+
+##
+## Encyclopedia
+##
+
+
+##
+## Combat report
+##
+
+
+##
+## Encyclopedia article categories and short descriptions
+##
+
+
+##
+## Encyclopedia articles
+##
+
+
+##
+## Guides
+##
+
+
+##
+## Turn progress
+##
 
 TURN_PROGRESS_PHASE_FLEET_MOVEMENT
 Bevægelse af Flåder
@@ -267,21 +389,39 @@ Venter på at spillere færdigører deres tur
 TURN_PROGRESS_PHASE_ORDERS
 Udfører ordre
 
-#############################################################
-####                    S I T   R E P                    ####
-#############################################################
 
-#Window title####
+##
+## Messages panel
+##
+
+
+##
+## Players list
+##
+
+
+##
+## Objects window
+##
+
+
+##
+## Objects columns
+##
+
+
+##
+## Filters dialog
+##
+
+
+##
+## Situation report
+##
+## Format: Ideally always start with Location: with ship/fleet names near the end.
 
 SITREP_PANEL_TITLE
 Situations Report
-
-## SITREP_PRIORITY_ORDER is an ordered, whitespace separated list, prioritizing
-## these sitreps to be presented in the SitrepPanel in the order set below.
-## Sitreps not specified below will appear in the SitrepPanel following those below.
-
-## ** DO NOT TRANSLATE the contents of SITREP_PRIORITY_ORDER  -- this is a functional entry
-## END OF SITREP_PRIORITY_ORDER
 
 SITREP_SHIP_BUILT
 Et nyt skib %ship% er nu i kredsløb omkring planeten %planet%.
@@ -289,3 +429,130 @@ Et nyt skib %ship% er nu i kredsløb omkring planeten %planet%.
 SITREP_TECH_RESEARCHED
 Teknologien %tech% er blevet opfundet.
 
+
+##
+## Victory/defeat
+##
+
+
+##
+## Random beginner hints
+##
+
+
+##
+## Species
+##
+
+
+##
+## Specials
+##
+
+
+##
+## Enumeration values
+##
+
+
+##
+## FOCS value references, effects & condition descriptions
+##
+
+
+##
+## FOCS condition descriptions
+##
+
+
+##
+## Technology categories
+##
+
+
+##
+## Technology theories
+##
+
+
+##
+## Technology application
+##
+
+
+##
+## Technology refinement
+##
+
+
+##
+## Buildings
+##
+
+
+##
+## Hull and ship part description templates
+##
+
+
+##
+## Ship parts
+##
+
+
+##
+## Ship hulls
+##
+
+
+##
+## Buildings macros
+##
+
+
+##
+## Tech macros
+##
+
+
+##
+## Growth macros
+##
+
+
+##
+## Species picks
+##
+
+
+##
+## Accounting labels
+##
+
+
+##
+## Tags
+##
+
+
+##
+## AI strings
+##
+
+
+##
+## AI diplomacy strings and lists
+##
+
+
+##
+## Hotkey names and descriptions
+##
+
+
+##
+## Name lists
+##
+
+#include "../content_specific_parameters.txt"
+#include "../customizations/common_user_customizations.txt"

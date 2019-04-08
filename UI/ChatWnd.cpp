@@ -6,6 +6,7 @@
 #include "../Empire/Empire.h"
 #include "../Empire/EmpireManager.h"
 #include "../network/Message.h"
+#include "../network/ClientNetworking.h"
 #include "../universe/Universe.h"
 #include "../universe/Ship.h"
 #include "../universe/ShipDesign.h"
@@ -14,14 +15,78 @@
 #include "../universe/Species.h"
 #include "../universe/Tech.h"
 #include "../universe/Building.h"
+#include "../util/Directories.h"
 #include "../util/i18n.h"
 #include "../util/Logger.h"
 #include "../util/OptionsDB.h"
-#include "../util/MultiplayerCommon.h"
 
-#include <boost/algorithm/string.hpp>
 #include <GG/GUI.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
+
+// boost::spirit::classic pulls in windows.h which in turn defines the macros
+// SendMessage. Undefining those should avoid name collisions with FreeOrion
+// function names
+#include <boost/spirit/include/classic.hpp>
+#ifdef FREEORION_WIN32
+#  undef SendMessage
+#endif
+
+
+namespace {
+    const std::string OPEN_TAG = "[[";
+    const std::string CLOSE_TAG = "]]";
+
+    /** Converts (first, last) to a string, looks it up as a key in the
+      * stringtable, then then appends this to the end of a string. */
+    struct UserStringSubstituteAndAppend {
+        UserStringSubstituteAndAppend(std::string& str) :
+            m_str(str)
+        {}
+
+        void operator()(const char* first, const char* last) const {
+            std::string token(first, last);
+            if (token.empty() || !UserStringExists(token))
+                return;
+            m_str += UserString(token);
+        }
+
+        std::string&    m_str;
+    };
+
+    // sticks a sequence of characters onto the end of a string
+    struct StringAppend {
+        StringAppend(std::string& str) :
+            m_str(str)
+        {}
+
+        void operator()(const char* first, const char* last) const
+        { m_str += std::string(first, last); }
+
+        std::string&    m_str;
+    };
+
+
+    std::string StringtableTextSubstitute(const std::string& input) {
+        std::string retval;
+
+        // set up parser
+        namespace classic = boost::spirit::classic;
+        classic::rule<> token = *(classic::anychar_p - classic::space_p - CLOSE_TAG.c_str());
+        classic::rule<> var = OPEN_TAG.c_str() >> token[UserStringSubstituteAndAppend(retval)] >> CLOSE_TAG.c_str();
+        classic::rule<> non_var = classic::anychar_p - OPEN_TAG.c_str();
+
+        // parse and substitute variables
+        try {
+            classic::parse(input.c_str(), *(non_var[StringAppend(retval)] | var));
+        } catch (const std::exception&) {
+            ErrorLogger() << "StringtableTextSubstitute caught exception when parsing input: " << input;
+        }
+
+        return retval;
+    }
+}
 
 class MessageWndEdit : public CUIEdit {
 public:
@@ -30,7 +95,7 @@ public:
     //@}
 
     //! \name Mutators //@{
-    virtual void    KeyPress(GG::Key key, boost::uint32_t key_code_point, GG::Flags<GG::ModKey> mod_keys);
+    void KeyPress(GG::Key key, std::uint32_t key_code_point, GG::Flags<GG::ModKey> mod_keys) override;
     //@}
 
     /** emitted when user presses enter/return while entering text */
@@ -43,10 +108,8 @@ private:
     void            AutoComplete();                     //!< Autocomplete current word
 
     /** AutoComplete helper function */
-    bool            CompleteWord(const std::set<std::string>& names,
-                                 const std::string& partial_word,
-                                 const std::pair<GG::CPSize,
-                                 const GG::CPSize>& cursor_pos,
+    bool            CompleteWord(const std::set<std::string>& names, const std::string& partial_word,
+                                 const std::pair<GG::CPSize, const GG::CPSize>& cursor_pos,
                                  std::string& text);
 
     // Set for autocomplete game words
@@ -54,9 +117,9 @@ private:
 
     // Repeated tabs variables
      std::vector<std::string>   m_auto_complete_choices;
-     unsigned int               m_repeatedTabCount;
-     std::string                m_lastLineRead;
-     std::string                m_lastGameWord;
+     unsigned int               m_repeated_tab_count;
+     std::string                m_last_line_read;
+     std::string                m_last_game_word;
 };
 
 ////////////////////
@@ -65,12 +128,12 @@ private:
 MessageWndEdit::MessageWndEdit() :
     CUIEdit(""),
     m_auto_complete_choices(),
-    m_repeatedTabCount(0),
-    m_lastLineRead(),
-    m_lastGameWord()
+    m_repeated_tab_count(0),
+    m_last_line_read(),
+    m_last_game_word()
 {}
 
-void MessageWndEdit::KeyPress(GG::Key key, boost::uint32_t key_code_point,
+void MessageWndEdit::KeyPress(GG::Key key, std::uint32_t key_code_point,
                               GG::Flags<GG::ModKey> mod_keys)
 {
     switch (key) {
@@ -92,176 +155,158 @@ void MessageWndEdit::KeyPress(GG::Key key, boost::uint32_t key_code_point,
 
 void MessageWndEdit::FindGameWords() {
      // add player and empire names
-    for (EmpireManager::const_iterator it = Empires().begin(); it != Empires().end(); ++it) {
-        m_game_words.insert(it->second->Name());
-        m_game_words.insert(it->second->PlayerName());
+    for (auto& entry : Empires()) {
+        m_game_words.insert(entry.second->Name());
+        m_game_words.insert(entry.second->PlayerName());
     }
     // add system names
-    std::vector<TemporaryPtr<System> > systems = GetUniverse().Objects().FindObjects<System>();
-    for (unsigned int i = 0; i < systems.size(); ++i) {
-        if (systems[i]->Name() != "")
-            m_game_words.insert(systems[i]->Name());
+    for (auto& system : GetUniverse().Objects().FindObjects<System>()) {
+        if (system->Name() != "")
+            m_game_words.insert(system->Name());
     }
      // add ship names
-    std::vector<TemporaryPtr<Ship> > ships = GetUniverse().Objects().FindObjects<Ship>();
-    for (unsigned int i = 0; i < ships.size(); ++i) {
-        if (ships[i]->Name() != "")
-            m_game_words.insert(ships[i]->Name());
+    for (auto& ship : GetUniverse().Objects().FindObjects<Ship>()) {
+        if (ship->Name() != "")
+            m_game_words.insert(ship->Name());
     }
      // add ship design names
-    for (PredefinedShipDesignManager::iterator it = GetPredefinedShipDesignManager().begin();
-         it != GetPredefinedShipDesignManager().end(); ++it)
-    {
-        if (it->second->Name() != "")
-            m_game_words.insert(UserString(it->second->Name()));
+
+    for (const auto& design : GetPredefinedShipDesignManager().GetOrderedShipDesigns()) {
+        if (!design->Name().empty())
+            m_game_words.insert(UserString(design->Name()));
     }
      // add specials names
-    std::vector<std::string> specials =  SpecialNames();
-    for (unsigned int i = 0; i < specials.size(); ++i) {
-        if (specials[i] != "")
-            m_game_words.insert(UserString(specials[i]));
+    for (const std::string& special_name : SpecialNames()) {
+        if (special_name != "")
+            m_game_words.insert(UserString(special_name));
     }
      // add species names
-    for (SpeciesManager::iterator it = GetSpeciesManager().begin();
-         it != GetSpeciesManager().end(); ++it)
-    {
-        if (it->second->Name() != "")
-            m_game_words.insert(UserString(it->second->Name()));
+    for (const auto& entry : GetSpeciesManager()) {
+        if (entry.second->Name() != "")
+            m_game_words.insert(UserString(entry.second->Name()));
     }
      // add techs names
-    std::vector<std::string> techs = GetTechManager().TechNames();
-    for (unsigned int i = 0; i < techs.size(); ++i) {
-        if (techs[i] != "")
-            m_game_words.insert(UserString(techs[i]));
+    for (const std::string& tech_name : GetTechManager().TechNames()) {
+        if (tech_name != "")
+            m_game_words.insert(UserString(tech_name));
     }
     // add building type names
-    for (BuildingTypeManager::iterator it = GetBuildingTypeManager().begin();
-         it != GetBuildingTypeManager().end(); ++it)
-    {
-        if (it->second->Name() != "")
-            m_game_words.insert(UserString(it->second->Name()));
+    for (const auto& entry : GetBuildingTypeManager()) {
+        if (entry.second->Name() != "")
+            m_game_words.insert(UserString(entry.second->Name()));
     }
     // add ship hulls
-    for (PredefinedShipDesignManager::iterator it = GetPredefinedShipDesignManager().begin();
-         it != GetPredefinedShipDesignManager().end(); ++it)
-    {
-        if (it->second->Hull() != "")
-            m_game_words.insert(UserString(it->second->Hull()));
+    for (const auto& design : GetPredefinedShipDesignManager().GetOrderedShipDesigns()) {
+        if (!design->Hull().empty())
+            m_game_words.insert(UserString(design->Hull()));
     }
     // add ship parts
-    for (PredefinedShipDesignManager::iterator it = GetPredefinedShipDesignManager().begin();
-         it != GetPredefinedShipDesignManager().end(); ++it)
-    {
-        const std::vector<std::string>& parts = it->second->Parts();
-        for (std::vector<std::string>::const_iterator it1 = parts.begin(); it1 != parts.end(); ++it1) {
-            if (*it1 != "")
-                m_game_words.insert(UserString(*it1));
+    for (const auto& design : GetPredefinedShipDesignManager().GetOrderedShipDesigns()) {
+        for (const std::string& part_name : design->Parts()) {
+            if (part_name != "")
+                m_game_words.insert(UserString(part_name));
         }
     }
  }
 
 void MessageWndEdit::AutoComplete() {
-    std::string fullLine = this->Text();
+    std::string full_line = this->Text();
 
     // Check for repeated tab
     // if current line is same as the last read line
-    if (m_lastLineRead != "" && boost::equals(fullLine, m_lastLineRead)){
-        if (m_repeatedTabCount >= m_auto_complete_choices.size())
-            m_repeatedTabCount = 0;
+    if (m_last_line_read != "" && boost::equals(full_line, m_last_line_read)){
+        if (m_repeated_tab_count >= m_auto_complete_choices.size())
+            m_repeated_tab_count = 0;
 
-        std::string nextWord = m_auto_complete_choices.at(m_repeatedTabCount);
+        std::string next_word = m_auto_complete_choices.at(m_repeated_tab_count);
 
-        if (nextWord != "") {
-             // Remove the old choice from the line
+        if (next_word != "") {
+            // Remove the old choice from the line
             // and replace it with the next choice
-            fullLine = fullLine.substr(0, fullLine.size() - (m_lastGameWord.size() + 1));
-            fullLine.insert(fullLine.size(), nextWord + " ");
-            this->SetText(fullLine);
-            GG::CPSize move_cursor_to = fullLine.size() + GG::CP1;
+            full_line = full_line.substr(0, full_line.size() - (m_last_game_word.size() + 1));
+            full_line.insert(full_line.size(), next_word + " ");
+            this->SetText(full_line);
+            GG::CPSize move_cursor_to = full_line.size() + GG::CP1;
             this->SelectRange(move_cursor_to, move_cursor_to);
-            m_lastGameWord = nextWord;
-            m_lastLineRead = this->Text();
+            m_last_game_word = next_word;
+            m_last_line_read = this->Text();
         }
-        ++m_repeatedTabCount;
+        ++m_repeated_tab_count;
     }
     else {
-        bool exactMatch = false;
+        bool exact_match = false;
 
-        std::pair<GG::CPSize, GG::CPSize> cursor_pos = this->CursorPosn();
-        if (cursor_pos.first == cursor_pos.second && 0 < cursor_pos.first && cursor_pos.first <= fullLine.size()) {
-            std::string::size_type word_start = fullLine.substr(0, Value(cursor_pos.first)).find_last_of(" :");
+        auto cursor_pos = this->CursorPosn();
+        if (cursor_pos.first == cursor_pos.second && 0 < cursor_pos.first && cursor_pos.first <= full_line.size()) {
+            auto word_start = full_line.substr(0, Value(cursor_pos.first)).find_last_of(" :");
             if (word_start == std::string::npos)
                 word_start = 0;
             else
                 ++word_start;
-            std::string partial_word = fullLine.substr(word_start, Value(cursor_pos.first - word_start));
-            if (partial_word == "")
+            std::string partial_word = full_line.substr(word_start, Value(cursor_pos.first - word_start));
+            if (partial_word.empty())
                 return;
 
             // Find game words to try an autocomplete
             FindGameWords();
 
             // See if word is an exact match with a game word
-            for (std::set<std::string>::const_iterator it = m_game_words.begin(); it != m_game_words.end(); ++it) {
-                if (boost::iequals(*it, partial_word)) { // if there's an exact match, just add a space
-                    fullLine.insert(Value(cursor_pos.first), " ");
-                    this->SetText(fullLine);
+            for (const std::string& word : m_game_words) {
+                if (boost::iequals(word, partial_word)) { // if there's an exact match, just add a space
+                    full_line.insert(Value(cursor_pos.first), " ");
+                    this->SetText(full_line);
                     this->SelectRange(cursor_pos.first + 1, cursor_pos.first + 1);
-                    exactMatch = true;
+                    exact_match = true;
                     break;
                 }
             }
             // If not an exact match try to complete the word
-            if (!exactMatch) 
-                CompleteWord(m_game_words, partial_word, cursor_pos, fullLine);
+            if (!exact_match)
+                CompleteWord(m_game_words, partial_word, cursor_pos, full_line);
         }
     }
 }
 
-bool MessageWndEdit::CompleteWord(const std::set<std::string>& names,
-                                  const std::string& partial_word,
-                                  const std::pair<GG::CPSize,
-                                  const GG::CPSize>& cursor_pos,
-                                  std::string& fullLine)
+bool MessageWndEdit::CompleteWord(const std::set<std::string>& names, const std::string& partial_word,
+                                  const std::pair<GG::CPSize, const GG::CPSize>& cursor_pos,
+                                  std::string& full_line)
 {
     // clear repeated tab variables
     m_auto_complete_choices.clear();
-    m_repeatedTabCount = 0;
+    m_repeated_tab_count = 0;
 
-    bool partialWordMatch = false;
-    std::string gameWord;
+    bool partial_word_match = false;
+    std::string game_word;
 
     // Check if the partial_word is contained in any game words
-    for (std::set<std::string>::const_iterator it = names.begin(); it != names.end(); ++it) {
-        std::string tempGameWord = *it;
+    for (const std::string& temp_game_word : names) {
+        if (temp_game_word.size() >= partial_word.size()) {
+            std::string game_word_partial = temp_game_word.substr(0, partial_word.size());
 
-        if (tempGameWord.size() >= partial_word.size()) {
-            std::string gameWordPartial = tempGameWord.substr(0, partial_word.size());
-
-            if (boost::iequals(gameWordPartial, partial_word)) {
-                if (gameWordPartial != "") {
+            if (boost::iequals(game_word_partial, partial_word)) {
+                if (game_word_partial != "") {
                     // Add all possible word choices for repeated tab
-                    m_auto_complete_choices.push_back(tempGameWord);
-                    partialWordMatch = true;
+                    m_auto_complete_choices.push_back(temp_game_word);
+                    partial_word_match = true;
                 }
             }
         }
     }
-  
-    if (!partialWordMatch)
+
+    if (!partial_word_match)
         return false;
 
     // Grab first autocomplete choice
-    gameWord = m_auto_complete_choices.at(m_repeatedTabCount++);
-    m_lastGameWord = gameWord;
+    game_word = m_auto_complete_choices.at(m_repeated_tab_count++);
+    m_last_game_word = game_word;
 
     // Remove the partial_word from the line
     // and replace it with the properly formated game word
-    fullLine = fullLine.substr(0, fullLine.size() - partial_word.size());
-    fullLine.insert(fullLine.size(), gameWord + " ");
-    this->SetText(fullLine);
-    m_lastLineRead = this->Text();
-    GG::CPSize move_cursor_to = fullLine.size() + GG::CP1;
+    full_line = full_line.substr(0, full_line.size() - partial_word.size());
+    full_line.insert(full_line.size(), game_word + " ");
+    this->SetText(full_line);
+    m_last_line_read = this->Text();
+    GG::CPSize move_cursor_to = full_line.size() + GG::CP1;
     this->SelectRange(move_cursor_to, move_cursor_to);
     return true;
 }
@@ -269,32 +314,41 @@ bool MessageWndEdit::CompleteWord(const std::set<std::string>& names,
 ////////////////////
 //   MessageWnd   //
 ////////////////////
-MessageWnd::MessageWnd(const std::string& config_name) :
-    CUIWnd(UserString("MESSAGES_PANEL_TITLE"),
-           GG::INTERACTIVE | GG::DRAGABLE | GG::ONTOP | GG::RESIZABLE | CLOSABLE | PINABLE,
-           config_name),
-    m_display(0),
-    m_edit(0),
+MessageWnd::MessageWnd(GG::Flags<GG::WndFlag> flags, const std::string& config_name) :
+    CUIWnd(UserString("MESSAGES_PANEL_TITLE"), flags, config_name),
+    m_display(nullptr),
+    m_edit(nullptr),
     m_display_show_time(0),
     m_history(),
     m_history_position()
-{
-    m_display = new CUIMultiEdit("", GG::MULTI_WORDBREAK | GG::MULTI_READ_ONLY | GG::MULTI_TERMINAL_STYLE | GG::MULTI_INTEGRAL_HEIGHT);
-    AttachChild(m_display);
-    m_display->SetMaxLinesOfHistory(100); // executing this line seems to cause crashes in MultiEdit when adding more lines to the control than the history limit
+{}
 
-    m_edit = new MessageWndEdit();
+void MessageWnd::CompleteConstruction() {
+    CUIWnd::CompleteConstruction();
+
+    m_display = GG::Wnd::Create<CUIMultiEdit>("", GG::MULTI_WORDBREAK | GG::MULTI_READ_ONLY |
+                                                  GG::MULTI_TERMINAL_STYLE | GG::MULTI_INTEGRAL_HEIGHT);
+    AttachChild(m_display);
+    m_display->SetMaxLinesOfHistory(8000);
+
+    m_edit = GG::Wnd::Create<MessageWndEdit>();
     AttachChild(m_edit);
 
-    GG::Connect(m_edit->TextEnteredSignal,  &MessageWnd::MessageEntered,                this);
-    GG::Connect(m_edit->UpPressedSignal,    &MessageWnd::MessageHistoryUpRequested,     this);
-    GG::Connect(m_edit->DownPressedSignal,  &MessageWnd::MessageHistoryDownRequested,   this);
-    GG::Connect(m_edit->GainingFocusSignal, TypingSignal);
-    GG::Connect(m_edit->LosingFocusSignal,  DoneTypingSignal);
+    m_edit->TextEnteredSignal.connect(
+        boost::bind(&MessageWnd::MessageEntered, this));
+    m_edit->UpPressedSignal.connect(
+        boost::bind(&MessageWnd::MessageHistoryUpRequested, this));
+    m_edit->DownPressedSignal.connect(
+        boost::bind(&MessageWnd::MessageHistoryDownRequested, this));
+    m_edit->GainingFocusSignal.connect(
+        TypingSignal);
+    m_edit->LosingFocusSignal.connect(
+        DoneTypingSignal);
 
     m_history.push_front("");
 
     DoLayout();
+    SaveDefaultedOptions();
 }
 
 void MessageWnd::DoLayout() {
@@ -312,40 +366,40 @@ void MessageWnd::SizeMove(const GG::Pt& ul, const GG::Pt& lr) {
     const GG::Pt old_size = Size();
     CUIWnd::SizeMove(ul, lr);
     if (old_size != Size())
-        DoLayout();
+        RequirePreRender();
 }
 
-void MessageWnd::HandlePlayerChatMessage(const std::string& text, int sender_player_id, int recipient_player_id) {
-    const ClientApp* app = ClientApp::GetApp();
-    if (!app) {
-        ErrorLogger() << "MessageWnd::HandlePlayerChatMessage couldn't get client app!";
-        return;
-    }
+void MessageWnd::PreRender() {
+    GG::Wnd::PreRender();
+    DoLayout();
+}
 
-    const std::map<int, PlayerInfo>& players = app->Players();
-    std::map<int, PlayerInfo>::const_iterator player_it = players.find(sender_player_id);
-    if (player_it == players.end()) {
-        ErrorLogger() << "MessageWnd::HandlePlayerChatMessage couldn't message sending player with id: " << sender_player_id;
-        return;
-    }
-
-    const std::string& sender_name = player_it->second.name;
-    const int& sender_empire_id = player_it->second.empire_id;
-
-    GG::Clr sender_colour(ClientUI::TextColor());
-    if (const Empire* sender_empire = GetEmpire(sender_empire_id))
-        sender_colour = sender_empire->Color();
-
-    std::string wrapped_text = RgbaTag(sender_colour) + sender_name + ": " + text + "</rgba>";
+void MessageWnd::HandlePlayerChatMessage(const std::string& text,
+                                         const std::string& player_name,
+                                         GG::Clr text_color,
+                                         const boost::posix_time::ptime& timestamp,
+                                         int recipient_player_id)
+{
+    std::string filtered_message = StringtableTextSubstitute(text);
+    std::string wrapped_text = RgbaTag(text_color);
+    const std::string&& formatted_timestamp = ClientUI::FormatTimestamp(timestamp);
+    if (IsValidUTF8(formatted_timestamp))
+        wrapped_text += formatted_timestamp;
+    if (player_name.empty())
+        wrapped_text += filtered_message + "</rgba>";
+    else
+        wrapped_text += player_name + ": " + filtered_message + "</rgba>";
+    TraceLogger() << "HandlePlayerChatMessage sender: " << player_name
+                  << "  sender colour rgba tag: " << RgbaTag(text_color)
+                  << "  filtered message: " << filtered_message
+                  << "  timestamp text: " << ClientUI::FormatTimestamp(timestamp)
+                  << "  wrapped text: " << wrapped_text;
 
     *m_display += wrapped_text + "\n";
     m_display_show_time = GG::GUI::GetGUI()->Ticks();
 }
 
-void MessageWnd::HandlePlayerStatusUpdate(Message::PlayerStatus player_status, int about_player_id)
-{}
-
-void MessageWnd::HandleTurnPhaseUpdate(Message::TurnProgressPhase phase_id) {
+void MessageWnd::HandleTurnPhaseUpdate(Message::TurnProgressPhase phase_id, bool prefixed /*= false*/) {
     std::string phase_str;
     switch (phase_id) {
     case Message::FLEET_MOVEMENT:
@@ -384,7 +438,10 @@ void MessageWnd::HandleTurnPhaseUpdate(Message::TurnProgressPhase phase_id) {
         break;
     }
 
-    *m_display += phase_str + "\n";
+    if (prefixed)
+        *m_display += boost::str(FlexibleFormat(UserString("PLAYING_GAME")) % phase_str) + "\n";
+    else
+        *m_display += phase_str + "\n";
     m_display_show_time = GG::GUI::GetGUI()->Ticks();
 }
 
@@ -409,14 +466,13 @@ void MessageWnd::OpenForInput() {
 namespace {
     void SendChatMessage(const std::string& text, std::set<int> recipients) {
         ClientNetworking& net = HumanClientApp::GetApp()->Networking();
-        int sender_id = HumanClientApp::GetApp()->PlayerID();
 
         if (recipients.empty()) {
-            net.SendMessage(GlobalChatMessage(sender_id, text));
+            net.SendMessage(PlayerChatMessage(text));
         } else {
-            recipients.insert(sender_id);   // ensure recipient sees own sent message
-            for (std::set<int>::const_iterator it = recipients.begin(); it != recipients.end(); ++it)
-                net.SendMessage(SingleRecipientChatMessage(sender_id, *it, text));
+            recipients.insert(HumanClientApp::GetApp()->PlayerID());   // ensure recipient sees own sent message
+            for (int recipient_id : recipients)
+                net.SendMessage(PlayerChatMessage(text, recipient_id));
         }
     }
 
@@ -473,7 +529,7 @@ void MessageWnd::MessageEntered() {
     } else {
         // otherwise, treat message as chat and send to recipients
         std::set<int> recipients;
-        if (PlayerListWnd* player_list_wnd = ClientUI::GetClientUI()->GetPlayerListWnd())
+        if (PlayerListWnd* player_list_wnd = ClientUI::GetClientUI()->GetPlayerListWnd().get())
             recipients = player_list_wnd->SelectedPlayerIDs();
         SendChatMessage(trimmed_text, recipients);
     }
@@ -486,6 +542,7 @@ void MessageWnd::MessageHistoryUpRequested() {
         m_history[m_history_position] = m_edit->Text();
         ++m_history_position;
         m_edit->SetText(m_history[m_history_position]);
+        m_edit->SelectRange(m_edit->Length(), m_edit->Length());    // put cursor at end of historical input
     }
 }
 
@@ -494,6 +551,7 @@ void MessageWnd::MessageHistoryDownRequested() {
         m_history[m_history_position] = m_edit->Text();
         --m_history_position;
         m_edit->SetText(m_history[m_history_position]);
+        m_edit->SelectRange(m_edit->Length(), m_edit->Length());    // put cursor at end of historical input
     }
 }
 

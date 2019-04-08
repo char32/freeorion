@@ -1,13 +1,14 @@
-// -*- C++ -*-
 #ifndef _EmpireManager_h_
 #define _EmpireManager_h_
 
-#include "../universe/Enums.h"
 #include "Diplomacy.h"
+#include "../universe/EnumsFwd.h"
 #include "../util/Export.h"
+#include "../util/Serialize.h"
 
 #include <GG/Clr.h>
 
+#include <boost/filesystem.hpp>
 #include <boost/serialization/access.hpp>
 #include <boost/signals2/signal.hpp>
 
@@ -17,32 +18,28 @@
 #include <vector>
 
 class Empire;
-
-struct FO_COMMON_API DiplomaticStatusUpdateInfo {
-    DiplomaticStatusUpdateInfo();
-    DiplomaticStatusUpdateInfo(int empire1_id_, int empire2_id_, DiplomaticStatus status);
-    int                 empire1_id;
-    int                 empire2_id;
-    DiplomaticStatus    diplo_status;
-};
+class UniverseObject;
 
 /** Maintains all of the Empire objects that exist in the application. */
 class FO_COMMON_API EmpireManager {
 public:
     /// Iterator over Empires
-    typedef std::map<int, Empire*>::iterator iterator; 
+    typedef std::map<int, Empire*>::iterator iterator;
 
     /// Const Iterator over Empires
     typedef std::map<int, Empire*>::const_iterator const_iterator;
 
     /** \name Structors */ //@{
-    virtual ~EmpireManager(); ///< virtual dtor
+    virtual ~EmpireManager();
+
     const EmpireManager& operator=(EmpireManager& rhs); ///< assignment operator (move semantics)
     //@}
 
     /** \name Accessors */ //@{
     /** Returns the empire whose ID is \a ID, or 0 if none exists. */
     const Empire*       GetEmpire(int id) const;
+    /** Return the empire source or nullptr if the empire or source doesn't exist.*/
+    std::shared_ptr<const UniverseObject> GetSource(int id) const;
     const std::string&  GetEmpireName(int id) const;
 
     const_iterator      begin() const;
@@ -50,13 +47,11 @@ public:
 
     int                 NumEmpires() const;
 
-    /** Returns whether the empire with ID \a id has been eliminated, or false
-      * if no such empire exists. */
-    bool                Eliminated(int id) const;
-
     DiplomaticStatus            GetDiplomaticStatus(int empire1, int empire2) const;
-    bool                        DiplomaticMessageAvailable(int empire1, int empire2) const;
-    const DiplomaticMessage&    GetDiplomaticMessage(int empire1, int empire2) const;
+    std::set<int>               GetEmpireIDsWithDiplomaticStatusWithEmpire(int empire_id,
+                                                                           DiplomaticStatus diplo_status) const;
+    bool                        DiplomaticMessageAvailable(int sender_id, int recipient_id) const;
+    const DiplomaticMessage&    GetDiplomaticMessage(int sender_id, int recipient_id) const;
 
     std::string         Dump() const;
     //@}
@@ -68,18 +63,12 @@ public:
     iterator    begin();
     iterator    end();
 
-    void        BackPropegateMeters();
-
-    /** Marks the empire with ID \a id as eliminated, and cleans up that empire
-      * if it exists (or does nothing if that empire doesn't exist).  Cleanup
-      * involves clearing queues, resetting the capital, and cleaning up other
-      * state info not relevant to an eliminated empire. */
-    void        EliminateEmpire(int id);
+    void        BackPropagateMeters();
 
     void        SetDiplomaticStatus(int empire1, int empire2, DiplomaticStatus status);
     void        HandleDiplomaticMessage(const DiplomaticMessage& message);
     void        SetDiplomaticMessage(const DiplomaticMessage& message);
-    void        RemoveDiplomaticMessage(int empire1, int empire2);
+    void        RemoveDiplomaticMessage(int sender_id, int recipient_id);
 
     void        ResetDiplomacy();
 
@@ -88,7 +77,7 @@ public:
       * caller's responsibility to make sure that universe updates planet
       * ownership. */
     Empire*     CreateEmpire(int empire_id, const std::string& name, const std::string& player_name,
-                                 const GG::Clr& color);
+                             const GG::Clr& color, bool authenticated);
 
     /** Removes and deletes all empires from the manager. */
     void        Clear();
@@ -102,13 +91,14 @@ public:
 private:
     EmpireManager();
 
+    std::string DumpDiplomacy() const;
+
     /** Adds the given empire to the manager. */
     void        InsertEmpire(Empire* empire);
     void        GetDiplomaticMessagesToSerialize(std::map<std::pair<int, int>, DiplomaticMessage>& messages,
                                                  int encoding_empire) const;
 
     std::map<int, Empire*>                          m_empire_map;
-    std::set<int>                                   m_eliminated_empires;
     std::map<std::pair<int, int>, DiplomaticStatus> m_empire_diplomatic_statuses;
     std::map<std::pair<int, int>, DiplomaticMessage>m_diplomatic_messages;
 
@@ -120,7 +110,15 @@ private:
     void serialize(Archive& ar, const unsigned int version);
 };
 
+extern template FO_COMMON_API void EmpireManager::serialize<freeorion_bin_oarchive>(freeorion_bin_oarchive&, const unsigned int);
+extern template FO_COMMON_API void EmpireManager::serialize<freeorion_bin_iarchive>(freeorion_bin_iarchive&, const unsigned int);
+extern template FO_COMMON_API void EmpireManager::serialize<freeorion_xml_oarchive>(freeorion_xml_oarchive&, const unsigned int);
+extern template FO_COMMON_API void EmpireManager::serialize<freeorion_xml_iarchive>(freeorion_xml_iarchive&, const unsigned int);
+
 /** The colors that are available for use for empires in the game. */
 FO_COMMON_API const std::vector<GG::Clr>& EmpireColors();
+
+/** Initialize empire colors from \p path */
+FO_COMMON_API void InitEmpireColors(const boost::filesystem::path& path);
 
 #endif // _EmpireManager_h_

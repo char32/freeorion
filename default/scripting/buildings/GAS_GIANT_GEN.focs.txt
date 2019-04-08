@@ -1,0 +1,51 @@
+BuildingType
+    name = "BLD_GAS_GIANT_GEN"
+    description = "BLD_GAS_GIANT_GEN_DESC"
+    buildcost = 25 * [[BUILDING_COST_MULTIPLIER]]
+    buildtime = 3
+    tags = "ORBITAL"
+    location = And [
+        Planet
+        Not Contains Building name = "BLD_GAS_GIANT_GEN"
+        OwnedBy empire = Source.Owner
+        Planet type = GasGiant
+    ]
+    EnqueueLocation = [[ENQUEUE_BUILD_ONE_PER_PLANET]]
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                Planet
+                InSystem id = Source.SystemID
+                Focus type = "FOCUS_INDUSTRY"
+                NOT Population high = 0
+                OwnedBy empire = Source.Owner
+            ]
+            activation = ContainedBy Population high = 0
+            stackinggroup = "GAS_GIANT_GEN_STACK"
+            priority = [[VERY_LATE_PRIORITY]]
+            effects = SetTargetIndustry value = Value + 10
+
+        EffectsGroup
+            scope = And [
+                Planet
+                InSystem id = Source.SystemID
+                Focus type = "FOCUS_INDUSTRY"
+                NOT Population high = 0
+                OwnedBy empire = Source.Owner
+            ]
+            activation = ContainedBy Not Population high = 0
+            // unpopulated gas giant generator planet bonus applies first
+            stackinggroup = "GAS_GIANT_GEN_STACK"
+            priority = [[VERY_LATE_PRIORITY]]
+            effects = SetTargetIndustry value = Value + 5
+
+        EffectsGroup
+            scope = Source
+            activation = Not Planet type = GasGiant
+            effects = Destroy
+    ]
+    icon = "icons/building/gas-giant-generator.png"
+
+#include "/scripting/common/enqueue.macros"
+#include "/scripting/common/priorities.macros"
+#include "/scripting/common/base_prod.macros"

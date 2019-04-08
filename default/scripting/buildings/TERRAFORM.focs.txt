@@ -1,0 +1,51 @@
+BuildingType
+    name = "BLD_TERRAFORM"
+    description = "BLD_TERRAFORM_DESC"
+    buildcost = 100 * (Target.HabitableSize * (1 + Target.DistanceFromOriginalType) ) * [[BUILDING_COST_MULTIPLIER]]
+    buildtime = 8
+    location = And [
+        Planet
+        Not Contains Building name = "BLD_TERRAFORM"
+        Not Contains Building name = "BLD_TERRAFORM_REVERT"
+        OwnedBy empire = Source.Owner
+        TargetPopulation low = 1
+        Not Planet type = [Asteroids GasGiant]
+        Not Planet environment = [Uninhabitable Good]
+        Not And [
+            Species name = "SP_EXOBOT"
+            Planet environment = Adequate
+        ]
+        Not HasTag name = "NO_TERRAFORM"
+    ]
+    EnqueueLocation = And [
+        Planet
+        OwnedBy empire = Source.Owner
+        Not Contains Building name = "BLD_TERRAFORM_REVERT"
+        Not Contains Building name = "BLD_GAIA_TRANS"
+        Not HasSpecial name = "GAIA_SPECIAL"
+        Not Enqueued type = Building name = "BLD_TERRAFORM_REVERT"
+        Not Enqueued type = Building name = "BLD_GAIA_TRANS"
+    ]
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                Object id = Source.PlanetID
+                Planet
+            ]
+            effects = [
+                SetPlanetType type = Target.NextBetterPlanetType
+                GenerateSitRepMessage
+                    message = "EFFECT_TERRAFORM"
+                    label = "EFFECT_TERRAFORM_LABEL"
+                    icon = "icons/building/terraform.png"
+                    parameters = tag = "planet" data = Target.ID
+                    empire = Source.Owner
+            ]
+
+        EffectsGroup
+            scope = Source
+            effects = Destroy
+    ]
+    icon = "icons/building/terraform.png"
+
+#include "/scripting/common/base_prod.macros"

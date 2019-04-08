@@ -1,80 +1,36 @@
-#include "ValueRefParserImpl.h"
+#include "ValueRefParser.h"
 
 #include "EnumParser.h"
+#include "EnumValueRefRules.h"
 
+#include "../universe/Enums.h"
+#include "../universe/ValueRef.h"
 
-namespace {
-    struct universe_object_type_parser_rules {
-        universe_object_type_parser_rules()  {
-            qi::_1_type _1;
-            qi::_val_type _val;
-            using phoenix::new_;
-            using phoenix::push_back;
-
-            const parse::lexer& tok = parse::lexer::instance();
-
-            variable_name
-                %=   tok.ObjectType_
-                ;
-
-            constant
-                =    parse::enum_parser<UniverseObjectType>() [ _val = new_<ValueRef::Constant<UniverseObjectType> >(_1) ]
-                ;
-
-            initialize_bound_variable_parser<UniverseObjectType>(bound_variable, variable_name);
-
-            statistic_sub_value_ref
-                =   constant
-                |   bound_variable
-                ;
-
-            initialize_nonnumeric_expression_parsers<UniverseObjectType>(function_expr, operated_expr, expr, primary_expr);
-
-            initialize_nonnumeric_statistic_parser<UniverseObjectType>(statistic, statistic_sub_value_ref);
-
-            primary_expr
-                =   constant
-                |   bound_variable
-                |   statistic
-                ;
-
-            variable_name.name("ObjectType variable name (e.g., ObjectType)");
-            constant.name("ObjectType");
-            bound_variable.name("ObjectType variable");
-            statistic.name("ObjectType statistic");
-            primary_expr.name("ObjectType expression");
-
-#if DEBUG_VALUEREF_PARSERS
-            debug(variable_name);
-            debug(constant);
-            debug(bound_variable);
-            debug(statistic);
-            debug(primary_expr);
-#endif
-        }
-
-        typedef parse::value_ref_parser_rule<UniverseObjectType>::type  rule;
-        typedef variable_rule<UniverseObjectType>::type                 variable_rule;
-        typedef statistic_rule<UniverseObjectType>::type                statistic_rule;
-        typedef expression_rule<UniverseObjectType>::type               expression_rule;
-
-        name_token_rule variable_name;
-        rule            constant;
-        variable_rule   bound_variable;
-        rule            statistic_sub_value_ref;
-        statistic_rule  statistic;
-        expression_rule function_expr;
-        expression_rule operated_expr;
-        rule            expr;
-        rule            primary_expr;
-    };
-}
-
-namespace parse {
-    template <>
-    value_ref_parser_rule<UniverseObjectType>::type& value_ref_parser<UniverseObjectType>()
+namespace parse { namespace detail {
+    universe_object_type_parser_rules::universe_object_type_parser_rules(
+        const parse::lexer& tok,
+        Labeller& label,
+        const condition_parser_grammar& condition_parser
+) :
+        enum_value_ref_rules("ObjectType", tok, label, condition_parser)
     {
-        static universe_object_type_parser_rules retval;
-        return retval.expr;
+        boost::spirit::qi::_val_type _val;
+
+        variable_name
+            %=   tok.ObjectType_
+            ;
+
+        enum_expr
+            =   tok.Building_           [ _val = OBJ_BUILDING ]
+            |   tok.Ship_               [ _val = OBJ_SHIP ]
+            |   tok.Fleet_              [ _val = OBJ_FLEET ]
+            |   tok.Planet_             [ _val = OBJ_PLANET ]
+            |   tok.PopulationCenter_   [ _val = OBJ_POP_CENTER ]
+            |   tok.ProductionCenter_   [ _val = OBJ_PROD_CENTER ]
+            |   tok.System_             [ _val = OBJ_SYSTEM ]
+            |   tok.Field_              [ _val = OBJ_FIELD ]
+            |   tok.Fighter_            [ _val = OBJ_FIGHTER ]
+            ;
     }
+}
 }

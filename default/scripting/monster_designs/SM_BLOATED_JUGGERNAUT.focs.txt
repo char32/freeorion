@@ -1,0 +1,16 @@
+ShipDesign
+    name = "SM_BLOATED_JUGGERNAUT"
+    uuid = "08a58b08-0929-496d-84fc-fba91424ca22"
+    description = "SM_BLOATED_JUGGERNAUT_DESC"
+    hull = "SH_BLOATED_JUGGERNAUT_BODY"
+    parts = [
+        "SP_CHAOS_WAVE"
+        "SR_PLASMA_DISCHARGE"
+        "SR_SPINES"
+        "SR_SPINES"
+        "SR_SPINES"
+        "SH_PLASMA"
+        "ST_CLOAK_2"
+    ]
+    icon  = "icons/monsters/juggernaut-4.png"
+    model = "seed"

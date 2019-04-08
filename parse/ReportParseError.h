@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _ReportParseError_h_
 #define _ReportParseError_h_
 
@@ -16,11 +15,7 @@ namespace parse {
             void indent() const;
             std::string prepare(const string& s) const;
             void print(const string& str) const;
-#if BOOST_VERSION < 105600
-            void operator()(boost::spirit::info::nil) const;
-#else
             void operator()(boost::spirit::info::nil_) const;
-#endif
             void operator()(const string& str) const;
             void operator()(const boost::spirit::info& what) const;
             void operator()(const std::pair<boost::spirit::info, boost::spirit::info>& pair) const;
@@ -36,38 +31,31 @@ namespace parse {
         void pretty_print(std::ostream& os, boost::spirit::info const& what);
 
         void default_send_error_string(const std::string& str);
-
-        extern const char*      s_filename;
-        extern text_iterator*   s_text_it;
-        extern text_iterator    s_begin;
-        extern text_iterator    s_end;
     }
 
     struct report_error_ {
-#if BOOST_VERSION < 105600
-        template <typename Arg1, typename Arg2, typename Arg3, typename Arg4> // Phoenix v2
-        struct result
-        { typedef void type; };
-#else
         typedef void result_type;
-#endif
 
         template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
-        void operator()(Arg1 first, Arg2, Arg3 it, Arg4 rule_name) const
-            {
-                std::string error_string;
-                generate_error_string(first, it, rule_name, error_string);
-                send_error_string(error_string);
-            }
+        void operator()(const std::string& filename, const text_iterator& begin, const text_iterator& end,
+                        Arg1 first, Arg2, Arg3 it, Arg4 rule_name) const
+        {
+            std::string error_string;
+            generate_error_string(filename, begin, end, first, it, rule_name, error_string);
+            send_error_string(error_string);
+        }
 
         static boost::function<void (const std::string&)> send_error_string;
 
     private:
-        std::pair<text_iterator, unsigned int> line_start_and_line_number(text_iterator error_position) const;
-        std::string get_line(text_iterator line_start) const;
-        std::string get_lines_before(text_iterator line_start) const;
-        std::string get_lines_after(text_iterator line_start) const;
-        void generate_error_string(const token_iterator& first,
+        std::pair<text_iterator, unsigned int> line_start_and_line_number(
+            const text_iterator& begin, const text_iterator& end, text_iterator error_position) const;
+        std::string get_line(const text_iterator& end, text_iterator line_start) const;
+        std::string get_lines_before(const text_iterator& begin, const text_iterator& end, text_iterator line_start) const;
+        std::string get_lines_after(const text_iterator& begin, const text_iterator& end, text_iterator line_start) const;
+        void generate_error_string(const std::string& filename,
+                                   const text_iterator& begin, const text_iterator& end,
+                                   const token_iterator& first,
                                    const token_iterator& it,
                                    const boost::spirit::info& rule_name,
                                    std::string& str) const;

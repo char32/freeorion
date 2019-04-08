@@ -1,279 +1,201 @@
-#include "EffectParserImpl.h"
+#include "EffectParser4.h"
 
-#include "EnumParser.h"
-#include "Label.h"
 #include "ValueRefParser.h"
+#include "EnumValueRefRules.h"
 #include "../universe/Effect.h"
+#include "../universe/ValueRef.h"
 
 #include <boost/spirit/include/phoenix.hpp>
 
 namespace qi = boost::spirit::qi;
 namespace phoenix = boost::phoenix;
 
-namespace {
-    struct effect_parser_rules_4 {
-        effect_parser_rules_4() {
-            qi::_1_type _1;
-            qi::_a_type _a;
-            qi::_b_type _b;
-            qi::_c_type _c;
-            qi::_d_type _d;
-            qi::_e_type _e;
-            qi::_f_type _f;
-            qi::_val_type _val;
-            qi::eps_type eps;
-            using phoenix::new_;
-            using phoenix::construct;
-            using phoenix::push_back;
+namespace parse { namespace detail {
+    effect_parser_rules_4::effect_parser_rules_4(
+        const parse::lexer& tok,
+        const effect_parser_grammar& effect_parser,
+        Labeller& label,
+        const condition_parser_grammar& condition_parser,
+        const value_ref_grammar<std::string>& string_grammar
+    ) :
+        effect_parser_rules_4::base_type(start, "effect_parser_rules_4"),
+        int_rules(tok, label, condition_parser, string_grammar),
+        double_rules(tok, label, condition_parser, string_grammar),
+        star_type_rules(tok, label, condition_parser),
+        planet_type_rules(tok, label, condition_parser),
+        planet_size_rules(tok, label, condition_parser),
+        one_or_more_effects(effect_parser)
+    {
+        qi::_1_type _1;
+        qi::_2_type _2;
+        qi::_3_type _3;
+        qi::_4_type _4;
+        qi::_5_type _5;
+        qi::_6_type _6;
+        qi::_val_type _val;
+        qi::eps_type eps;
+        qi::_pass_type _pass;
+        qi::omit_type omit_;
+        const boost::phoenix::function<construct_movable> construct_movable_;
+        const boost::phoenix::function<deconstruct_movable> deconstruct_movable_;
+        const boost::phoenix::function<deconstruct_movable_vector> deconstruct_movable_vector_;
 
-            const parse::lexer& tok =                                                       parse::lexer::instance();
+        using phoenix::new_;
+        using phoenix::construct;
+        using phoenix::push_back;
 
-            const parse::value_ref_parser_rule<int>::type& int_value_ref =                  parse::value_ref_parser<int>();
-            const parse::value_ref_parser_rule<double>::type& double_value_ref =            parse::value_ref_parser<double>();
-            const parse::value_ref_parser_rule<std::string>::type& string_value_ref =       parse::value_ref_parser<std::string>();
-            const parse::value_ref_parser_rule< ::PlanetType>::type& planet_type_value_ref= parse::value_ref_parser< ::PlanetType>();
-            const parse::value_ref_parser_rule< ::PlanetSize>::type& planet_size_value_ref= parse::value_ref_parser< ::PlanetSize>();
-            const parse::value_ref_parser_rule< ::StarType>::type& star_type_value_ref =    parse::value_ref_parser< ::StarType>();
+        create_planet
+            =   (       omit_[tok.CreatePlanet_]
+                        >   label(tok.Type_)        >   planet_type_rules.expr
+                        >   label(tok.PlanetSize_)  >   planet_size_rules.expr
+                        > -(label(tok.Name_)        >   string_grammar      )
+                        > -(label(tok.Effects_) > one_or_more_effects )
+                ) [ _val = construct_movable_(new_<Effect::CreatePlanet>(
+                    deconstruct_movable_(_1, _pass),
+                    deconstruct_movable_(_2, _pass),
+                    deconstruct_movable_(_3, _pass),
+                    deconstruct_movable_vector_(_4, _pass))) ]
+            ;
 
-            create_planet
-                =   (       tok.CreatePlanet_
-                        >   parse::label(Type_token)        >   planet_type_value_ref [ _a = _1 ]
-                        >   parse::label(PlanetSize_token)  >   planet_size_value_ref [ _b = _1 ]
-                        > -(parse::label(Name_token)        >   string_value_ref      [ _c = _1 ])
-                        > -(parse::label(Effects_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_d, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_d, _1) ]
-                            )
-                           )
-                    ) [ _val = new_<Effect::CreatePlanet>(_a, _b, _c, _d) ]
-                ;
+        create_building
+            =   (       omit_[tok.CreateBuilding_]
+                        >   label(tok.Type_)        >   string_grammar
+                        > -(label(tok.Name_)        >   string_grammar )
+                        > -(label(tok.Effects_) > one_or_more_effects )
+                ) [ _val = construct_movable_(new_<Effect::CreateBuilding>(
+                    deconstruct_movable_(_1, _pass),
+                    deconstruct_movable_(_2, _pass),
+                    deconstruct_movable_vector_(_3, _pass))) ]
+            ;
 
-            create_building
-                =   (       tok.CreateBuilding_
-                        >   parse::label(Type_token)        >   string_value_ref [ _a = _1 ]
-                        > -(parse::label(Name_token)        >   string_value_ref [ _b = _1 ])
-                        > -(parse::label(Effects_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_c, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_c, _1) ]
-                            )
-                           )
-                    ) [ _val = new_<Effect::CreateBuilding>(_a, _b, _c) ]
-                ;
+        create_ship_1
+            =   ((       omit_[tok.CreateShip_]
+                         >>  label(tok.DesignID_)
+                 )  >   int_rules.expr
+                 > -(label(tok.Empire_)      >   int_rules.expr    )
+                 > -(label(tok.Species_)     >   string_grammar )
+                 > -(label(tok.Name_)        >   string_grammar )
+                 > -(label(tok.Effects_)     >   one_or_more_effects )
+                ) [ _val = construct_movable_(new_<Effect::CreateShip>(
+                    deconstruct_movable_(_1, _pass),
+                    deconstruct_movable_(_2, _pass),
+                    deconstruct_movable_(_3, _pass),
+                    deconstruct_movable_(_4, _pass),
+                    deconstruct_movable_vector_(_5, _pass))) ]
+            ;
 
-            create_ship_1
-                =   (       tok.CreateShip_
-                        >>  parse::label(DesignID_token)    >   int_value_ref    [ _b = _1 ]
-                        > -(parse::label(Empire_token)      >   int_value_ref    [ _c = _1 ])
-                        > -(parse::label(Species_token)     >   string_value_ref [ _d = _1 ])
-                        > -(parse::label(Name_token)        >   string_value_ref [ _e = _1 ])
-                        > -(parse::label(Effects_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_f, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_f, _1) ]
-                            )
-                           )
-                    ) [ _val = new_<Effect::CreateShip>(_b, _c, _d, _e, _f) ]
-                ;
+        create_ship_2
+            =   ((       omit_[tok.CreateShip_]
+                         >>  label(tok.DesignName_)  >>  string_grammar
+                 )
+                 > -(label(tok.Empire_)      >   int_rules.expr    )
+                 > -(label(tok.Species_)     >   string_grammar )
+                 > -(label(tok.Name_)        >   string_grammar )
+                 > -(label(tok.Effects_)     >   one_or_more_effects )
+                ) [ _val = construct_movable_(new_<Effect::CreateShip>(
+                    deconstruct_movable_(_1, _pass),
+                    deconstruct_movable_(_2, _pass),
+                    deconstruct_movable_(_3, _pass),
+                    deconstruct_movable_(_4, _pass),
+                    deconstruct_movable_vector_(_5, _pass))) ]
+            ;
 
-            create_ship_2
-                =   (       tok.CreateShip_
-                        >>  parse::label(DesignName_token)  >>  string_value_ref [ _a = _1 ]
-                        > -(parse::label(Empire_token)      >   int_value_ref    [ _c = _1 ])
-                        > -(parse::label(Species_token)     >   string_value_ref [ _d = _1 ])
-                        > -(parse::label(Name_token)        >   string_value_ref [ _e = _1 ])
-                        > -(parse::label(Effects_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_f, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_f, _1) ]
-                            )
-                           )
-                    ) [ _val = new_<Effect::CreateShip>(_a, _c, _d, _e, _f) ]
-                ;
+        create_field_1
+            =   ((       omit_[tok.CreateField_]
+                         >>  label(tok.Type_)    >>  string_grammar
+                         >>  label(tok.Size_)
+                 )
+                 >   double_rules.expr
+                 > -(label(tok.Name_)    >   string_grammar )
+                 > -(label(tok.Effects_) > one_or_more_effects )
+                ) [ _val = construct_movable_(new_<Effect::CreateField>(
+                    deconstruct_movable_(_1, _pass),
+                    deconstruct_movable_(_2, _pass),
+                    deconstruct_movable_(_3, _pass),
+                    deconstruct_movable_vector_(_4, _pass))) ]
+            ;
 
-            create_field_1
-                =   (       tok.CreateField_
-                        >>  parse::label(Type_token)    >>  string_value_ref [ _a = _1 ]
-                        >>  parse::label(Size_token)    >   double_value_ref [ _b = _1 ]
-                        > -(parse::label(Name_token)    >   string_value_ref [ _d = _1 ])
-                        > -(parse::label(Effects_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_f, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_f, _1) ]
-                            )
-                           )
-                    ) [ _val = new_<Effect::CreateField>(_a, _b, _d, _f) ]
-                ;
+        create_field_2
+            =   ((       omit_[tok.CreateField_]
+                         >>  label(tok.Type_)    >>  string_grammar
+                         >>  label(tok.X_)
+                 )
+                 >   double_rules.expr
+                 >   label(tok.Y_)       >   double_rules.expr
+                 >   label(tok.Size_)    >   double_rules.expr
+                 > -(label(tok.Name_)    >   string_grammar )
+                 > -(label(tok.Effects_) > one_or_more_effects )
+                ) [ _val = construct_movable_(new_<Effect::CreateField>(
+                    deconstruct_movable_(_1, _pass),
+                    deconstruct_movable_(_2, _pass),
+                    deconstruct_movable_(_3, _pass),
+                    deconstruct_movable_(_4, _pass),
+                    deconstruct_movable_(_5, _pass),
+                    deconstruct_movable_vector_(_6, _pass))) ]
+            ;
 
-            create_field_2
-                =   (       tok.CreateField_
-                        >>  parse::label(Type_token)    >>  string_value_ref [ _a = _1 ]
-                        >>  parse::label(X_token)       >   double_value_ref [ _b = _1 ]
-                        >   parse::label(Y_token)       >   double_value_ref [ _c = _1 ]
-                        >   parse::label(Size_token)    >   double_value_ref [ _e = _1 ]
-                        > -(parse::label(Name_token)    >   string_value_ref [ _d = _1 ])
-                        > -(parse::label(Effects_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_f, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_f, _1) ]
-                            )
-                           )
-                    ) [ _val = new_<Effect::CreateField>(_a, _b, _c, _e, _d, _f) ]
-                ;
+        create_system_1
+            =   ((       omit_[tok.CreateSystem_]
+                         >>  label(tok.Type_)
+                 )
+                 >   star_type_rules.expr 
+                 >   label(tok.X_)       >   double_rules.expr    
+                 >   label(tok.Y_)       >   double_rules.expr    
+                 > -(label(tok.Name_)    >   string_grammar    )
+                 > -(label(tok.Effects_) > one_or_more_effects )
+                ) [ _val = construct_movable_(new_<Effect::CreateSystem>(
+                    deconstruct_movable_(_1, _pass),
+                    deconstruct_movable_(_2, _pass),
+                    deconstruct_movable_(_3, _pass),
+                    deconstruct_movable_(_4, _pass),
+                    deconstruct_movable_vector_(_5, _pass))) ]
+            ;
 
-            create_system_1
-                =   (       tok.CreateSystem_
-                        >>  parse::label(Type_token)    >   star_type_value_ref [ _a = _1 ]
-                        >   parse::label(X_token)       >   double_value_ref    [ _b = _1 ]
-                        >   parse::label(Y_token)       >   double_value_ref    [ _c = _1 ]
-                        > -(parse::label(Name_token)    >   string_value_ref    [ _d = _1 ])
-                        > -(parse::label(Effects_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_e, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_e, _1) ]
-                            )
-                           )
-                    ) [ _val = new_<Effect::CreateSystem>(_a, _b, _c, _d, _e) ]
-                ;
+        create_system_2
+            =   ((       omit_[tok.CreateSystem_]
+                         >>  label(tok.X_)
+                 )
+                 >   double_rules.expr 
+                 >   label(tok.Y_)       >   double_rules.expr 
+                 > -(label(tok.Name_)    >   string_grammar )
+                 > -(label(tok.Effects_) > one_or_more_effects )
+                ) [ _val = construct_movable_(new_<Effect::CreateSystem>(
+                    deconstruct_movable_(_1, _pass),
+                    deconstruct_movable_(_2, _pass),
+                    deconstruct_movable_(_3, _pass),
+                    deconstruct_movable_vector_(_4, _pass))) ]
+            ;
 
-            create_system_2
-                =   (       tok.CreateSystem_
-                        >>  parse::label(X_token)       >   double_value_ref [ _b = _1 ]
-                        >   parse::label(Y_token)       >   double_value_ref [ _c = _1 ]
-                        > -(parse::label(Name_token)    >   string_value_ref [ _d = _1 ])
-                        > -(parse::label(Effects_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_e, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_e, _1) ]
-                            )
-                           )
-                    ) [ _val = new_<Effect::CreateSystem>(_b, _c, _d, _e) ]
-                ;
+        start
+            %=  create_planet
+            |   create_building
+            |   create_ship_1
+            |   create_ship_2
+            |   create_field_1
+            |   create_field_2
+            |   create_system_1
+            |   create_system_2
+            ;
 
-            start
-                =   create_planet
-                |   create_building
-                |   create_ship_1
-                |   create_ship_2
-                |   create_field_1
-                |   create_field_2
-                |   create_system_1
-                |   create_system_2
-                ;
-
-            create_planet.name("CreatePlanet");
-            create_building.name("CreateBuilding");
-            create_ship_1.name("CreateShip");
-            create_ship_2.name("CreateShip");
-            create_field_1.name("CreateField");
-            create_field_2.name("CreateField");
-            create_system_1.name("CreateSystem");
-            create_system_2.name("CreateSystem");
+        create_planet.name("CreatePlanet");
+        create_building.name("CreateBuilding");
+        create_ship_1.name("CreateShip");
+        create_ship_2.name("CreateShip");
+        create_field_1.name("CreateField");
+        create_field_2.name("CreateField");
+        create_system_1.name("CreateSystem");
+        create_system_2.name("CreateSystem");
 
 #if DEBUG_EFFECT_PARSERS
-            debug(create_planet);
-            debug(create_building);
-            debug(create_ship_1);
-            debug(create_ship_2);
-            debug(create_field_1);
-            debug(create_field_2);
-            debug(create_system_1);
-            debug(create_system_2);
+        debug(create_planet);
+        debug(create_building);
+        debug(create_ship_1);
+        debug(create_ship_2);
+        debug(create_field_1);
+        debug(create_field_2);
+        debug(create_system_1);
+        debug(create_system_2);
 #endif
-        }
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Effect::EffectBase* (),
-            qi::locals<
-                ValueRef::ValueRefBase< ::PlanetType>*,
-                ValueRef::ValueRefBase< ::PlanetSize>*,
-                ValueRef::ValueRefBase<std::string>*,
-                std::vector<Effect::EffectBase*>
-            >,
-            parse::skipper_type
-        > create_planet_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Effect::EffectBase* (),
-            qi::locals<
-                ValueRef::ValueRefBase<std::string>*,
-                ValueRef::ValueRefBase<std::string>*,
-                std::vector<Effect::EffectBase*>
-            >,
-            parse::skipper_type
-        > create_building_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Effect::EffectBase* (),
-            qi::locals<
-                ValueRef::ValueRefBase< ::StarType>*,
-                ValueRef::ValueRefBase<double>*,
-                ValueRef::ValueRefBase<double>*,
-                ValueRef::ValueRefBase<std::string>*,
-                std::vector<Effect::EffectBase*>
-            >,
-            parse::skipper_type
-        > create_system_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Effect::EffectBase* (),
-            qi::locals<
-                ValueRef::ValueRefBase<std::string>*,
-                ValueRef::ValueRefBase<int>*,
-                ValueRef::ValueRefBase<int>*,
-                ValueRef::ValueRefBase<std::string>*,
-                ValueRef::ValueRefBase<std::string>*,
-                std::vector<Effect::EffectBase*>
-            >,
-            parse::skipper_type
-        > create_ship_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Effect::EffectBase* (),
-            qi::locals<
-                ValueRef::ValueRefBase<std::string>*,
-                ValueRef::ValueRefBase<double>*,
-                ValueRef::ValueRefBase<double>*,
-                ValueRef::ValueRefBase<std::string>*,
-                ValueRef::ValueRefBase<double>*,
-                std::vector<Effect::EffectBase*>
-            >,
-            parse::skipper_type
-        > create_field_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Effect::EffectBase* (),
-            qi::locals<
-                std::string,
-                std::string,
-                std::vector<std::pair<std::string, ValueRef::ValueRefBase<std::string>*> >,
-                EmpireAffiliationType
-            >,
-            parse::skipper_type
-        > generate_sitrep_message_rule;
-
-        create_planet_rule              create_planet;
-        create_building_rule            create_building;
-        create_ship_rule                create_ship_1;
-        create_ship_rule                create_ship_2;
-        create_field_rule               create_field_1;
-        create_field_rule               create_field_2;
-        create_system_rule              create_system_1;
-        create_system_rule              create_system_2;
-        parse::effect_parser_rule       start;
-    };
-}
-
-namespace parse { namespace detail {
-    const effect_parser_rule& effect_parser_4() {
-        static effect_parser_rules_4 retval;
-        return retval.start;
     }
+
 } }

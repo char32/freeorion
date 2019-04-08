@@ -1,0 +1,80 @@
+Hull
+    name = "SH_JUGGERNAUT_1_BODY"
+    description = "SH_JUGGERNAUT_1_BODY_DESC"
+    speed = 30
+    fuel = 3
+    stealth = 5
+    structure = 30
+    slots = [
+        Slot type = External position = (0.35, 0.70)
+        Slot type = External position = (0.65, 0.75)
+        Slot type = External position = (0.95, 0.65)
+        Slot type = Internal position = (0.50, 0.30)
+    ]
+    buildCost = 1
+    buildTime = 1
+    Unproducible
+    tags = [ "PEDIA_HULL_MONSTER_JUGGERNAUT" ]
+    location = All
+    effectsgroups = [
+       EffectsGroup    // remove self and recreate on first turn, so that it starts with age 0
+            scope = Source
+            activation = Turn high = 1
+            effects = [
+                CreateShip designname = "SM_JUGGERNAUT_1"
+                Destroy
+            ]
+
+        EffectsGroup
+            scope = NumberOf number = 2 condition = And [
+                Planet
+                Planet type = Asteroids
+                Not WithinStarlaneJumps jumps = 4 condition = And [
+                    System
+                    Contains And [
+                        Planet
+                        OwnedBy affiliation = AnyEmpire
+                    ]
+                ]
+            ]
+            activation = Not Turn low = 1
+            stackinggroup = "GAME_START_MOD_STACK"
+            effects = AddSpecial name = "JUGGERNAUT_NEST_SPECIAL"
+
+        [[MONSTER_MOVE_ALWAYS]]
+        [[INFINITE_FUEL]]
+        [[MONSTER_SHIELD_REGENERATION]]
+
+        EffectsGroup
+            scope = And [
+                Source
+                ContainedBy And [
+                    System 
+                    Contains Planet type = Asteroids
+                ]
+            ]
+            activation = And [
+                Turn low = max(30, Source.LastTurnActiveInBattle + 1)
+                Random probability = Source.Age*0.01 - 0.1
+            ]
+            effects = [
+                CreateShip designname = "SM_JUGGERNAUT_2" empire = Source.Owner
+                Destroy
+                GenerateSitRepMessage
+                    message = "EFFECT_TAME_MONSTER_MATURED"
+                    label = "EFFECT_TAME_MONSTER_MATURED_LABEL"
+                    icon = "icons/monsters/juggernaut-2.png"
+                    parameters = [
+                        tag = "system" data = Source.SystemID
+                        tag = "predefinedshipdesign" data = "SM_JUGGERNAUT_2"
+                    ]
+                    empire = Source.Owner
+            ]
+        [[MODERATE_VISION]]
+    ]
+    icon = ""
+    graphic = "icons/monsters/juggernaut-1.png"
+
+#include "monster.macros"
+
+#include "../ship_hulls.macros"

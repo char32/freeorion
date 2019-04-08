@@ -1,0 +1,42 @@
+Species
+    name = "SP_EXPERIMENTOR"
+    description = "SP_EXPERIMENTOR_DESC"
+    gameplay_description = "SP_EXPERIMENTOR_GAMEPLAY_DESC"
+
+    tags = [ "SELF_SUSTAINING" "NO_INDUSTRY" "ULTIMATE_RESEARCH" "GOOD_POPULATION" "AVERAGE_SUPPLY" "ULTIMATE_DETECTION" "ULTIMATE_STEALTH" "PEDIA_SELF_SUSTAINING_SPECIES_CLASS" ]
+
+    foci = [
+        /*[[HAS_INDUSTRY_FOCUS]]*/
+        [[HAS_RESEARCH_FOCUS]]
+        /*[[HAS_GROWTH_FOCUS]]*/
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    preferredfocus = "FOCUS_RESEARCH"
+
+    effectsgroups = [
+        [[NO_INDUSTRY]]
+        [[ULTIMATE_RESEARCH]]
+        [[ULTIMATE_STOCKPILE]]
+
+        [[GOOD_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[AVERAGE_SUPPLY]]
+        [[ULTIMATE_DEFENSE_TROOPS]]
+
+        [[ULTIMATE_STEALTH]]
+        [[ULTIMATE_DETECTION]]
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[STANDARD_SHIP_SHIELDS]]
+    ]
+
+    [[VERY_TOLERANT_EP]]
+
+    graphic = "icons/species/two-headed-03.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _SidePanel_h_
 #define _SidePanel_h_
 
@@ -10,7 +9,6 @@
 #include "../universe/System.h"
 
 #include <GG/DynamicGraphic.h>
-#include <GG/SignalsAndSlots.h>
 #include <GG/Texture.h>
 
 #include <vector>
@@ -24,12 +22,14 @@ public:
 
     /** \name Structors */ //@{
     SidePanel(const std::string& config_name);
+    void CompleteConstruction() override;
     ~SidePanel();
     //@}
 
     /** \name Accessors */ //@{
-    virtual bool        InWindow(const GG::Pt& pt) const;
-    virtual GG::Pt      ClientUpperLeft() const;
+    bool InWindow(const GG::Pt& pt) const override;
+
+    GG::Pt ClientUpperLeft() const override;
 
     /** Returns the id of the system shown in the SidePanels, or
       * INVALID_OBJECT_ID if no system is shown */
@@ -41,19 +41,21 @@ public:
 
     /** Returns whether this SidePanel contains an object with the indicated
       * \a object_id that can be selected within the SidePanel. */
-    bool                PlanetSelectable(int id) const;
+    bool                PlanetSelectable(int planet_id) const;
     //@}
 
     /** \name Mutators */ //@{
-    virtual void        Render();
-    virtual void        SizeMove(const GG::Pt& ul, const GG::Pt& lr);
+    void PreRender() override;
+
+    void SizeMove(const GG::Pt& ul, const GG::Pt& lr) override;
 
     /** Updates contents of sidepanel, but doesn't recreate contents or check
       * that object pointers are still valid.  All SidePanels' are updated */
     static void         Update();
 
-    /** Fully refreshes sidepanel and contents, recreating all contents from
-      * stored system id.  All SidePanels' are refreshed. */
+    /** Make refresh of sidepanel and contents happen during
+        pre-render. PreRender() Will recreate all contents from the stored
+        system id. All SidePanels are refreshed. */
     static void         Refresh();
 
     /** Selects the planet with id \a planet_id within the current system, if
@@ -96,48 +98,74 @@ public:
     /** emitted when a building is right clicked */
     static boost::signals2::signal<void (int)>    BuildingRightClickedSignal;
 
+protected:
+    void InitBuffers() override;
+
 private:
     class PlanetPanelContainer;
 
     void                DoLayout();
-    GG::Pt              ListRowSize() const;
 
     void                UpdateImpl();                   ///< updates contents quickly.  to be used when meters or other objects' data changes
-    void                RefreshImpl();                  ///< fully refreshes contents.  to be used when objects are created, destroyed or added to system
-    void                SelectPlanetImpl(int planet_id);///< sets selected planet in this sidepanel
 
-    void                SystemSelectionChanged(GG::DropDownList::iterator it);  ///< responds to user selecting a system in the droplist.  may emit SystemSelectedSignal
+    /** Fully refreshes sidepanel and contents, recreating all contents from
+      * stored system id.  All SidePanels are refreshed. */
+    void                RefreshInPreRender();
+
+    void                RefreshImpl();                  ///< fully refreshes contents.  to be used when objects are created, destroyed or added to system
+
+    /**  Insert all known systems into the SystemName drop down list.*/
+    void                RefreshSystemNames();
+    /**  Refresh the system name list when it closes, in case the known systems changed while it
+         was open. */
+    void                SystemNameDropListOpenedSlot(bool is_open);
+    /**  Handle the user selecting a system in the droplist while the list is closed, using keys.
+         It may emit SystemSelectedSignal. */
+    void                SystemSelectionChangedSlot(GG::DropDownList::iterator it);
 
     void                PrevButtonClicked();            ///< responds to user clicking next system button
     void                NextButtonClicked();            ///< responts to user clicking previous system button
-    void                PlanetSelected(int planet_id);  ///< responds to user selection of a planet by emitting PlanetSelectedSignal
+    /** Respond to the user clicking a planet by selecting it if selection is enabled.*/
+    void                PlanetClickedSlot(int planet_id);
 
-    static void         FleetsInserted(const std::vector<TemporaryPtr<Fleet> >& fleets);    ///< responds to insertion fleets into system during a turn.  may update colonize buttons
-    static void         FleetsRemoved(const std::vector<TemporaryPtr<Fleet> >& fleets);     ///< responds to removal fleets from system during a turn.  may update colonize buttons
-    static void         FleetStateChanged();            ///< responds to fleet state changes during a turn, which may include issueing or cancelling move orders.  may update colonize buttons
+    /** Responds to insertion fleets into system during a turn.  may update
+        colonize buttons. */
+    static void FleetsInserted(const std::vector<std::shared_ptr<Fleet>>& fleets);
 
-    CUIDropDownList*            m_system_name;
-    GG::TextControl*            m_star_type_text;
-    GG::Button*                 m_button_prev;
-    GG::Button*                 m_button_next;
-    GG::DynamicGraphic*         m_star_graphic;
+    /** Responds to removal fleets from system during a turn.  may update
+        colonize buttons. */
+    static void FleetsRemoved(const std::vector<std::shared_ptr<Fleet>>& fleets);
+
+    class SystemNameDropDownList;
+    std::shared_ptr<SystemNameDropDownList>     m_system_name = nullptr;
+    std::shared_ptr<GG::TextControl>            m_star_type_text = nullptr;
+    std::shared_ptr<GG::Button>                 m_button_prev = nullptr;
+    std::shared_ptr<GG::Button>                 m_button_next = nullptr;
+    std::shared_ptr<GG::DynamicGraphic>         m_star_graphic = nullptr;
 
     std::vector<GG::SubTexture> m_fleet_icons;
 
-    PlanetPanelContainer*       m_planet_panel_container;
-    MultiIconValueIndicator*    m_system_resource_summary;
+    std::shared_ptr<PlanetPanelContainer>       m_planet_panel_container = nullptr;
+    std::shared_ptr<MultiIconValueIndicator>    m_system_resource_summary = nullptr;
 
-    bool                        m_selection_enabled;
+    bool                        m_selection_enabled = false;
+
+    static bool                 s_needs_update;
+    static bool                 s_needs_refresh;
 
     static int                  s_system_id;
 
-    static std::set<SidePanel*> s_side_panels;
+    /** The id of the currently-selected planet, or INVALID_OBJECT_ID if no planet is selected. */
+    static int                  s_planet_id;
+
+    static std::set<std::weak_ptr<SidePanel>, std::owner_less<std::weak_ptr<SidePanel>>> s_side_panels;
 
     static std::set<boost::signals2::connection>      s_system_connections;
     static std::map<int, boost::signals2::connection> s_fleet_state_change_signals;
 };
 
-TemporaryPtr<const Ship>    ValidSelectedColonyShip(int system_id);
+std::shared_ptr<const Ship> ValidSelectedColonyShip(int system_id);
+
 int                         AutomaticallyChosenColonyShip(int target_planet_id);
 
 #endif // _SidePanel_h_

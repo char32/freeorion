@@ -1,0 +1,17 @@
+BuildingType
+    name = "BLD_NEUTRONIUM_EXTRACTOR"
+    description = "BLD_NEUTRONIUM_EXTRACTOR_DESC"
+    buildcost = 25 * [[BUILDING_COST_MULTIPLIER]]
+    buildtime = 5
+    tags = "ORBITAL"
+    location = AND [
+        Planet
+        Not Contains Building name = "BLD_NEUTRONIUM_EXTRACTOR"
+        OwnedBy empire = Source.Owner
+        Star type = Neutron
+    ]
+    EnqueueLocation = [[ENQUEUE_BUILD_ONE_PER_PLANET]]
+    icon = "icons/building/neutronium-forge.png"
+
+#include "/scripting/common/enqueue.macros"
+#include "/scripting/common/base_prod.macros"

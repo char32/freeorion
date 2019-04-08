@@ -1,0 +1,22 @@
+Tech
+    name = "LRN_ALGO_ELEGANCE"
+    description = "LRN_ALGO_ELEGANCE_DESC"
+    short_description = "RESEARCH_SHORT_DESC"
+    category = "LEARNING_CATEGORY"
+    researchcost = 12 * [[TECH_COST_MULTIPLIER]]
+    researchturns = 3
+    tags = [ "PEDIA_LEARNING_CATEGORY" ]
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                ProductionCenter
+                OwnedBy empire = Source.Owner
+                Focus type = "FOCUS_RESEARCH"
+            ]
+            priority = [[EARLY_PRIORITY]]
+            effects = SetTargetResearch value = Value + Target.Population * 0.5 * [[RESEARCH_PER_POP]]
+    ]
+    graphic = "icons/tech/algorithmic_elegance.png"
+
+#include "/scripting/common/base_prod.macros"
+#include "/scripting/common/priorities.macros"

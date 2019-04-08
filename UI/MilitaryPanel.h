@@ -1,10 +1,9 @@
-// -*- C++ -*-
 #ifndef _MilitaryPanel_h_
 #define _MilitaryPanel_h_
 
 #include "AccordionPanel.h"
-#include "../universe/Enums.h"
-#include "../universe/TemporaryPtr.h"
+#include "../universe/EnumsFwd.h"
+
 
 class MultiIconValueIndicator;
 class MultiMeterStatusBar;
@@ -18,12 +17,16 @@ public:
     MilitaryPanel(GG::X w, int planet_id);
     ~MilitaryPanel();
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ //@{
+    bool EventFilter(GG::Wnd* w, const GG::WndEvent& event) override;
+
     int PlanetID() const { return m_planet_id; }
     //@}
 
     /** \name Mutators */ //@{
+    void PreRender() override;
     /** expands or collapses panel to show details or just summary info */
     void ExpandCollapse(bool expanded);
 
@@ -36,7 +39,7 @@ public:
 protected:
     /** \name Mutators */ //@{
     /** resizes panel and positions widgets */
-    virtual void DoLayout();
+    void DoLayout() override;
     //@}
 
 private:
@@ -47,15 +50,15 @@ private:
     int m_planet_id;
 
     /** returns the Planet object with id m_planet_id */
-    TemporaryPtr<const Planet> GetPlanet() const;
+    std::shared_ptr<const Planet> GetPlanet() const;
 
     /** Icons for the associated meter type. */
-    std::vector<std::pair<MeterType, StatisticIcon*> > m_meter_stats;
+    std::vector<std::pair<MeterType, std::shared_ptr<StatisticIcon>>> m_meter_stats;
 
     /** textually / numerically indicates military capabilities */
-    MultiIconValueIndicator* m_multi_icon_value_indicator;
+    std::shared_ptr<MultiIconValueIndicator> m_multi_icon_value_indicator;
     /** graphically indicates meter values */
-    MultiMeterStatusBar* m_multi_meter_status_bar;
+    std::shared_ptr<MultiMeterStatusBar> m_multi_meter_status_bar;
 
     /** map indexed by popcenter ID indicating whether the PopulationPanel for each object is expanded (true) or collapsed (false) */
     static std::map<int, bool> s_expanded_map;

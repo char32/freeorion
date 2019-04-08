@@ -1,10 +1,9 @@
-// -*- C++ -*-
 #ifndef _MultiIconValueIndicator_h_
 #define _MultiIconValueIndicator_h_
 
 #include <GG/Wnd.h>
 
-#include "../universe/Enums.h"
+#include "../universe/EnumsFwd.h"
 
 class StatisticIcon;
 
@@ -14,27 +13,25 @@ class StatisticIcon;
   * will present the appropriate values for each. */
 class MultiIconValueIndicator : public GG::Wnd {
 public:
-    MultiIconValueIndicator(GG::X w, int object_id, const std::vector<std::pair<MeterType, MeterType> >& meter_types);
-    MultiIconValueIndicator(GG::X w, const std::vector<int>& object_ids, const std::vector<std::pair<MeterType, MeterType> >& meter_types);
-    MultiIconValueIndicator(GG::X w); ///< initializes with no icons shown
-    virtual ~MultiIconValueIndicator();
+    /** Initializes with no icons shown. */
+    MultiIconValueIndicator(GG::X w);
+    MultiIconValueIndicator(GG::X w, int object_id, const std::vector<std::pair<MeterType, MeterType>>& meter_types);
+    MultiIconValueIndicator(GG::X w, const std::vector<int>& object_ids, const std::vector<std::pair<MeterType, MeterType>>& meter_types);
 
-    bool            Empty();
+    void CompleteConstruction() override;
 
-    virtual void    Render();
-    virtual void    MouseWheel(const GG::Pt& pt, int move, GG::Flags<GG::ModKey> mod_keys);
+    bool Empty() const;
 
-    void            Update();
-
-    void            SetToolTip(MeterType meter_type, const boost::shared_ptr<GG::BrowseInfoWnd>& browse_wnd);
-    void            ClearToolTip(MeterType meter_type);
-    bool            EventFilter(GG::Wnd* w, const GG::WndEvent& event);
+    void Render() override;
+    void MouseWheel(const GG::Pt& pt, int move, GG::Flags<GG::ModKey> mod_keys) override;
+    bool EventFilter(GG::Wnd* w, const GG::WndEvent& event) override;
+    void Update();
+    void SetToolTip(MeterType meter_type, const std::shared_ptr<GG::BrowseInfoWnd>& browse_wnd);
+    void ClearToolTip(MeterType meter_type);
 
 private:
-    void            Init();
-
-    std::vector<StatisticIcon*>                         m_icons;
-    const std::vector<std::pair<MeterType, MeterType> > m_meter_types;
+    std::vector<std::shared_ptr<StatisticIcon>>         m_icons;
+    const std::vector<std::pair<MeterType, MeterType>>  m_meter_types;
     std::vector<int>                                    m_object_ids;
 };
 

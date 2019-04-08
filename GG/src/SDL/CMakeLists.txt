@@ -1,54 +1,29 @@
-cmake_minimum_required(VERSION 2.6)
-cmake_policy(VERSION 2.6.4)
+# GG is a GUI for SDL and OpenGL.
+#
+# Copyright (C) 2009 T. Zachary Laine
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public License
+# as published by the Free Software Foundation; either version 2.1
+# of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free
+# Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+# 02111-1307 USA
+#
+# If you do not wish to comply with the terms of the LGPL please
+# contact the author as other terms are available for a fee.
+#
+# Zach Laine
+# whatwasthataddress@gmail.com
 
-project(GiGiSDL)
-message("-- Configuring GiGiSDL")
-
-set(SDL_BUILDING_LIBRARY true)
-
-find_package(SDL2 REQUIRED)
-
-include_directories(${SDL2_INCLUDE_DIR})
-
-set(GiGiSDL_LINK_LIBS GiGi ${SDL2_LIBRARY})
-add_library(GiGiSDL SDLGUI.cpp)
-
-if (USE_STATIC_LIBS)
-    set_target_properties(GiGiSDL
-        PROPERTIES
-        LINK_SEARCH_END_STATIC true
-    )
-endif ()
-
-target_link_libraries(GiGiSDL ${GiGiSDL_LINK_LIBS})
-
-install(
-    TARGETS GiGiSDL
-    LIBRARY DESTINATION lib${LIB_SUFFIX}
-    RUNTIME DESTINATION .
-    COMPONENT COMPONENT_GIGISDL
+target_sources(GiGiSDL
+    PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/SDLGUI.cpp
 )
-
-if (BUILD_DEVEL_PACKAGE)
-    install(
-        TARGETS GiGiSDL
-        ARCHIVE DESTINATION lib${LIB_SUFFIX} COMPONENT COMPONENT_GIGISDL_DEVEL
-    )
-endif ()
-
-if (UNIX AND BUILD_DEVEL_PACKAGE)
-    get_pkg_config_libs(pkg_config_libs ${GiGiSDL_LINK_LIBS})
-
-    configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/GiGiSDL.pc.in
-        ${CMAKE_BINARY_DIR}/GiGiSDL.pc
-        @ONLY
-    )
-
-    install(
-        FILES ${CMAKE_BINARY_DIR}/GiGiSDL.pc
-        DESTINATION lib${LIB_SUFFIX}/pkgconfig
-        COMPONENT COMPONENT_GIGI_DEVEL
-        OPTIONAL
-    )
-endif ()

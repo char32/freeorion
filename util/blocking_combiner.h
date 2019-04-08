@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _blocking_combiner_h_
 #define _blocking_combiner_h_
 
@@ -7,7 +6,7 @@
  *
  * bool the_control = true;
  *
- * boost::signals<void (), blocking_combiner<boost::last_value<void> > > the_signal(blocking_combiner<boost::last_value<void>(the_control));
+ * boost::signals<void (), blocking_combiner<boost::last_value<void>>> the_signal(blocking_combiner<boost::last_value<void>(the_control));
  *
  * the_signal(); // signal is propagated.
  * the_control = true; // blocking future signals

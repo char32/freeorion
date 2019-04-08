@@ -26,6 +26,8 @@
 
 #include <GG/ClrConstants.h>
 #include <GG/GUI.h>
+#include <GG/GLClientAndServerBuffer.h>
+
 
 #include <valarray>
 
@@ -45,68 +47,63 @@ namespace { // file-scope constants and functions
     unsigned int g_stencil_bit = 0;
 
     /// whenever points on the unit circle are calculated with expensive sin() and cos() calls, the results are cached here
-    std::map<int, std::valarray<double> > unit_circle_coords;
+    std::map<int, std::valarray<double>> unit_circle_coords;
     /// this doesn't serve as a cache, but does allow us to prevent numerous constructions and destructions of Clr valarrays.
-    std::map<int, std::valarray<Clr> > color_arrays;
+    std::map<int, std::valarray<Clr>> color_arrays;
 
     void Rectangle(Pt ul, Pt lr, Clr color, Clr border_color1, Clr border_color2, unsigned int bevel_thick,
                    bool bevel_left, bool bevel_top, bool bevel_right, bool bevel_bottom)
     {
-        glDisable(GL_TEXTURE_2D);
-
         X inner_x1 = ul.x + (bevel_left ? static_cast<int>(bevel_thick) : 0);
         Y inner_y1 = ul.y + (bevel_top ? static_cast<int>(bevel_thick) : 0);
         X inner_x2 = lr.x - (bevel_right ? static_cast<int>(bevel_thick) : 0);
         Y inner_y2 = lr.y - (bevel_bottom ? static_cast<int>(bevel_thick) : 0);
 
-        int vertices[] = {
-            Value(inner_x2), Value(inner_y1),
-            Value(lr.x), Value(ul.y),
-            Value(inner_x1), Value(inner_y1),
-            Value(ul.x), Value(ul.y),
-            Value(inner_x1), Value(inner_y2),
-            Value(ul.x), Value(lr.y),
-            Value(inner_x2), Value(inner_y2),
-            Value(lr.x), Value(lr.y),
-            Value(inner_x2), Value(inner_y1),
-            Value(lr.x), Value(ul.y)
-        };
+        GL2DVertexBuffer verts;
+        verts.reserve(14);
+        verts.store(inner_x2,   inner_y1);
+        verts.store(lr.x,       ul.y);
+        verts.store(inner_x1,   inner_y1);
+        verts.store(ul.x,       ul.y);
+        verts.store(inner_x1,   inner_y2);
+        verts.store(ul.x,       lr.y);
+        verts.store(inner_x2,   inner_y2);
+        verts.store(lr.x,       lr.y);
+        verts.store(inner_x2,   inner_y1);
+        verts.store(lr.x,       ul.y);
+
+        verts.store(inner_x2,   inner_y1);
+        verts.store(inner_x1,   inner_y1);
+        verts.store(inner_x1,   inner_y2);
+        verts.store(inner_x2,   inner_y2);
+
+        verts.activate();
+
+        glDisable(GL_TEXTURE_2D);
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glDisableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 
         // draw beveled edges
         if (bevel_thick && (border_color1 != CLR_ZERO || border_color2 != CLR_ZERO)) {
             glColor(border_color1);
             if (border_color1 == border_color2) {
-                glBegin(GL_QUAD_STRIP);
-                for (int i = 0; i < 10; ++i) {
-                    glVertex2i(vertices[i * 2 + 0], vertices[i * 2 + 1]);
-                }
-                glEnd();
+                glDrawArrays(GL_QUAD_STRIP, 0, 10);
             } else {
-                glBegin(GL_QUAD_STRIP);
-                for (int i = 0; i < 6; ++i) {
-                    glVertex2i(vertices[i * 2 + 0], vertices[i * 2 + 1]);
-                }
-                glEnd();
+                glDrawArrays(GL_QUAD_STRIP, 0, 6);
                 glColor(border_color2);
-                glBegin(GL_QUAD_STRIP);
-                for (int i = 4; i < 10; ++i) {
-                    glVertex2i(vertices[i * 2 + 0], vertices[i * 2 + 1]);
-                }
-                glEnd();
+                glDrawArrays(GL_QUAD_STRIP, 4, 6);
             }
         }
 
         // draw interior of rectangle
         if (color != CLR_ZERO) {
             glColor(color);
-            glBegin(GL_QUADS);
-            glVertex(inner_x2, inner_y1);
-            glVertex(inner_x1, inner_y1);
-            glVertex(inner_x1, inner_y2);
-            glVertex(inner_x2, inner_y2);
-            glEnd();
+            glDrawArrays(GL_QUADS, 10, 4);
         }
 
+        glPopClientAttrib();
         glEnable(GL_TEXTURE_2D);
     }
 
@@ -114,57 +111,48 @@ namespace { // file-scope constants and functions
     {
         X wd = lr.x - ul.x;
         Y ht = lr.y - ul.y;
-        glDisable(GL_TEXTURE_2D);
 
         // all vertices
-        double verts[][2] = {{-0.2, 0.2}, {-0.6, -0.2}, {-0.6, 0.0}, {-0.2, 0.4}, {-0.8, 0.0},
-                             {-0.2, 0.6}, { 0.8, -0.4}, {0.6, -0.4}, {0.8, -0.8}};
+        GLfloat verts[][2] = {{-0.2f,  0.2f}, {-0.6f, -0.2f}, {-0.6f,  0.0f}, {-0.2f,  0.4f}, {-0.8f,  0.0f},
+                             { -0.2f,  0.6f}, { 0.8f, -0.4f}, { 0.6f, -0.4f}, { 0.8f, -0.8f}};
 
         glPushMatrix();
-        const double sf = 1.25; // just a scale factor to make the check look right
+        const float sf = 1.25f;                                                     // scale factor to make the check look right
+        glTranslatef(Value(ul.x + wd / 2.0f), Value(ul.y + ht / 2.0f * sf), 0.0f);  // move origin to the center of the rectangle
+        glScalef(Value(wd / 2.0f * sf), Value(ht / 2.0f * sf), 1.0f);               // map the range [-1,1] to the rectangle in both directions
 
-        // move origin to the center of the rectangle
-        glTranslated(Value(ul.x + wd / 2.0), Value(ul.y + ht / 2.0 * sf), 0.0);
-        // map the range [-1,1] to the rectangle in both directions
-        glScaled(Value(wd / 2.0 * sf), Value(ht / 2.0 * sf), 1.0);
+        static std::size_t indices[22] = { 1,  4,  2,
+                                           8,  0,  3,  7,
+                                           2,  4,  5,  3,  7,  3,  5,  6,
+                                           8,  7,  6,
+                                           0,  1,  2,  3};
+
+        GL2DVertexBuffer vert_buf;
+        vert_buf.reserve(22);
+        for (std::size_t i = 0; i < 22; ++i)
+            vert_buf.store(verts[indices[i]][0], verts[indices[i]][1]);
+
+        glDisable(GL_TEXTURE_2D);
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glDisableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+        vert_buf.activate();
 
         glColor(color3);
-        glBegin(GL_TRIANGLES);
-        glVertex2dv(verts[1]);
-        glVertex2dv(verts[4]);
-        glVertex2dv(verts[2]);
-        glEnd();
-        glBegin(GL_QUADS);
-        glVertex2dv(verts[8]);
-        glVertex2dv(verts[0]);
-        glVertex2dv(verts[3]);
-        glVertex2dv(verts[7]);
-        glEnd();
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDrawArrays(GL_QUADS, 3, 4);
 
         glColor(color2);
-        glBegin(GL_QUADS);
-        glVertex2dv(verts[2]);
-        glVertex2dv(verts[4]);
-        glVertex2dv(verts[5]);
-        glVertex2dv(verts[3]);
-        glVertex2dv(verts[7]);
-        glVertex2dv(verts[3]);
-        glVertex2dv(verts[5]);
-        glVertex2dv(verts[6]);
-        glEnd();
+        glDrawArrays(GL_QUADS, 7, 8);
 
         glColor(color1);
-        glBegin(GL_TRIANGLES);
-        glVertex2dv(verts[8]);
-        glVertex2dv(verts[7]);
-        glVertex2dv(verts[6]);
-        glEnd();
-        glBegin(GL_QUADS);
-        glVertex2dv(verts[0]);
-        glVertex2dv(verts[1]);
-        glVertex2dv(verts[2]);
-        glVertex2dv(verts[3]);
-        glEnd();
+        glDrawArrays(GL_TRIANGLES, 15, 3);
+        glDrawArrays(GL_QUADS, 18, 4);
+
+        glPopClientAttrib();
+
         glPopMatrix();
         glEnable(GL_TEXTURE_2D);
     }
@@ -176,77 +164,49 @@ namespace { // file-scope constants and functions
         glDisable(GL_TEXTURE_2D);
 
         // all vertices
-        double verts[][2] = {{-0.4, -0.6}, {-0.6, -0.4}, {-0.4, -0.4}, {-0.2, 0.0}, {-0.6, 0.4},
-                             {-0.4, 0.6}, {-0.4, 0.4}, {0.0, 0.2}, {0.4, 0.6}, {0.6, 0.4},
-                             {0.4, 0.4}, {0.2, 0.0}, {0.6, -0.4}, {0.4, -0.6}, {0.4, -0.4},
-                             {0.0, -0.2}, {0.0, 0.0}};
+        GLfloat verts[][2] = {{-0.4f, -0.6f}, {-0.6f, -0.4f}, {-0.4f, -0.4f}, {-0.2f,  0.0f}, {-0.6f,  0.4f},
+                              {-0.4f,  0.6f}, {-0.4f,  0.4f}, { 0.0f,  0.2f}, { 0.4f,  0.6f}, { 0.6f,  0.4f},
+                              { 0.4f,  0.4f}, { 0.2f,  0.0f}, { 0.6f, -0.4f}, { 0.4f, -0.6f}, { 0.4f, -0.4f},
+                              { 0.0f, -0.2f}, { 0.0f,  0.0f}};
 
         glPushMatrix();
-        const double sf = 1.75; // just a scale factor; the check wasn't the right size as drawn originally
-        glTranslatef(Value(ul.x + wd / 2.0), Value(ul.y + ht / 2.0), 0.0); // move origin to the center of the rectangle
-        glScalef(Value(wd / 2.0 * sf), Value(ht / 2.0 * sf), 1.0); // map the range [-1,1] to the rectangle in both directions
+        const float sf = 1.75f;                                                 // scale factor; the check wasn't the right size as drawn originally
+        glTranslatef(Value(ul.x + wd / 2.0f), Value(ul.y + ht / 2.0f), 0.0f);   // move origin to the center of the rectangle
+        glScalef(Value(wd / 2.0f * sf), Value(ht / 2.0f * sf), 1.0f);           // map the range [-1,1] to the rectangle in both directions
+
+        static std::size_t indices[44] = {12, 13, 14,
+                                          15,  0,  2, 16,  9, 11, 16, 10,
+                                           0,  1,  2,
+                                          13, 15, 16, 14,  3,  4,  6, 16,
+                                           4,  5,  6,  8,  9, 10,
+                                          14, 16, 11, 12,  2,  1,  3, 16, 16,  6,  5,  7, 16,  7,  8, 10};
+
+        GL2DVertexBuffer vert_buf;
+        vert_buf.reserve(44);
+        for (std::size_t i = 0; i < 44; ++i)
+            vert_buf.store(verts[indices[i]][0], verts[indices[i]][1]);
+
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glDisableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+        vert_buf.activate();
 
         glColor(color1);
-        glBegin(GL_TRIANGLES);
-        glVertex2dv(verts[12]);
-        glVertex2dv(verts[13]);
-        glVertex2dv(verts[14]);
-        glEnd();
-        glBegin(GL_QUADS);
-        glVertex2dv(verts[15]);
-        glVertex2dv(verts[0]);
-        glVertex2dv(verts[2]);
-        glVertex2dv(verts[16]);
-        glVertex2dv(verts[9]);
-        glVertex2dv(verts[11]);
-        glVertex2dv(verts[16]);
-        glVertex2dv(verts[10]);
-        glEnd();
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDrawArrays(GL_QUADS, 3, 8);
 
         glColor(color2);
-        glBegin(GL_TRIANGLES);
-        glVertex2dv(verts[0]);
-        glVertex2dv(verts[1]);
-        glVertex2dv(verts[2]);
-        glEnd();
-        glBegin(GL_QUADS);
-        glVertex2dv(verts[13]);
-        glVertex2dv(verts[15]);
-        glVertex2dv(verts[16]);
-        glVertex2dv(verts[14]);
-        glVertex2dv(verts[3]);
-        glVertex2dv(verts[4]);
-        glVertex2dv(verts[6]);
-        glVertex2dv(verts[16]);
-        glEnd();
+        glDrawArrays(GL_TRIANGLES, 11, 3);
+        glDrawArrays(GL_QUADS, 14, 8);
 
         glColor(color3);
-        glBegin(GL_TRIANGLES);
-        glVertex2dv(verts[4]);
-        glVertex2dv(verts[5]);
-        glVertex2dv(verts[6]);
-        glVertex2dv(verts[8]);
-        glVertex2dv(verts[9]);
-        glVertex2dv(verts[10]);
-        glEnd();
-        glBegin(GL_QUADS);
-        glVertex2dv(verts[14]);
-        glVertex2dv(verts[16]);
-        glVertex2dv(verts[11]);
-        glVertex2dv(verts[12]);
-        glVertex2dv(verts[2]);
-        glVertex2dv(verts[1]);
-        glVertex2dv(verts[3]);
-        glVertex2dv(verts[16]);
-        glVertex2dv(verts[16]);
-        glVertex2dv(verts[6]);
-        glVertex2dv(verts[5]);
-        glVertex2dv(verts[7]);
-        glVertex2dv(verts[16]);
-        glVertex2dv(verts[7]);
-        glVertex2dv(verts[8]);
-        glVertex2dv(verts[10]);
-        glEnd();
+        glDrawArrays(GL_TRIANGLES, 22, 6);
+        glDrawArrays(GL_QUADS, 28, 16);
+
+        glPopClientAttrib();
+
         glPopMatrix();
         glEnable(GL_TEXTURE_2D);
     }
@@ -331,8 +291,10 @@ namespace { // file-scope constants and functions
         glEnable(GL_TEXTURE_2D);
     }
 
-    void CircleArc(Pt ul, Pt lr, Clr color, Clr border_color1, Clr border_color2, unsigned int bevel_thick, double theta1, double theta2)
+    void CircleArc(Pt ul, Pt lr, Clr color, Clr border_color1, Clr border_color2,
+                   unsigned int bevel_thick, double theta1, double theta2)
     {
+        //std::cout << "GG::CircleArc ul: " << ul << "  lr: " << lr << " bevel thick: " << bevel_thick << "  theta1: " << theta1 << "  theta2: " << theta2 << std::flush << std::endl;
         X wd = lr.x - ul.x;
         Y ht = lr.y - ul.y;
         glDisable(GL_TEXTURE_2D);
@@ -423,76 +385,91 @@ namespace { // file-scope constants and functions
         glEnable(GL_TEXTURE_2D);
     }
 
-    void RoundedRectangle(Pt ul, Pt lr, Clr color, Clr border_color1, Clr border_color2, unsigned int corner_radius, int thick)
+    void RoundedRectangle(Pt ul, Pt lr, Clr color, Clr border_color1, Clr border_color2,
+                          unsigned int corner_radius, int thick)
     {
         int circle_diameter = corner_radius * 2;
-        CircleArc(Pt(lr.x - circle_diameter, ul.y), Pt(lr.x, ul.y + circle_diameter), color, border_color2, border_color1, thick, 0, 0.5 * PI);  // ur corner
-        CircleArc(Pt(ul.x, ul.y), Pt(ul.x + circle_diameter, ul.y + circle_diameter), color, border_color2, border_color1, thick, 0.5 * PI, PI); // ul corner
-        CircleArc(Pt(ul.x, lr.y - circle_diameter), Pt(ul.x + circle_diameter, lr.y), color, border_color2, border_color1, thick, PI, 1.5 * PI); // ll corner
-        CircleArc(Pt(lr.x - circle_diameter, lr.y - circle_diameter), Pt(lr.x, lr.y), color, border_color2, border_color1, thick, 1.5 * PI, 0);  // lr corner
+        CircleArc(Pt(lr.x - circle_diameter, ul.y),                     Pt(lr.x, ul.y + circle_diameter),
+                  color, border_color2, border_color1, thick, 0, 0.5 * PI);  // ur corner
+        CircleArc(Pt(ul.x, ul.y),                                       Pt(ul.x + circle_diameter, ul.y + circle_diameter),
+                  color, border_color2, border_color1, thick, 0.5 * PI, PI); // ul corner
+        CircleArc(Pt(ul.x, lr.y - circle_diameter),                     Pt(ul.x + circle_diameter, lr.y),
+                  color, border_color2, border_color1, thick, PI, 1.5 * PI); // ll corner
+        CircleArc(Pt(lr.x - circle_diameter, lr.y - circle_diameter),   Pt(lr.x, lr.y),
+                  color, border_color2, border_color1, thick, 1.5 * PI, 0);  // lr corner
 
-        glDisable(GL_TEXTURE_2D);
 
-        // top
+        // lines connecting circle arcs and giving bevel appearance
+        GL2DVertexBuffer vert_buf;
+        vert_buf.reserve(28);
+        GLRGBAColorBuffer colour_buf;   // need to give each vertex in lightness bar its own colour so can't just use a glColor call
+        colour_buf.reserve(28);
+
+        int rad = static_cast<int>(corner_radius);
+
         double color_scale_factor = (SQRT2OVER2 * (0 + 1) + 1) / 2;
-        glColor4ub(GLubyte(border_color2.r * (1 - color_scale_factor) + border_color1.r * color_scale_factor),
-                   GLubyte(border_color2.g * (1 - color_scale_factor) + border_color1.g * color_scale_factor),
-                   GLubyte(border_color2.b * (1 - color_scale_factor) + border_color1.b * color_scale_factor),
-                   GLubyte(border_color2.a * (1 - color_scale_factor) + border_color1.a * color_scale_factor));
-        glBegin(GL_QUADS);
-        glVertex(lr.x - static_cast<int>(corner_radius), ul.y);
-        glVertex(ul.x + static_cast<int>(corner_radius), ul.y);
-        glVertex(ul.x + static_cast<int>(corner_radius), ul.y + thick);
-        glVertex(lr.x - static_cast<int>(corner_radius), ul.y + thick);
-        glEnd();
+        GG::Clr clr = border_color2 * (1 - color_scale_factor) + border_color1 * color_scale_factor;
+        // top
+        vert_buf.store(lr.x - rad,      ul.y);
+        vert_buf.store(ul.x + rad,      ul.y);
+        vert_buf.store(ul.x + rad,      ul.y + thick);
+        vert_buf.store(lr.x - rad,      ul.y + thick);
+        // left
+        vert_buf.store(ul.x + thick,    ul.y + rad);
+        vert_buf.store(ul.x,            ul.y + rad);
+        vert_buf.store(ul.x,            lr.y - rad);
+        vert_buf.store(ul.x + thick,    lr.y - rad);
+        for (unsigned int i = 0; i < 8; ++i)
+            colour_buf.store(clr);
 
-        // left (uses color scale factor (SQRT2OVER2 * (1 + 0) + 1) / 2, which equals that of top
-        glBegin(GL_QUADS);
-        glVertex(ul.x + thick, ul.y + static_cast<int>(corner_radius));
-        glVertex(ul.x, ul.y + static_cast<int>(corner_radius));
-        glVertex(ul.x, lr.y - static_cast<int>(corner_radius));
-        glVertex(ul.x + thick, lr.y - static_cast<int>(corner_radius));
-        glEnd();
 
-        // right
         color_scale_factor = (SQRT2OVER2 * (-1 + 0) + 1) / 2;
-        glColor4ub(GLubyte(border_color2.r * (1 - color_scale_factor) + border_color1.r * color_scale_factor),
-                   GLubyte(border_color2.g * (1 - color_scale_factor) + border_color1.g * color_scale_factor),
-                   GLubyte(border_color2.b * (1 - color_scale_factor) + border_color1.b * color_scale_factor),
-                   GLubyte(border_color2.a * (1 - color_scale_factor) + border_color1.a * color_scale_factor));
-        glBegin(GL_QUADS);
-        glVertex(lr.x, ul.y + static_cast<int>(corner_radius));
-        glVertex(lr.x - thick, ul.y + static_cast<int>(corner_radius));
-        glVertex(lr.x - thick, lr.y - static_cast<int>(corner_radius));
-        glVertex(lr.x, lr.y - static_cast<int>(corner_radius));
-        glEnd();
+        clr = border_color2 * (1 - color_scale_factor) + border_color1 * color_scale_factor;
+        // right
+        vert_buf.store(lr.x,            ul.y + rad);
+        vert_buf.store(lr.x - thick,    ul.y + rad);
+        vert_buf.store(lr.x - thick,    lr.y - rad);
+        vert_buf.store(lr.x,            lr.y - rad);
+        // bottom (uses color scale factor (SQRT2OVER2 * (0 + -1) + 1) / 2, which equals that of right
+        vert_buf.store(lr.x - rad,      lr.y - thick);
+        vert_buf.store(ul.x + rad,      lr.y - thick);
+        vert_buf.store(ul.x + rad,      lr.y);
+        vert_buf.store(lr.x - rad,      lr.y);
+        for (unsigned int i = 0; i < 8; ++i)
+            colour_buf.store(clr);
 
-        // bottom (uses color scale factor (SQRT2OVER2 * (0 + -1) + 1) / 2, which equals that of left
-        glBegin(GL_QUADS);
-        glVertex(lr.x - static_cast<int>(corner_radius), lr.y - thick);
-        glVertex(ul.x + static_cast<int>(corner_radius), lr.y - thick);
-        glVertex(ul.x + static_cast<int>(corner_radius), lr.y);
-        glVertex(lr.x - static_cast<int>(corner_radius), lr.y);
-        glEnd();
 
         // middle
-        glColor(color);
-        glBegin(GL_QUADS);
-        glVertex(lr.x - static_cast<int>(corner_radius), ul.y + thick);
-        glVertex(ul.x + static_cast<int>(corner_radius), ul.y + thick);
-        glVertex(ul.x + static_cast<int>(corner_radius), lr.y - thick);
-        glVertex(lr.x - static_cast<int>(corner_radius), lr.y - thick);
+        vert_buf.store(lr.x - rad,      ul.y + thick);
+        vert_buf.store(ul.x + rad,      ul.y + thick);
+        vert_buf.store(ul.x + rad,      lr.y - thick);
+        vert_buf.store(lr.x - rad,      lr.y - thick);
 
-        glVertex(lr.x - thick, ul.y + static_cast<int>(corner_radius));
-        glVertex(lr.x - static_cast<int>(corner_radius), ul.y + static_cast<int>(corner_radius));
-        glVertex(lr.x - static_cast<int>(corner_radius), lr.y - static_cast<int>(corner_radius));
-        glVertex(lr.x - thick, lr.y - static_cast<int>(corner_radius));
+        vert_buf.store(lr.x - thick,    ul.y + rad);
+        vert_buf.store(lr.x - rad,      ul.y + rad);
+        vert_buf.store(lr.x - rad,      lr.y - rad);
+        vert_buf.store(lr.x - thick,    lr.y - rad);
 
-        glVertex(ul.x + thick, ul.y + static_cast<int>(corner_radius));
-        glVertex(ul.x + static_cast<int>(corner_radius), ul.y + static_cast<int>(corner_radius));
-        glVertex(ul.x + static_cast<int>(corner_radius), lr.y - static_cast<int>(corner_radius));
-        glVertex(ul.x + thick, lr.y - static_cast<int>(corner_radius));
-        glEnd();
+        vert_buf.store(ul.x + thick,    ul.y + rad);
+        vert_buf.store(ul.x + rad,      ul.y + rad);
+        vert_buf.store(ul.x + rad,      lr.y - rad);
+        vert_buf.store(ul.x + thick,    lr.y - rad);
+        for (unsigned int i = 0; i < 12; ++i)
+            colour_buf.store(color);
+
+
+        glDisable(GL_TEXTURE_2D);
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glEnableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+        vert_buf.activate();
+        colour_buf.activate();
+
+        glDrawArrays(GL_QUADS, 0, vert_buf.size());
+
+        glPopClientAttrib();
         glEnable(GL_TEXTURE_2D);
     }
 
@@ -504,7 +481,7 @@ namespace { // file-scope constants and functions
         BubbleArc(Pt(ul.x, lr.y - circle_diameter), Pt(ul.x + circle_diameter, lr.y), color1, color3, color2, PI, 1.5 * PI); // ll corner
         BubbleArc(Pt(lr.x - circle_diameter, lr.y - circle_diameter), Pt(lr.x, lr.y), color1, color3, color2, 1.5 * PI, 0);  // lr corner
 
-        glDisable(GL_TEXTURE_2D);
+        int rad = static_cast<int>(corner_radius);
 
         // top
         double color_scale_factor = (SQRT2OVER2 * (0 + 1) + 1) / 2;
@@ -512,24 +489,30 @@ namespace { // file-scope constants and functions
                          GLubyte(color3.g * (1 - color_scale_factor) + color2.g * color_scale_factor),
                          GLubyte(color3.b * (1 - color_scale_factor) + color2.b * color_scale_factor),
                          GLubyte(color3.a * (1 - color_scale_factor) + color2.a * color_scale_factor));
-        glBegin(GL_QUADS);
-        glColor(scaled_color);
-        glVertex(lr.x - static_cast<int>(corner_radius), ul.y);
-        glVertex(ul.x + static_cast<int>(corner_radius), ul.y);
-        glColor(color1);
-        glVertex(ul.x + static_cast<int>(corner_radius), ul.y + static_cast<int>(corner_radius));
-        glVertex(lr.x - static_cast<int>(corner_radius), ul.y + static_cast<int>(corner_radius));
-        glEnd();
+
+        GL2DVertexBuffer verts;
+        verts.reserve(20);
+        GLRGBAColorBuffer colours;
+        colours.reserve(20);
+
+        colours.store(scaled_color);
+        colours.store(scaled_color);
+        verts.store(lr.x - rad, ul.y);
+        verts.store(ul.x + rad, ul.y);
+        colours.store(color1);
+        colours.store(color1);
+        verts.store(ul.x + rad, ul.y + rad);
+        verts.store(lr.x - rad, ul.y + rad);
 
         // left (uses color scale factor (SQRT2OVER2 * (1 + 0) + 1) / 2, which equals that of top
-        glBegin(GL_QUADS);
-        glColor(scaled_color);
-        glVertex(ul.x, ul.y + static_cast<int>(corner_radius));
-        glVertex(ul.x, lr.y - static_cast<int>(corner_radius));
-        glColor(color1);
-        glVertex(ul.x + static_cast<int>(corner_radius), lr.y - static_cast<int>(corner_radius));
-        glVertex(ul.x + static_cast<int>(corner_radius), ul.y + static_cast<int>(corner_radius));
-        glEnd();
+        colours.store(scaled_color);
+        colours.store(scaled_color);
+        verts.store(ul.x, ul.y + rad);
+        verts.store(ul.x, lr.y - rad);
+        colours.store(color1);
+        colours.store(color1);
+        verts.store(ul.x + rad, lr.y - rad);
+        verts.store(ul.x + rad, ul.y + rad);
 
         // right
         color_scale_factor = (SQRT2OVER2 * (-1 + 0) + 1) / 2;
@@ -537,57 +520,61 @@ namespace { // file-scope constants and functions
                            GLubyte(color3.g * (1 - color_scale_factor) + color2.g * color_scale_factor),
                            GLubyte(color3.b * (1 - color_scale_factor) + color2.b * color_scale_factor),
                            GLubyte(color3.a * (1 - color_scale_factor) + color2.a * color_scale_factor));
-        glBegin(GL_QUADS);
-        glColor(color1);
-        glVertex(lr.x - static_cast<int>(corner_radius), ul.y + static_cast<int>(corner_radius));
-        glVertex(lr.x - static_cast<int>(corner_radius), lr.y - static_cast<int>(corner_radius));
-        glColor(scaled_color);
-        glVertex(lr.x, lr.y - static_cast<int>(corner_radius));
-        glVertex(lr.x, ul.y + static_cast<int>(corner_radius));
-        glEnd();
+        colours.store(color1);
+        colours.store(color1);
+        verts.store(lr.x - rad, ul.y + rad);
+        verts.store(lr.x - rad, lr.y - rad);
+        colours.store(scaled_color);
+        colours.store(scaled_color);
+        verts.store(lr.x, lr.y - rad);
+        verts.store(lr.x, ul.y + rad);
 
         // bottom (uses color scale factor (SQRT2OVER2 * (0 + -1) + 1) / 2, which equals that of left
-        glBegin(GL_QUADS);
-        glColor(color1);
-        glVertex(lr.x - static_cast<int>(corner_radius), lr.y - static_cast<int>(corner_radius));
-        glVertex(ul.x + static_cast<int>(corner_radius), lr.y - static_cast<int>(corner_radius));
-        glColor(scaled_color);
-        glVertex(ul.x + static_cast<int>(corner_radius), lr.y);
-        glVertex(lr.x - static_cast<int>(corner_radius), lr.y);
-        glEnd();
+        colours.store(color1);
+        colours.store(color1);
+        verts.store(lr.x - rad, lr.y - rad);
+        verts.store(ul.x + rad, lr.y - rad);
+        colours.store(scaled_color);
+        colours.store(scaled_color);
+        verts.store(ul.x + rad, lr.y);
+        verts.store(lr.x - rad, lr.y);
 
         // middle
-        glBegin(GL_QUADS);
-        glColor(color1);
-        glVertex(lr.x - static_cast<int>(corner_radius), ul.y + static_cast<int>(corner_radius));
-        glVertex(ul.x + static_cast<int>(corner_radius), ul.y + static_cast<int>(corner_radius));
-        glVertex(ul.x + static_cast<int>(corner_radius), lr.y - static_cast<int>(corner_radius));
-        glVertex(lr.x - static_cast<int>(corner_radius), lr.y - static_cast<int>(corner_radius));
-        glEnd();
+        colours.store(color1);
+        colours.store(color1);
+        verts.store(lr.x - rad, ul.y + rad);
+        verts.store(ul.x + rad, ul.y + rad);
+        colours.store(color1);
+        colours.store(color1);
+        verts.store(ul.x + rad, lr.y - rad);
+        verts.store(lr.x - rad, lr.y - rad);
+
+
+        glDisable(GL_TEXTURE_2D);
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glEnableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+        verts.activate();
+        colours.activate();
+        glDrawArrays(GL_QUADS, 0, verts.size());
+
+        glPopClientAttrib();
         glEnable(GL_TEXTURE_2D);
     }
 } // namespace
 
 
 namespace GG {
+    std::ostream& operator<<(std::ostream& os, const Clr& clr)
+    {
+        os << "(" << +clr.r << ", " << +clr.g << ", " << +clr.b << ", " << +clr.a << ")";
+        return os;
+    }
 
     void glColor(Clr clr)
     { glColor4ub(clr.r, clr.g, clr.b, clr.a); }
-
-    void glVertex(const Pt& pt)
-    { glVertex2i(Value(pt.x), Value(pt.y)); }
-
-    void glVertex(X x, Y y)
-    { glVertex2i(Value(x), Value(y)); }
-
-    void glVertex(X_d x, Y_d y)
-    { glVertex2d(Value(x), Value(y)); }
-
-    void glVertex(X x, Y_d y)
-    { glVertex2d(Value(x), Value(y)); }
-
-    void glVertex(X_d x, Y y)
-    { glVertex2d(Value(x), Value(y)); }
 
     Clr LightColor(Clr clr)
     {
@@ -622,7 +609,7 @@ namespace GG {
     void BeginScissorClipping(Pt ul, Pt lr)
     {
         if (g_scissor_clipping_rects.empty()) {
-            glPushAttrib(GL_SCISSOR_BIT);
+            glPushAttrib(GL_SCISSOR_BIT | GL_ENABLE_BIT);
             glEnable(GL_SCISSOR_TEST);
             if (g_stencil_bit)
                 glDisable(GL_STENCIL_TEST);
@@ -643,9 +630,9 @@ namespace GG {
         assert(!g_scissor_clipping_rects.empty());
         g_scissor_clipping_rects.pop_back();
         if (g_scissor_clipping_rects.empty()) {
-            glPopAttrib();
             if (g_stencil_bit)
                 glEnable(GL_STENCIL_TEST);
+            glPopAttrib();
         } else {
             const Rect& r = g_scissor_clipping_rects.back();
             glScissor(Value(r.Left()), Value(GUI::GetGUI()->AppHeight() - r.Bottom()),
@@ -653,11 +640,17 @@ namespace GG {
         }
     }
 
-    void BeginStencilClipping(Pt inner_ul, Pt inner_lr,
-                              Pt outer_ul, Pt outer_lr)
+    Rect ActiveScissorClippingRegion()
+    {
+        if (g_scissor_clipping_rects.empty())
+            return Rect();
+        return g_scissor_clipping_rects.back();
+    }
+
+    void BeginStencilClipping(Pt inner_ul, Pt inner_lr, Pt outer_ul, Pt outer_lr)
     {
         if (!g_stencil_bit) {
-            glPushAttrib(GL_STENCIL_BUFFER_BIT);
+            glPushAttrib(GL_STENCIL_BUFFER_BIT | GL_ENABLE_BIT);
             glClearStencil(0);
             glClear(GL_STENCIL_BUFFER_BIT);
             glEnable(GL_STENCIL_TEST);
@@ -675,6 +668,8 @@ namespace GG {
 
         glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
         glEnableClientState(GL_VERTEX_ARRAY);
+        glDisableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 
         glStencilFunc(GL_ALWAYS, mask, mask);
         glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE);
@@ -715,17 +710,101 @@ namespace GG {
         assert(g_stencil_bit);
         --g_stencil_bit;
         if (!g_stencil_bit) {
-            glPopAttrib();
             if (!g_scissor_clipping_rects.empty())
                 glEnable(GL_SCISSOR_TEST);
+            glPopAttrib();
         }
     }
 
-    void FlatRectangle(Pt ul, Pt lr, Clr color, Clr border_color, unsigned int border_thick/* = 2*/)
-    { Rectangle(ul, lr, color, border_color, border_color, border_thick, true, true, true, true); }
+    void Line(Pt pt1, Pt pt2, Clr color, float thick)
+    {
+        glLineWidth(thick);
+        glColor(color);
+        Line(pt1.x, pt1.y, pt2.x, pt2.y);
+    }
 
-    void BeveledRectangle(Pt ul, Pt lr, Clr color, Clr border_color, bool up, unsigned int bevel_thick/* = 2*/,
-                          bool bevel_left/* = true*/, bool bevel_top/* = true*/, bool bevel_right/* = true*/, bool bevel_bottom/* = true*/)
+    void Line(X x1, Y y1, X x2, Y y2)
+    {
+        GLfloat vertices[4] = {GLfloat(Value(x1)), GLfloat(Value(y1)),
+                               GLfloat(Value(x2)), GLfloat(Value(y2))};
+
+        glDisable(GL_TEXTURE_2D);
+
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glDisableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+        glVertexPointer(2, GL_FLOAT, 0, vertices);
+        glDrawArrays(GL_LINES, 0, 2);
+
+        glPopClientAttrib();
+        glLineWidth(1.0f);
+        glEnable(GL_TEXTURE_2D);
+    }
+
+    void Triangle(Pt pt1, Pt pt2, Pt pt3, Clr color, Clr border_color, float border_thick)
+    {
+        GLfloat vertices[6] = {GLfloat(Value(pt1.x)), GLfloat(Value(pt1.y)), GLfloat(Value(pt2.x)),
+                               GLfloat(Value(pt2.y)), GLfloat(Value(pt3.x)), GLfloat(Value(pt3.y))};
+
+        glDisable(GL_TEXTURE_2D);
+
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glDisableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+        glVertexPointer(2, GL_FLOAT, 0, vertices);
+        glColor(color);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        if (border_color != GG::CLR_ZERO) {
+            glLineWidth(border_thick);
+            glColor(border_color);
+
+            glDrawArrays(GL_LINE_LOOP, 0, 3);
+            glLineWidth(1.0f);
+        }
+
+        glPopClientAttrib();
+        glEnable(GL_TEXTURE_2D);
+    }
+
+    void Triangle(X x1, Y y1, X x2, Y y2, X x3, Y y3, bool filled)
+    {
+        GLfloat vertices[6] = {GLfloat(Value(x1)), GLfloat(Value(y1)), GLfloat(Value(x2)),
+                               GLfloat(Value(y2)), GLfloat(Value(x3)), GLfloat(Value(y3))};
+
+        glDisable(GL_TEXTURE_2D);
+
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glDisableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+        glVertexPointer(2, GL_FLOAT, 0, vertices);
+
+        if (filled)
+            glDrawArrays(GL_TRIANGLE_FAN, 0, 3);
+        else
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        glPopClientAttrib();
+        glEnable(GL_TEXTURE_2D);
+    }
+
+    void FlatRectangle(Pt ul, Pt lr, Clr color, Clr border_color,
+                       unsigned int border_thick/* = 2*/)
+    {
+        Rectangle(ul, lr, color, border_color, border_color, border_thick,
+                  true, true, true, true);
+    }
+
+    void BeveledRectangle(Pt ul, Pt lr, Clr color, Clr border_color, bool up,
+                          unsigned int bevel_thick/* = 2*/, bool bevel_left/* = true*/,
+                          bool bevel_top/* = true*/, bool bevel_right/* = true*/,
+                          bool bevel_bottom/* = true*/)
     {
         Rectangle(ul, lr, color,
                   (up ? LightColor(border_color) : DarkColor(border_color)),
@@ -733,10 +812,17 @@ namespace GG {
                   bevel_thick, bevel_left, bevel_top, bevel_right, bevel_bottom);
     }
 
-    void FlatRoundedRectangle(Pt ul, Pt lr, Clr color, Clr border_color, unsigned int corner_radius/* = 5*/, unsigned int border_thick/* = 2*/)
-    { RoundedRectangle(ul, lr, color, border_color, border_color, corner_radius, border_thick); }
+    void FlatRoundedRectangle(Pt ul, Pt lr, Clr color, Clr border_color,
+                              unsigned int corner_radius/* = 5*/,
+                              unsigned int border_thick/* = 2*/)
+    {
+        RoundedRectangle(ul, lr, color, border_color, border_color,
+                         corner_radius, border_thick);
+    }
 
-    void BeveledRoundedRectangle(Pt ul, Pt lr, Clr color, Clr border_color, bool up, unsigned int corner_radius/* = 5*/, unsigned int bevel_thick/* = 2*/)
+    void BeveledRoundedRectangle(Pt ul, Pt lr, Clr color, Clr border_color, bool up,
+                                 unsigned int corner_radius/* = 5*/,
+                                 unsigned int bevel_thick/* = 2*/)
     {
         RoundedRectangle(ul, lr, color,
                          (up ? LightColor(border_color) : DarkColor(border_color)),
@@ -766,7 +852,7 @@ namespace GG {
 
     void BeveledCircle(Pt ul, Pt lr, Clr color, Clr border_color, bool up/* = true*/, unsigned int bevel_thick/* = 2*/)
     {
-        CircleArc(ul, lr, color, 
+        CircleArc(ul, lr, color,
                   (up ? DarkColor(border_color) : LightColor(border_color)),
                   (up ? LightColor(border_color) : DarkColor(border_color)),
                   bevel_thick, 0, 0);
@@ -779,5 +865,4 @@ namespace GG {
                           (up ? DarkColor(color) : LightColor(color)),
                           corner_radius);
     }
-
 } // namespace GG

@@ -1,82 +1,39 @@
-#include "ValueRefParserImpl.h"
+#include "ValueRefParser.h"
 
 #include "EnumParser.h"
+#include "EnumValueRefRules.h"
 
+#include "../universe/Enums.h"
+#include "../universe/ValueRef.h"
 
-namespace {
-    struct star_type_parser_rules {
-        star_type_parser_rules() {
-            qi::_1_type _1;
-            qi::_val_type _val;
-            using phoenix::new_;
-            using phoenix::push_back;
-
-            const parse::lexer& tok = parse::lexer::instance();
-
-            variable_name
-                %=   tok.StarType_
-                |    tok.NextOlderStarType_
-                |    tok.NextYoungerStarType_
-                ;
-
-            constant
-                =    parse::enum_parser<StarType>() [ _val = new_<ValueRef::Constant<StarType> >(_1) ]
-                ;
-
-            initialize_bound_variable_parser<StarType>(bound_variable, variable_name);
-
-            statistic_sub_value_ref
-                =   constant
-                |   bound_variable
-                ;
-
-            initialize_nonnumeric_expression_parsers<StarType>(function_expr, operated_expr, expr, primary_expr);
-
-            initialize_nonnumeric_statistic_parser<StarType>(statistic, statistic_sub_value_ref);
-
-            primary_expr
-                =   constant
-                |   bound_variable
-                |   statistic
-                ;
-
-            variable_name.name("StarType variable name (e.g., StarType)");
-            constant.name("StarType");
-            bound_variable.name("StarType variable");
-            statistic.name("StarType statistic");
-            primary_expr.name("StarType expression");
-
-#if DEBUG_VALUEREF_PARSERS
-            debug(variable_name);
-            debug(constant);
-            debug(bound_variable);
-            debug(statistic);
-            debug(primary_expr);
-#endif
-        }
-
-        typedef parse::value_ref_parser_rule<StarType>::type    rule;
-        typedef variable_rule<StarType>::type                   variable_rule;
-        typedef statistic_rule<StarType>::type                  statistic_rule;
-        typedef expression_rule<StarType>::type                 expression_rule;
-
-        name_token_rule variable_name;
-        rule            constant;
-        variable_rule   bound_variable;
-        rule            statistic_sub_value_ref;
-        statistic_rule  statistic;
-        expression_rule function_expr;
-        expression_rule operated_expr;
-        rule            expr;
-        rule            primary_expr;
-    };
-}
-
-namespace parse {
-    template <>
-    value_ref_parser_rule<StarType>::type& value_ref_parser<StarType>()
+namespace parse { namespace detail {
+    star_type_parser_rules::star_type_parser_rules(
+        const parse::lexer& tok,
+        Labeller& label,
+        const condition_parser_grammar& condition_parser
+    ) :
+        enum_value_ref_rules("StarType", tok, label, condition_parser)
     {
-        static star_type_parser_rules retval;
-        return retval.expr;
+        boost::spirit::qi::_val_type _val;
+
+        variable_name
+            %=   tok.StarType_
+            |    tok.NextOlderStarType_
+            |    tok.NextYoungerStarType_
+            ;
+
+        enum_expr
+            =   tok.Blue_           [ _val = STAR_BLUE ]
+            |   tok.White_          [ _val = STAR_WHITE ]
+            |   tok.Yellow_         [ _val = STAR_YELLOW ]
+            |   tok.Orange_         [ _val = STAR_ORANGE ]
+            |   tok.Red_            [ _val = STAR_RED ]
+            |   tok.Neutron_        [ _val = STAR_NEUTRON ]
+            |   tok.BlackHole_      [ _val = STAR_BLACK ]
+            |   tok.NoStar_         [ _val = STAR_NONE ]
+            ;
+
+        // complex_expr left empty, as no direct complex variable
+        // expressions are available available that return a StarType
     }
-}
+} }

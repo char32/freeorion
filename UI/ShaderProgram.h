@@ -1,23 +1,11 @@
-// -*- C++ -*-
 #ifndef _ShaderProgram_h_
 #define _ShaderProgram_h_
 
-#ifdef _MSC_VER
-# define WIN32_LEAN_AND_MEAN
-# include <windows.h>
-#endif
-
-// include OpenGL headers
-#if defined(__APPLE__) && defined(__MACH__)
-# include <OpenGL/gl.h>
-# include <OpenGL/glu.h>
-#else
-# include <GL/gl.h>
-# include <GL/glu.h>
-#endif
+#include <GG/Base.h>
 
 #include <boost/filesystem/operations.hpp>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -27,12 +15,13 @@ class ShaderProgram {
 private:
     ShaderProgram();    // default ctor forbidden, makes no sense
 
-protected:
-    ShaderProgram(const std::string& vertex_shader, const std::string& fragment_shader); // ctor protected use factory to get instance
-
 public:
-    // shader factory -- will return NULL if OpenGL version is too low
-    static ShaderProgram* shaderProgramFactory(const std::string& vertex_shader, const std::string& fragment_shader);
+    // Use shaderProgramFactory() to construct.
+    ShaderProgram(const std::string& vertex_shader, const std::string& fragment_shader);
+
+    // shader factory -- will return nullptr if OpenGL version is too low
+    static std::unique_ptr<ShaderProgram> shaderProgramFactory(
+        const std::string& vertex_shader, const std::string& fragment_shader);
 
     ~ShaderProgram();
 

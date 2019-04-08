@@ -1,8 +1,8 @@
-// -*- C++ -*-
 #ifndef _BuildingsPanel_h_
 #define _BuildingsPanel_h_
 
 #include "AccordionPanel.h"
+#include "CUIDrawUtil.h"
 
 class BuildingIndicator;
 class MultiTurnProgressBar;
@@ -15,19 +15,20 @@ public:
     BuildingsPanel(GG::X w, int columns, int planet_id);
     ~BuildingsPanel();
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ //@{
     int PlanetID() const { return m_planet_id; }
     //@}
 
     /** \name Mutators */ //@{
-    /** expands or collapses panel to show details or just summary info */
-    void ExpandCollapse(bool expanded);
+    void PreRender() override;
 
-    /** updates indicators with values of associated object.  Does not do layout and resizing. */
-    void Update();
     /** updates, redoes layout, resizes indicator */
     void Refresh();
+
+    /** expands or collapses panel to show details or just summary info */
+    void ExpandCollapse(bool expanded);
 
     /** Enables, or disables if \a enable is false, issuing orders via this panel. */
     void EnableOrderIssuing(bool enable = true);
@@ -38,7 +39,11 @@ public:
 protected:
     /** \name Mutators */ //@{
     /** resizes panel and positions widgets */
-    virtual void DoLayout();
+    void DoLayout() override;
+
+    /** updates indicators with values of associated object.  Does not do layout and resizing. */
+    void Update();
+    void RefreshImpl();
     //@}
 
 private:
@@ -50,7 +55,7 @@ private:
 
     /** number of columns in which to display building indicators */
     int m_columns;
-    std::vector<BuildingIndicator*> m_building_indicators;
+    std::vector<std::shared_ptr<BuildingIndicator>> m_building_indicators;
 
     /** map indexed by planet ID indicating whether the BuildingsPanel for each object is expanded (true) or collapsed (false) */
     static std::map<int, bool> s_expanded_map;
@@ -65,15 +70,20 @@ public:
     /** Constructor for use when building is partially complete, to show
       * progress bar. */
     BuildingIndicator(GG::X w, const std::string& building_type,
-                      double turns_completed, double total_turns);
+                      double turns_completed, double total_turns, double total_cost, double turn_spending);
+
+    void CompleteConstruction() override;
 
     /** \name Mutators */ //@{
-    virtual void    Render();
-    void            Refresh();
+    void PreRender() override;
 
-    virtual void    SizeMove(const GG::Pt& ul, const GG::Pt& lr);
-    virtual void    MouseWheel(const GG::Pt& pt, int move, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    RClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
+    void Render() override;
+
+    void SizeMove(const GG::Pt& ul, const GG::Pt& lr) override;
+
+    void MouseWheel(const GG::Pt& pt, int move, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void RClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
 
     /** Enables, or disables if \a enable is false, issuing orders via this BuildingIndicator. */
     void            EnableOrderIssuing(bool enable = true);
@@ -82,15 +92,16 @@ public:
     mutable boost::signals2::signal<void (int)> RightClickedSignal;
 
 private:
+    void            Refresh();
     void            DoLayout();
 
-    static boost::shared_ptr<ShaderProgram> s_scanline_shader;
+    static ScanlineRenderer s_scanline_shader;
 
-    GG::StaticGraphic*          m_graphic;
-    GG::StaticGraphic*          m_scrap_indicator;  ///< shown to indicate building was ordered scrapped
-    MultiTurnProgressBar*       m_progress_bar;
+    std::shared_ptr<GG::StaticGraphic>          m_graphic = nullptr;
+    std::shared_ptr<GG::StaticGraphic>          m_scrap_indicator = nullptr; ///< shown to indicate building was ordered scrapped
+    std::shared_ptr<MultiTurnProgressBar>       m_progress_bar = nullptr;
     int                         m_building_id;
-    bool                        m_order_issuing_enabled;
+    bool                        m_order_issuing_enabled = true;
 };
 
 #endif

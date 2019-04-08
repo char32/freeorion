@@ -1,0 +1,31 @@
+BuildingType
+    name = "BLD_BLACK_HOLE_POW_GEN"
+    description = "BLD_BLACK_HOLE_POW_GEN_DESC"
+    buildcost = 250 * [[BUILDING_COST_MULTIPLIER]]
+    buildtime = 8
+    tags = "ORBITAL"
+    location = And [
+        Planet
+        Not Contains Building name = "BLD_BLACK_HOLE_POW_GEN"
+        OwnedBy empire = Source.Owner
+        Star type = BlackHole
+    ]
+    EnqueueLocation = [[ENQUEUE_BUILD_ONE_PER_PLANET]]
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                PopulationCenter
+                Focus type = "FOCUS_INDUSTRY"
+                OwnedBy empire = Source.Owner
+                ResourceSupplyConnected empire = Source.Owner condition = Source
+            ]
+            activation = Star type = BlackHole
+            stackinggroup = "BLD_BLACK_HOLE_POW_GEN_PRIMARY_EFFECT"
+            priority = [[LATE_PRIORITY]]
+            effects = SetTargetIndustry value = Value + Target.Population * 5 * [[INDUSTRY_PER_POP]]
+    ]
+    icon = "icons/building/blackhole.png"
+
+#include "/scripting/common/priorities.macros"
+#include "/scripting/common/enqueue.macros"
+#include "/scripting/common/base_prod.macros"

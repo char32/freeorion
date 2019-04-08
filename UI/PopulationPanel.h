@@ -1,10 +1,11 @@
-// -*- C++ -*-
 #ifndef _PopulationPanel_h_
 #define _PopulationPanel_h_
 
 #include "AccordionPanel.h"
-#include "../universe/Enums.h"
-#include "../universe/TemporaryPtr.h"
+#include "../universe/EnumsFwd.h"
+
+#include <memory>
+
 
 class MultiIconValueIndicator;
 class MultiMeterStatusBar;
@@ -18,16 +19,19 @@ public:
     PopulationPanel(GG::X w, int object_id);
     ~PopulationPanel();
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ //@{
     int PopCenterID() const { return m_popcenter_id; }
     //@}
 
     /** \name Mutators */ //@{
+    void PreRender() override;
+
+    bool EventFilter(GG::Wnd* w, const GG::WndEvent& event) override;
+
     /** expands or collapses panel to show details or just summary info */
     void ExpandCollapse(bool expanded);
-
-    bool EventFilter(GG::Wnd* w, const GG::WndEvent& event);
 
     /** updates indicators with values of associated object.  Does not do layout and resizing. */
     void Update();
@@ -38,7 +42,7 @@ public:
 protected:
     /** \name Mutators */ //@{
     /** resizes panel and positions widgets */
-    virtual void DoLayout();
+    void DoLayout() override;
     //@}
 
 private:
@@ -49,15 +53,15 @@ private:
     int m_popcenter_id;
 
     /** returns the PopCenter object with id m_popcenter_id */
-    TemporaryPtr<const PopCenter> GetPopCenter() const;
+    std::shared_ptr<const PopCenter> GetPopCenter() const;
 
     /** Icons for the associated meter type. */
-    std::vector<std::pair<MeterType, StatisticIcon*> > m_meter_stats;
+    std::vector<std::pair<MeterType, std::shared_ptr<StatisticIcon>>> m_meter_stats;
 
     /** textually / numerically indicates population */
-    MultiIconValueIndicator* m_multi_icon_value_indicator;
+    std::shared_ptr<MultiIconValueIndicator> m_multi_icon_value_indicator;
     /** graphically indicates meter values */
-    MultiMeterStatusBar* m_multi_meter_status_bar;
+    std::shared_ptr<MultiMeterStatusBar> m_multi_meter_status_bar;
 
     /** map indexed by popcenter ID indicating whether the PopulationPanel for each object is expanded (true) or collapsed (false) */
     static std::map<int, bool> s_expanded_map;

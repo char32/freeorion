@@ -27,8 +27,6 @@
 #include <GG/ClrConstants.h>
 #include <GG/DrawUtil.h>
 
-#include <boost/assign/list_of.hpp>
-
 
 using namespace GG;
 
@@ -71,17 +69,33 @@ namespace {
 ////////////////////////////////////////////////
 // GG::StaticGraphic
 ////////////////////////////////////////////////
-StaticGraphic::StaticGraphic(const boost::shared_ptr<Texture>& texture, Flags<GraphicStyle> style/* = GRAPHIC_NONE*/,
+StaticGraphic::StaticGraphic(const std::shared_ptr<Texture>& texture,
+                             Flags<GraphicStyle> style/* = GRAPHIC_NONE*/,
                              Flags<WndFlag> flags/* = 0*/) :
-    Control(X0, Y0, X1, Y1, flags),
-    m_style(style)
-{ Init(SubTexture(texture, X0, Y0, texture->DefaultWidth(), texture->DefaultHeight())); }
+    StaticGraphic(SubTexture(texture, X0, Y0, texture->DefaultWidth(), texture->DefaultHeight()), style)
+{}
 
-StaticGraphic::StaticGraphic(const SubTexture& subtexture, Flags<GraphicStyle> style/* = GRAPHIC_NONE*/,
+StaticGraphic::StaticGraphic(const SubTexture& subtexture,
+                             Flags<GraphicStyle> style/* = GRAPHIC_NONE*/,
                              Flags<WndFlag> flags/* = 0*/) :
     Control(X0, Y0, X1, Y1, flags),
+    m_graphic(subtexture),
     m_style(style)
-{ Init(subtexture); }
+{
+    ValidateStyle();  // correct any disagreements in the style flags
+    SetColor(CLR_WHITE);
+}
+
+StaticGraphic::StaticGraphic(const std::shared_ptr<VectorTexture>& texture,
+                             Flags<GraphicStyle> style/* = GRAPHIC_NONE*/,
+                             Flags<WndFlag> flags/* = 0*/) :
+    Control(X0, Y0, X1, Y1, flags),
+    m_vector_texture(texture),
+    m_style(style)
+{
+    ValidateStyle();  // correct any disagreements in the style flags
+    SetColor(CLR_WHITE);
+}
 
 Flags<GraphicStyle> StaticGraphic::Style() const
 { return m_style; }
@@ -90,7 +104,13 @@ Rect StaticGraphic::RenderedArea() const
 {
     Pt ul = UpperLeft(), lr = LowerRight();
     Pt window_sz(lr - ul);
-    Pt graphic_sz(m_graphic.Width(), m_graphic.Height());
+
+    Pt graphic_sz;
+    if (m_graphic.GetTexture())
+        graphic_sz = {m_graphic.Width(), m_graphic.Height()};
+    else if (m_vector_texture && m_vector_texture->TextureLoaded())
+        graphic_sz = m_vector_texture->Size();
+
     Pt pt1, pt2(graphic_sz); // (unscaled) default graphic size
     if (m_style & GRAPHIC_FITGRAPHIC) {
         if (m_style & GRAPHIC_PROPSCALE) {
@@ -139,12 +159,35 @@ Rect StaticGraphic::RenderedArea() const
     return Rect(pt1, pt2);
 }
 
+const SubTexture& StaticGraphic::GetTexture() const
+{ return m_graphic; }
+
+const std::shared_ptr<VectorTexture>& StaticGraphic::GetVectorTexture() const
+{ return m_vector_texture; }
+
+const boost::filesystem::path& StaticGraphic::GetTexturePath() const
+{
+    static boost::filesystem::path EMPTY_PATH;
+
+    if (const Texture* texture = m_graphic.GetTexture())
+        return texture->Path();
+    if (m_vector_texture && m_vector_texture->TextureLoaded())
+        return m_vector_texture->Path();
+
+    return EMPTY_PATH;
+}
+
 void StaticGraphic::Render()
 {
     Clr color_to_use = Disabled() ? DisabledColor(Color()) : Color();
     glColor(color_to_use);
     Rect rendered_area = RenderedArea();
-    m_graphic.OrthoBlit(rendered_area.ul, rendered_area.lr);
+
+    if (m_graphic.GetTexture()) {
+        m_graphic.OrthoBlit(rendered_area.ul, rendered_area.lr);
+    } else if (m_vector_texture && m_vector_texture->TextureLoaded()) {
+        m_vector_texture->Render(rendered_area.ul, rendered_area.lr);
+    }
 }
 
 void StaticGraphic::SetStyle(Flags<GraphicStyle> style)
@@ -153,11 +196,20 @@ void StaticGraphic::SetStyle(Flags<GraphicStyle> style)
     ValidateStyle();
 }
 
-void StaticGraphic::Init(const SubTexture& subtexture)
+void StaticGraphic::SetTexture(const std::shared_ptr<Texture>& texture)
+{ SetTexture(SubTexture(texture, X0, Y0, texture->DefaultWidth(), texture->DefaultHeight())); }
+
+void StaticGraphic::SetTexture(const SubTexture& subtexture)
 {
-    ValidateStyle();  // correct any disagreements in the style flags
-    SetColor(CLR_WHITE);
     m_graphic = subtexture;
+    if (m_vector_texture)
+        m_vector_texture.reset();
+}
+
+void StaticGraphic::SetTexture(const std::shared_ptr<VectorTexture>& vector_texture)
+{
+    m_vector_texture = vector_texture;
+    m_graphic.Clear();
 }
 
 void StaticGraphic::ValidateStyle()

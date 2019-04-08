@@ -1,8 +1,7 @@
-#include "ConditionParserImpl.h"
+#include "ConditionParser6.h"
 
-#include "EnumParser.h"
-#include "Label.h"
 #include "ValueRefParser.h"
+
 #include "../universe/Condition.h"
 #include "../universe/ValueRef.h"
 
@@ -15,7 +14,7 @@ namespace phoenix = boost::phoenix;
 
 #if DEBUG_CONDITION_PARSERS
 namespace std {
-    inline ostream& operator<<(ostream& os, const std::vector<Condition::ConditionBase*>&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::vector<condition_payload>&) { return os; }
     inline ostream& operator<<(ostream& os, const std::vector<ValueRef::ValueRefBase<std::string>*>&) { return os; }
     inline ostream& operator<<(ostream& os, const std::vector<ValueRef::ValueRefBase<PlanetSize>*>&) { return os; }
     inline ostream& operator<<(ostream& os, const std::vector<ValueRef::ValueRefBase<PlanetType>*>&) { return os; }
@@ -23,198 +22,137 @@ namespace std {
 }
 #endif
 
-namespace {
-    struct condition_parser_rules_6 {
-        condition_parser_rules_6() {
-            const parse::lexer& tok = parse::lexer::instance();
+namespace parse { namespace detail {
+    condition_parser_rules_6::condition_parser_rules_6(
+        const parse::lexer& tok,
+        Labeller& label,
+        const condition_parser_grammar& condition_parser,
+        const value_ref_grammar<std::string>& string_grammar
+    ) :
+        condition_parser_rules_6::base_type(start, "condition_parser_rules_6"),
+        one_or_more_string_values(string_grammar),
+        universe_object_type_rules(tok, label, condition_parser),
+        planet_type_rules(tok, label, condition_parser),
+        planet_size_rules(tok, label, condition_parser),
+        planet_environment_rules(tok, label, condition_parser),
+        one_or_more_planet_types(planet_type_rules.expr),
+        one_or_more_planet_sizes(planet_size_rules.expr),
+        one_or_more_planet_environments(planet_environment_rules.expr)
+  {
+        qi::_1_type _1;
+        qi::_2_type _2;
+        qi::_val_type _val;
+        qi::eps_type eps;
+        qi::_pass_type _pass;
+        qi::omit_type omit_;
+        const boost::phoenix::function<construct_movable> construct_movable_;
+        const boost::phoenix::function<deconstruct_movable> deconstruct_movable_;
+        const boost::phoenix::function<deconstruct_movable_vector> deconstruct_movable_vector_;
 
-            const parse::value_ref_parser_rule<std::string>::type& string_value_ref =
-                parse::value_ref_parser<std::string>();
+        using phoenix::new_;
+        using phoenix::push_back;
+        using phoenix::construct;
 
-            const parse::value_ref_parser_rule<PlanetType>::type& planet_type_value_ref =
-                parse::value_ref_parser<PlanetType>();
+        homeworld
+            =   tok.Homeworld_
+            >   (
+                (label(tok.Name_) > one_or_more_string_values
+                 [ _val = construct_movable_(new_<Condition::Homeworld>(deconstruct_movable_vector_(_1, _pass))) ])
+                |    eps [ _val = construct_movable_(new_<Condition::Homeworld>()) ]
+            )
+            ;
 
-            const parse::value_ref_parser_rule<PlanetSize>::type& planet_size_value_ref =
-                parse::value_ref_parser<PlanetSize>();
+        building
+            =   ( omit_[tok.Building_]
+                > -(label(tok.Name_) > one_or_more_string_values)
+                ) [ _val = construct_movable_(new_<Condition::Building>(deconstruct_movable_vector_(_1, _pass))) ]
+            ;
 
-            const parse::value_ref_parser_rule<PlanetEnvironment>::type& planet_environment_value_ref =
-                parse::value_ref_parser<PlanetEnvironment>();
+        species
+            = ( omit_[tok.Species_]
+                > -(label(tok.Name_) > one_or_more_string_values)
+              ) [ _val = construct_movable_(new_<Condition::Species>(deconstruct_movable_vector_(_1, _pass))) ]
+            ;
 
-            const parse::value_ref_parser_rule<UniverseObjectType>::type& universe_object_type_value_ref =
-                parse::value_ref_parser<UniverseObjectType>();
+        focus_type
+            =   tok.Focus_
+            > -(label(tok.Type_) > one_or_more_string_values)
+            [ _val = construct_movable_(new_<Condition::FocusType>(deconstruct_movable_vector_(_1, _pass))) ]
+            ;
 
-            qi::_1_type _1;
-            qi::_a_type _a;
-            qi::_b_type _b;
-            qi::_val_type _val;
-            qi::eps_type eps;
-            using phoenix::new_;
-            using phoenix::push_back;
+        planet_type
+            =   (tok.Planet_
+                 >>  label(tok.Type_)
+                )
+            >   one_or_more_planet_types
+            [ _val = construct_movable_(new_<Condition::PlanetType>(deconstruct_movable_vector_(_1, _pass))) ]
+            ;
 
-            string_ref_vec
-                =    '[' > +string_value_ref [ push_back(_val, _1) ] > ']'
-                |    string_value_ref [ push_back(_val, _1) ]
-                ;
+        planet_size
+            =   (tok.Planet_
+                 >>  label(tok.Size_)
+                )
+            >   one_or_more_planet_sizes
+            [ _val = construct_movable_(new_<Condition::PlanetSize>(deconstruct_movable_vector_(_1, _pass))) ]
+            ;
 
-            homeworld
-                =    tok.Homeworld_
-                >   (
-                            parse::label(Name_token) > string_ref_vec [ _val = new_<Condition::Homeworld>(_1) ]
-                        |   eps [ _val = new_<Condition::Homeworld>() ]
-                    )
-                ;
+        planet_environment
+            =   ((omit_[tok.Planet_]
+                  >>  label(tok.Environment_)
+                 )
+                 >   one_or_more_planet_environments
+                 >  -(label(tok.Species_)        >  string_grammar))
+            [ _val = construct_movable_(new_<Condition::PlanetEnvironment>(
+                    deconstruct_movable_vector_(_1, _pass),
+                    deconstruct_movable_(_2, _pass))) ]
+            ;
 
-            building
-                =    (
-                            tok.Building_
-                        >  -(parse::label(Name_token) > string_ref_vec [ _a = _1 ])
-                     )
-                     [ _val = new_<Condition::Building>(_a) ]
-                ;
-
-            species
-                =    tok.Species_
-                >    (
-                            parse::label(Name_token) > string_ref_vec [ _val = new_<Condition::Species>(_1) ]
-                        |   eps [ _val = new_<Condition::Species>() ]
-                     )
-                ;
-
-            focus_type
-                =    tok.Focus_
-                >    (
-                            parse::label(Type_token) > string_ref_vec [ _val = new_<Condition::FocusType>(_1) ]
-                        |   eps [ _val = new_<Condition::FocusType>(std::vector<ValueRef::ValueRefBase<std::string>*>()) ]
-                     )
-                ;
-
-            planet_type
-                =    tok.Planet_
-                >>   parse::label(Type_token)
-                >    (
-                            '[' > +planet_type_value_ref [ push_back(_a, _1) ] > ']'
-                        |   planet_type_value_ref [ push_back(_a, _1) ]
-                     )
-                     [ _val = new_<Condition::PlanetType>(_a) ]
-                ;
-
-            planet_size
-                =    tok.Planet_
-                >>   parse::label(Size_token)
-                >    (
-                            '[' > +planet_size_value_ref [ push_back(_a, _1) ] > ']'
-                        |   planet_size_value_ref [ push_back(_a, _1) ]
-                     )
-                     [ _val = new_<Condition::PlanetSize>(_a) ]
-                ;
-
-            planet_environment
-                =   (tok.Planet_
-                >>   parse::label(Environment_token)
-                >    (
-                            '[' > +planet_environment_value_ref [ push_back(_a, _1) ] > ']'
-                        |   planet_environment_value_ref [ push_back(_a, _1) ]
-                     )
-                >  -(parse::label(Species_token)        >  string_value_ref [_b = _1]))
-                     [ _val = new_<Condition::PlanetEnvironment>(_a, _b) ]
-                ;
-
-            object_type
-                =    parse::enum_parser<UniverseObjectType>() [ _val = new_<Condition::Type>(new_<ValueRef::Constant<UniverseObjectType> >(_1)) ]
-                |    (
-                            tok.ObjectType_
-                        >  parse::label(Type_token) > universe_object_type_value_ref [ _val = new_<Condition::Type>(_1) ]
-                     )
-                ;
+        object_type
+            =   universe_object_type_rules.enum_expr [
+                _val = construct_movable_(
+                    new_<Condition::Type>(
+                        construct<std::unique_ptr<ValueRef::ValueRefBase<UniverseObjectType>>>(
+                            new_<ValueRef::Constant<UniverseObjectType>>(_1)))) ]
+            |   (
+                tok.ObjectType_
+                >   label(tok.Type_) > universe_object_type_rules.expr [
+                    _val = construct_movable_(new_<Condition::Type>(deconstruct_movable_(_1, _pass))) ]
+            )
+            ;
 
 
-            start
-                %=   homeworld
-                |    building
-                |    species
-                |    focus_type
-                |    planet_type
-                |    planet_size
-                |    planet_environment
-                |    object_type
-                ;
+        start
+            %=  homeworld
+            |   building
+            |   species
+            |   focus_type
+            |   planet_type
+            |   planet_size
+            |   planet_environment
+            |   object_type
+            ;
 
-            string_ref_vec.name("sequence of string expressions");
-            homeworld.name("Homeworld");
-            building.name("Building");
-            species.name("Species");
-            focus_type.name("Focus");
-            planet_type.name("PlanetType");
-            planet_size.name("PlanetSize");
-            planet_environment.name("PlanetEnvironment");
-            object_type.name("ObjectType");
+        one_or_more_string_values.name("sequence of string expressions");
+        homeworld.name("Homeworld");
+        building.name("Building");
+        species.name("Species");
+        focus_type.name("Focus");
+        planet_type.name("PlanetType");
+        planet_size.name("PlanetSize");
+        planet_environment.name("PlanetEnvironment");
+        object_type.name("ObjectType");
 
 #if DEBUG_CONDITION_PARSERS
-            debug(string_ref_vec);
-            debug(homeworld);
-            debug(building);
-            debug(species);
-            debug(focus_type);
-            debug(planet_type);
-            debug(planet_size);
-            debug(planet_environment);
-            debug(object_type);
+        debug(one_or_more_string_values);
+        debug(homeworld);
+        debug(building);
+        debug(species);
+        debug(focus_type);
+        debug(planet_type);
+        debug(planet_size);
+        debug(planet_environment);
+        debug(object_type);
 #endif
-        }
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            std::vector<ValueRef::ValueRefBase<std::string>*> (),
-            parse::skipper_type
-        > string_ref_vec_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Condition::ConditionBase* (),
-            qi::locals<std::vector<ValueRef::ValueRefBase<std::string>*> >,
-            parse::skipper_type
-        > building_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Condition::ConditionBase* (),
-            qi::locals<std::vector<ValueRef::ValueRefBase<PlanetType>*> >,
-            parse::skipper_type
-        > planet_type_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Condition::ConditionBase* (),
-            qi::locals<std::vector<ValueRef::ValueRefBase<PlanetSize>*> >,
-            parse::skipper_type
-        > planet_size_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Condition::ConditionBase* (),
-            qi::locals<
-                std::vector<ValueRef::ValueRefBase<PlanetEnvironment>*>,
-                ValueRef::ValueRefBase<std::string>*
-            >,
-            parse::skipper_type
-        > planet_environment_rule;
-
-        string_ref_vec_rule             string_ref_vec;
-        parse::condition_parser_rule    homeworld;
-        building_rule                   building;
-        parse::condition_parser_rule    species;
-        parse::condition_parser_rule    focus_type;
-        planet_type_rule                planet_type;
-        planet_size_rule                planet_size;
-        planet_environment_rule         planet_environment;
-        parse::condition_parser_rule    object_type;
-        parse::condition_parser_rule    start;
-    };
-}
-
-namespace parse { namespace detail {
-    const condition_parser_rule& condition_parser_6() {
-        static condition_parser_rules_6 retval;
-        return retval.start;
     }
+
 } }

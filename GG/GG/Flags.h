@@ -32,7 +32,6 @@
 #include <GG/Exception.h>
 
 #include <boost/utility/enable_if.hpp>
-#include <boost/lexical_cast.hpp>
 #include <boost/mpl/assert.hpp>
 
 #include <cassert>
@@ -177,11 +176,11 @@ public:
     /** \name Accessors */ ///@{
     /** Returns true iff FlagSpec contains \a flag. */
     bool contains(FlagType flag) const
-    { return find(flag) != end(); }
+    { return m_flags.count(flag); }
     /** Returns true iff \a flag is a "permanent" flag -- a flag used
         internally by the GG library, as opposed to a user-added flag. */
     bool permanent(FlagType flag) const
-    { return m_permanent.find(flag) != m_permanent.end(); }
+    { return m_permanent.count(flag); }
     /** Returns an iterator to \a flag, if flag is in the FlagSpec, or end()
         otherwise. */
     const_iterator find(FlagType flag) const
@@ -197,7 +196,7 @@ public:
         unknown flag's stringification is requested. */
     const std::string& ToString(FlagType flag) const
     {
-        typename std::map<FlagType, std::string>::const_iterator it = m_strings.find(flag);
+        auto it = m_strings.find(flag);
         if (it == m_strings.end())
             throw UnknownFlag("Could not find string corresponding to unknown flag");
         return it->second;
@@ -206,14 +205,11 @@ public:
         GG::FlagSpec::UnknownString if an unknown string is provided. */
     FlagType FromString(const std::string& str) const
     {
-        for (typename std::map<FlagType, std::string>::const_iterator it = m_strings.begin();
-                it != m_strings.end();
-                ++it) {
-            if (it->second == str)
-                return it->first;
+        for (const auto& string : m_strings) {
+            if (string.second == str)
+                return string.first;
         }
         throw UnknownString("Could not find flag corresponding to unknown string");
-        return FlagType(0);
     }
     //@}
 
@@ -295,8 +291,10 @@ public:
     //@}
 
     /** \name Structors */ ///@{
-    /** Default ctor. */
-    Flags() : m_flags(0) {}
+    Flags() :
+        m_flags(0)
+    {}
+
     /** Ctor.  Note that this ctor allows implicit conversions from FlagType
         to Flags.  \throw Throws GG::Flags::UnknownFlag if \a flag is not
         found in FlagSpec<FlagType>::instance(). */
@@ -304,7 +302,7 @@ public:
         m_flags(flag.m_value)
     {
         if (!FlagSpec<FlagType>::instance().contains(flag))
-            throw UnknownFlag("Invalid flag with value " + boost::lexical_cast<std::string>(flag.m_value));
+            throw UnknownFlag("Invalid flag with value " + std::to_string(flag.m_value));
     }
     //@}
 
@@ -474,10 +472,9 @@ template <class FlagType>
 Flags<FlagType> operator~(Flags<FlagType> flags)
 {
     Flags<FlagType> retval;
-    const FlagSpec<FlagType>& spec = FlagSpec<FlagType>::instance();
-    for (typename FlagSpec<FlagType>::const_iterator it = spec.begin(); it != spec.end(); ++it) {
-        if (!(*it & flags))
-            retval |= *it;
+    for (const FlagType& flag : FlagSpec<FlagType>::instance()) {
+        if (!(flag & flags))
+            retval |= flag;
     }
     return retval;
 }

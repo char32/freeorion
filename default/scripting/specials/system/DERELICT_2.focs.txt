@@ -1,0 +1,61 @@
+Special
+    name = "DERELICT_SPECIAL2"               //  MAP / DETECTION
+    description = "DERELICT_SPECIAL_DESC"
+    stealth = 45
+    spawnrate = 0.5
+    spawnlimit = 100
+    location = And [
+        System
+        Not Contains Capital
+    ]
+    effectsgroups = [
+        EffectsGroup
+            scope = NumberOf number = 1 condition = And [
+                Ship
+                InSystem id = Source.ID
+                OwnedBy affiliation = AnyEmpire
+            ]
+            activation = And [
+                System
+                Contains And [
+                    Ship
+                    OwnedBy affiliation = AnyEmpire
+                ]
+            ]
+            effects = [
+                SetVisibility empire = Target.Owner visibility = Full condition = And [
+                    Or [
+                        System
+                        Planet
+                        Monster
+                    ]
+                    WithinStarlaneJumps jumps = 3 condition = Source
+                ]
+                GenerateSitRepMessage
+                    message = "EFFECT_DERELICT_MAP"
+                    label = "EFFECT_DERELICT_MAP_LABEL"
+                    icon = "icons/specials_huge/derelict.png"
+                    parameters = [
+                        tag = "system" data = Source.ID
+                        tag = "special" data = "DERELICT_SPECIAL2"
+                    ]
+                    empire = Target.Owner
+            ]
+
+        EffectsGroup
+            scope = And [
+                Source
+                System
+            ]
+            activation = And [
+                System
+                Contains And [
+                    Ship
+                    OwnedBy affiliation = AnyEmpire
+                ]
+            ]
+            effects = [
+                RemoveSpecial name = "DERELICT_SPECIAL2"
+            ]
+    ]
+    graphic = "icons/specials_huge/derelict.png"

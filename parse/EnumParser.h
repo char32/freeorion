@@ -1,74 +1,78 @@
-// -*- C++ -*-
 #ifndef _EnumParser_h_
 #define _EnumParser_h_
 
 #include "Lexer.h"
 
+#include "ParseImpl.h"
 #include "../universe/ValueRefFwd.h"
-#include "../universe/Enums.h"
+#include "../universe/EnumsFwd.h"
 
 #include <boost/spirit/include/qi.hpp>
 
+struct ItemSpec;
 
 namespace parse {
-
-    template <typename E>
-    struct enum_parser_rule
-    {
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            E (),
-            parse::skipper_type
-        > type;
+    struct empire_affiliation_enum_grammar : public detail::enum_grammar<EmpireAffiliationType> {
+        empire_affiliation_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<EmpireAffiliationType> rule;
     };
 
-    /** Returns a reference to the parser for the enum \a E. */
-    template <typename E>
-    typename enum_parser_rule<E>::type& enum_parser();
+    struct unlockable_item_enum_grammar : public detail::enum_grammar<UnlockableItemType> {
+        unlockable_item_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<UnlockableItemType> rule;
+    };
 
-    template <>
-    enum_parser_rule<PlanetSize>::type& enum_parser<PlanetSize>();
+    struct ship_slot_enum_grammar : public detail::enum_grammar<ShipSlotType> {
+        ship_slot_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<ShipSlotType> rule;
+    };
 
-    template <>
-    enum_parser_rule<PlanetType>::type& enum_parser<PlanetType>();
+    struct ship_part_class_enum_grammar : public detail::enum_grammar<ShipPartClass> {
+        ship_part_class_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<ShipPartClass> rule;
+    };
 
-    template <>
-    enum_parser_rule<PlanetEnvironment>::type& enum_parser<PlanetEnvironment>();
+    struct capture_result_enum_grammar : public detail::enum_grammar<CaptureResult> {
+        capture_result_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<CaptureResult> rule;
+    };
 
-    template <>
-    enum_parser_rule<UniverseObjectType>::type& enum_parser<UniverseObjectType>();
+    struct statistic_enum_grammar : public detail::enum_grammar<ValueRef::StatisticType> {
+        statistic_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<ValueRef::StatisticType> rule;
+    };
 
-    template <>
-    enum_parser_rule<StarType>::type& enum_parser<StarType>();
+    struct non_ship_part_meter_enum_grammar : public detail::enum_grammar<MeterType> {
+        non_ship_part_meter_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<MeterType> rule;
+    };
 
-    template <>
-    enum_parser_rule<EmpireAffiliationType>::type& enum_parser<EmpireAffiliationType>();
+    struct ship_part_meter_enum_grammar : public detail::enum_grammar<MeterType> {
+        ship_part_meter_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<MeterType> rule;
+    };
 
-    template <>
-    enum_parser_rule<UnlockableItemType>::type& enum_parser<UnlockableItemType>();
+    struct set_non_ship_part_meter_enum_grammar : public detail::enum_grammar<MeterType> {
+        set_non_ship_part_meter_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<MeterType> rule;
+    };
 
-    template <>
-    enum_parser_rule<TechType>::type& enum_parser<TechType>();
+    struct set_ship_part_meter_enum_grammar : public detail::enum_grammar<MeterType> {
+        set_ship_part_meter_enum_grammar(const parse::lexer& tok);
+        detail::enum_rule<MeterType> rule;
+    };
 
-    template <>
-    enum_parser_rule<ShipSlotType>::type& enum_parser<ShipSlotType>();
+    namespace detail {
+    using item_spec_rule_type = rule<ItemSpec ()>;
+    using item_spec_grammar_type = grammar<ItemSpec ()>;
 
-    template <>
-    enum_parser_rule<ShipPartClass>::type& enum_parser<ShipPartClass>();
-
-    template <>
-    enum_parser_rule<CaptureResult>::type& enum_parser<CaptureResult>();
-
-    template <>
-    enum_parser_rule<ValueRef::StatisticType>::type& enum_parser<ValueRef::StatisticType>();
-
-    enum_parser_rule<MeterType>::type& non_ship_part_meter_type_enum();
-
-    enum_parser_rule<MeterType>::type& ship_part_meter_type_enum();
-
-    enum_parser_rule<MeterType>::type& set_non_ship_part_meter_type_enum();
-
-    enum_parser_rule<MeterType>::type& set_ship_part_meter_type_enum();
+    struct item_spec_grammar : public item_spec_grammar_type {
+        item_spec_grammar(const parse::lexer& tok,
+                          Labeller& label);
+        parse::unlockable_item_enum_grammar unlockable_item_type_enum;
+        item_spec_rule_type start;
+    };
+    }
 }
 
 #endif

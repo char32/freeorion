@@ -1,0 +1,43 @@
+Species
+    name = "SP_REPLICON"
+    description = "SP_REPLICON_DESC"
+    gameplay_description = "SP_REPLICON_GAMEPLAY_DESC"
+    Playable
+    CanProduceShips
+    CanColonize
+
+    tags = [ "ROBOTIC" "GOOD_INDUSTRY" "BAD_RESEARCH" "AVERAGE_SUPPLY" "PEDIA_ROBOTIC_SPECIES_CLASS" ]
+
+    foci = [
+        [[HAS_INDUSTRY_FOCUS]]
+        [[HAS_RESEARCH_FOCUS]]
+        [[HAS_GROWTH_FOCUS]]
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    preferredfocus = "FOCUS_INDUSTRY"
+
+    effectsgroups = [
+        [[GOOD_INDUSTRY]]
+        [[BAD_RESEARCH]]
+        [[AVERAGE_STOCKPILE]]
+
+        [[AVERAGE_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[AVERAGE_SUPPLY]]
+        [[GOOD_DEFENSE_TROOPS]]
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[LARGE_PLANET]]
+        [[STANDARD_SHIP_SHIELDS]]
+    ]
+
+    [[RADIATED_STANDARD_EP]]
+
+    graphic = "icons/species/replicon.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

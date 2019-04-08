@@ -1,0 +1,30 @@
+add_subdirectory(AI)
+add_subdirectory(server)
+
+target_sources(freeoriond
+    PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}/CommonFramework.h
+        ${CMAKE_CURRENT_LIST_DIR}/CommonWrappers.h
+        ${CMAKE_CURRENT_LIST_DIR}/SetWrapper.h
+    PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/CommonFramework.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ConfigWrapper.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/EmpireWrapper.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/EnumWrapper.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/LoggingWrapper.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/UniverseWrapper.cpp
+)
+
+target_sources(freeorionca
+    PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}/CommonFramework.h
+        ${CMAKE_CURRENT_LIST_DIR}/CommonWrappers.h
+        ${CMAKE_CURRENT_LIST_DIR}/SetWrapper.h
+    PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/CommonFramework.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ConfigWrapper.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/EmpireWrapper.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/EnumWrapper.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/LoggingWrapper.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/UniverseWrapper.cpp
+)

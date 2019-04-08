@@ -1,0 +1,51 @@
+Species
+    name = "SP_ABADDONI"
+    description = "SP_ABADDONI_DESC"
+    gameplay_description = "SP_ABADDONI_GAMEPLAY_DESC"
+    Playable
+    //Native
+    CanProduceShips
+    CanColonize
+
+    tags = [ "LITHIC" "BAD_RESEARCH" "AVERAGE_SUPPLY"  "PEDIA_LITHIC_SPECIES_CLASS" ] 
+
+    foci = [
+        [[HAS_INDUSTRY_FOCUS]]
+        [[HAS_RESEARCH_FOCUS]]
+        [[HAS_GROWTH_FOCUS]]
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    preferredfocus = "FOCUS_INDUSTRY"
+
+    effectsgroups = [
+        [[AVERAGE_INDUSTRY]]
+        [[BAD_RESEARCH]]
+        [[AVERAGE_STOCKPILE]]
+
+        [[AVERAGE_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[AVERAGE_SUPPLY]]
+        [[BAD_DEFENSE_TROOPS]]
+        EffectsGroup
+            scope = Source
+            activation = Turn high = 1
+            effects = [
+                GiveEmpireTech name = "GRO_SUBTER_HAB" empire = Target.Owner
+           ]
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[LARGE_PLANET]]
+        [[BROAD_EP]]
+        [[STANDARD_SHIP_SHIELDS]]
+    ]
+
+    [[INFERNO_BROAD_EP]]
+
+    graphic = "icons/species/abaddonnian.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

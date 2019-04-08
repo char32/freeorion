@@ -1,0 +1,65 @@
+Hull
+    name = "SH_SNOWFLAKE_2_BODY"
+    description = "SH_SNOWFLAKE_2_BODY_DESC"
+    speed = 60
+    fuel = 5
+    stealth = 5
+    structure = 60
+    slots = [
+        Slot type = External position = (0.20, 0.15)
+        Slot type = External position = (0.40, 0.15)
+        Slot type = External position = (0.60, 0.15)
+        Slot type = Internal position = (0.50, 0.65)
+    ]
+    buildCost = 1
+    buildTime = 1
+    Unproducible
+    tags = [ "PEDIA_HULL_MONSTER_SNOWFLAKE" ]
+    location = All
+    effectsgroups = [
+        [[MONSTER_MOVE_ALWAYS]]
+        [[INFINITE_FUEL]]
+        [[MONSTER_SHIELD_REGENERATION]]
+
+        EffectsGroup
+            scope = And [
+                Source
+                ContainedBy And [
+                    System 
+                    Contains Planet size = Small
+                ]
+            ]
+            activation = And [
+                Turn low = max(60, Source.LastTurnActiveInBattle + 1)
+                Random probability = Source.Age*0.01 - 0.1
+            ]
+            effects = [
+                CreateShip designname = "SM_SNOWFLAKE_3" empire = Source.Owner
+                Destroy
+                GenerateSitRepMessage
+                    message = "EFFECT_TAME_MONSTER_MATURED"
+                    label = "EFFECT_TAME_MONSTER_MATURED_LABEL"
+                    icon = "icons/monsters/snowflake-3.png"
+                    parameters = [
+                        tag = "system" data = Source.SystemID
+                        tag = "predefinedshipdesign" data = "SM_SNOWFLAKE_3"
+                    ]
+                    empire = Source.Owner
+            ]
+        
+        EffectsGroup
+            scope = Source
+            activation = Source
+            effects = [
+                SetMaxCapacity partname = "SR_ICE_BEAM" value = Value + min(Source.Age*0.15, 4)
+                SetCapacity partname = "SR_ICE_BEAM" value = Value + min(Source.Age*0.15, 4)
+            ]
+        
+        [[EXCELLENT_VISION]]
+    ]
+    icon = ""
+    graphic = "icons/monsters/snowflake-2.png"
+
+#include "monster.macros"
+
+#include "../ship_hulls.macros"

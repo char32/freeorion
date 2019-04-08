@@ -1,0 +1,49 @@
+Special
+    name = "WORLDTREE_SPECIAL"
+    description = "WORLDTREE_SPECIAL_DESC"
+    stealth = 0
+    spawnrate = 1.0
+    spawnlimit = 1
+    location = And [
+        Planet
+        Not Planet type = [Asteroids GasGiant Inferno]
+        Not Planet size = [tiny huge]
+        Not WithinStarlaneJumps jumps = 2 condition = And [
+            System
+            Contains And [
+                Planet
+                OwnedBy affiliation = AnyEmpire
+            ]
+        ]
+    ]
+    effectsgroups = [
+        EffectsGroup
+            scope = Source
+            activation = Source
+            accountinglabel = "WORLDTREE_LABEL"
+            priority = [[LATE_PRIORITY]]
+            effects = [
+                SetDetection value = Value + 10
+                SetMaxSupply value = Value + 1
+                SetTargetHappiness value = Value + 5
+            ]
+            
+        EffectsGroup
+            scope = Source
+            activation = TargetPopulation low = 1
+            accountinglabel = "WORLDTREE_LABEL"
+            priority = [[TARGET_POPULATION_AFTER_SCALING_PRIORITY]]
+            effects = SetTargetPopulation value = Value + 1
+            
+        EffectsGroup
+            scope = And [
+                Planet
+                Not Source
+                OwnedBy affiliation = TheEmpire empire = Source.Owner
+                Population low = 0.0001
+            ]
+            effects = SetTargetHappiness value = Value + 1
+    ]
+    graphic = "icons/specials_huge/worldtree.png"
+
+#include "/scripting/common/priorities.macros"

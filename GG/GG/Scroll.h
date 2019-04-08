@@ -31,6 +31,8 @@
 #include <GG/Control.h>
 #include <GG/GLClientAndServerBuffer.h>
 
+#include <boost/signals2/signal.hpp>
+
 
 namespace GG {
 
@@ -79,9 +81,10 @@ public:
     /** Ctor. */
     Scroll(Orientation orientation, Clr color, Clr interior);
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ ///@{
-    virtual Pt           MinUsableSize() const;
+    Pt MinUsableSize() const override;
 
     std::pair<int, int>  PosnRange() const;         ///< range currently being viewed
     std::pair<int, int>  ScrollRange() const;       ///< defined possible range of control
@@ -96,26 +99,27 @@ public:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void   Render();
+    void Render() override;
 
-    virtual void   SizeMove(const Pt& ul, const Pt& lr);
-    virtual void   DoLayout();
+    void SizeMove(const Pt& ul, const Pt& lr) override;
 
-    virtual void   Disable(bool b = true);
-    virtual void   SetColor(Clr c);
+    void Disable(bool b = true) override;
+    void SetColor(Clr c) override;
 
-    void           SetInteriorColor(Clr c); ///< sets the color painted into the client area of the control
-    void           SizeScroll(int min, int max, unsigned int line, unsigned int page); ///< sets the logical ranges of the control, and the logical increment values
-    void           SetMax(int max);         ///< sets the maximum value of the scroll
-    void           SetMin(int min);         ///< sets the minimum value of the scroll
-    void           SetLineSize(unsigned int line); ///< sets the size of a line in the scroll. This is the number of logical units the tab moves when either of the up or down buttons is pressed.
-    void           SetPageSize(unsigned int page); ///< sets the size of a line page in the scroll. This is the number of logical units the tab moves when either of the page-up or page-down areas is clicked.
+    virtual void DoLayout();
 
-    void           ScrollTo(int p);  ///< scrolls the control to a certain spot
-    void           ScrollLineIncr(int lines = 1); ///< scrolls the control down (or right) by \a lines lines
-    void           ScrollLineDecr(int lines = 1); ///< scrolls the control up (or left) by \a lines lines
-    void           ScrollPageIncr(); ///< scrolls the control down (or right) by a page
-    void           ScrollPageDecr(); ///< scrolls the control up (or left) by a page
+    void SetInteriorColor(Clr c); ///< sets the color painted into the client area of the control
+    void SizeScroll(int min, int max, unsigned int line, unsigned int page); ///< sets the logical ranges of the control, and the logical increment values
+    void SetMax(int max);         ///< sets the maximum value of the scroll
+    void SetMin(int min);         ///< sets the minimum value of the scroll
+    void SetLineSize(unsigned int line); ///< sets the size of a line in the scroll. This is the number of logical units the tab moves when either of the up or down buttons is pressed.
+    void SetPageSize(unsigned int page); ///< sets the size of a line page in the scroll. This is the number of logical units the tab moves when either of the page-up or page-down areas is clicked.
+
+    void ScrollTo(int p);  ///< scrolls the control to a certain spot
+    void ScrollLineIncr(int lines = 1); ///< scrolls the control down (or right) by \a lines lines
+    void ScrollLineDecr(int lines = 1); ///< scrolls the control up (or left) by \a lines lines
+    void ScrollPageIncr(); ///< scrolls the control down (or right) by a page
+    void ScrollPageDecr(); ///< scrolls the control up (or left) by a page
     //@}
 
 protected:
@@ -130,33 +134,32 @@ protected:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void  LButtonDown(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void  LButtonUp(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void  LClick(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void  MouseHere(const Pt& pt, Flags<ModKey> mod_keys);
+    void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LButtonUp(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LClick(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void MouseHere(const Pt& pt, Flags<ModKey> mod_keys) override;
+    bool EventFilter(Wnd* w, const WndEvent& event) override;
 
-    virtual bool  EventFilter(Wnd* w, const WndEvent& event);
-
-    virtual void  InitBuffer();
+    virtual void InitBuffer();
     //@}
 
     GG::GL2DVertexBuffer    m_buffer;
 
 private:
-    void              UpdatePosn();         ///< adjusts m_posn due to a tab-drag
-    void              MoveTabToPosn();      ///< adjusts tab due to a button click, PgUp, etc.
-    void              ScrollLineIncrDecrImpl(bool signal, int lines);
+    void UpdatePosn();                      ///< adjusts m_posn due to a tab-drag
+    void MoveTabToPosn();                   ///< adjusts tab due to a button click, PgUp, etc.
+    void ScrollLineIncrDecrImpl(bool signal, int lines);
 
     Clr                     m_int_color;    ///< color inside border of slide area
-    const Orientation       m_orientation; ///< vertical or horizontal scroll? (use enum for these declared above)
+    const Orientation       m_orientation;  ///< vertical or horizontal scroll? (use enum for these declared above)
     int                     m_posn;         ///< current position of tab in logical coords (will be in [m_range_min, m_range_max - m_page_sz])
     int                     m_range_min;    ///< lowest value in range of scrollbar
     int                     m_range_max;    ///< highest value "
     unsigned int            m_line_sz;      ///< logical units traversed in a line movement (such as a click on either end button)
     unsigned int            m_page_sz;      ///< logical units traversed for a page movement (such as a click in non-tab middle area, or PgUp/PgDn)
-    Button*                 m_tab;          ///< the button representing the tab
-    Button*                 m_incr;         ///< the increase button (line down/line right)
-    Button*                 m_decr;         ///< the decrease button (line up/line left)
+    std::shared_ptr<Button>                 m_tab;          ///< the button representing the tab
+    std::shared_ptr<Button>                 m_incr;         ///< the increase button (line down/line right)
+    std::shared_ptr<Button>                 m_decr;         ///< the decrease button (line up/line left)
     ScrollRegion            m_initial_depressed_region; ///< the part of the scrollbar originally under cursor in LButtonDown msg
     ScrollRegion            m_depressed_region;         ///< the part of the scrollbar currently being "depressed" by held-down mouse button
     bool                    m_dragging_tab;

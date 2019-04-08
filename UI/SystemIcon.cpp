@@ -13,6 +13,7 @@
 #include "../universe/Planet.h"
 #include "../universe/Building.h"
 #include "../universe/Species.h"
+#include "../universe/Enums.h"
 #include "../client/human/HumanClientApp.h"
 #include "../util/i18n.h"
 #include "../util/Logger.h"
@@ -20,29 +21,16 @@
 #include "../Empire/Empire.h"
 
 #include <GG/DrawUtil.h>
-#include <GG/DynamicGraphic.h>
 #include <GG/StaticGraphic.h>
-#include <GG/utf8/core.h>
 #include <GG/utf8/checked.h>
+#include <GG/utf8/core.h>
 
 #include <boost/format.hpp>
-#include <boost/lexical_cast.hpp>
 
 namespace {
-    bool PlaySounds()                   { return GetOptionsDB().Get<bool>("UI.sound.enabled"); }
-    void PlaySystemIconRolloverSound()  { if (PlaySounds()) Sound::GetSound().PlaySound(GetOptionsDB().Get<std::string>("UI.sound.system-icon-rollover")); }
+    bool PlaySounds()                   { return GetOptionsDB().Get<bool>("audio.effects.enabled"); }
+    void PlaySystemIconRolloverSound()  { if (PlaySounds()) Sound::GetSound().PlaySound(GetOptionsDB().Get<std::string>("ui.map.system.icon.rollover.sound.path")); }
 
-    const std::vector<boost::shared_ptr<GG::Texture> >& GetSelectionIndicatorTextures() {
-        static std::vector<boost::shared_ptr<GG::Texture> > normal_textures =
-            ClientUI::GetClientUI()->GetPrefixedTextures(ClientUI::ArtDir() / "misc" / "system_selection", "system_selection", true);
-        return normal_textures;
-    }
-    const std::vector<boost::shared_ptr<GG::Texture> >& GetSelectionIndicatorTinyTextures() {
-        static std::vector<boost::shared_ptr<GG::Texture> > tiny_textures =
-            ClientUI::GetClientUI()->GetPrefixedTextures(ClientUI::ArtDir() / "misc" / "system_selection_tiny", "system_selection_tiny", false);
-        return tiny_textures;
-    }
-    
     // Wrap content int an rgba tag with color color. Opacity ignored.
     std::string ColorTag(const std::string& content, GG::Clr color){
         boost::format templ("<rgba %d %d %d 255>%s</rgba>");
@@ -72,7 +60,7 @@ namespace {
             std::string retval;
             int start = 0;
 
-            for (std::set<int>::iterator it = owner_empire_ids.begin(); it != owner_empire_ids.end(); ++it) {
+            for (int empire_id : owner_empire_ids) {
                 int current_length = piece_length;
                 if (extra > 0) { // Use left over letters as long as we have them
                     ++current_length;
@@ -83,7 +71,7 @@ namespace {
                 utf8::utf32to8(name.begin() + start, name.begin() + start + current_length, std::back_inserter(piece));
 
                 GG::Clr empire_clr = ClientUI::TextColor();
-                const Empire* empire = GetEmpire(*it);
+                const Empire* empire = GetEmpire(empire_id);
                 if (empire)
                     empire_clr = empire->Color();
 
@@ -101,7 +89,8 @@ namespace {
 ////////////////////////////////////////////////
 // OwnerColoredSystemName
 ////////////////////////////////////////////////
-OwnerColoredSystemName::OwnerColoredSystemName(int system_id, int font_size, bool blank_unexplored_and_none) :
+OwnerColoredSystemName::OwnerColoredSystemName(int system_id, int font_size,
+                                               bool blank_unexplored_and_none) :
     Control(GG::X0, GG::Y0, GG::X1, GG::Y1, GG::NO_WND_FLAGS)
 {
     // TODO: Have this make a single call per color.
@@ -110,12 +99,12 @@ OwnerColoredSystemName::OwnerColoredSystemName(int system_id, int font_size, boo
 
     int client_empire_id = HumanClientApp::GetApp()->EmpireID();
 
-    TemporaryPtr<const System> system = GetSystem(system_id);
+    auto system = GetSystem(system_id);
     if (!system)
         return;
 
-    const std::set<int>& known_destroyed_object_ids = GetUniverse().EmpireKnownDestroyedObjectIDs(client_empire_id);
-    if (known_destroyed_object_ids.find(system_id) != known_destroyed_object_ids.end())
+    const auto& known_destroyed_object_ids = GetUniverse().EmpireKnownDestroyedObjectIDs(client_empire_id);
+    if (known_destroyed_object_ids.count(system_id))
         return;
 
     const SpeciesManager& species_manager = GetSpeciesManager();
@@ -129,23 +118,18 @@ OwnerColoredSystemName::OwnerColoredSystemName(int system_id, int font_size, boo
     bool capital = false, homeworld = false, has_shipyard = false, has_neutrals = false, has_player_planet = false;
 
     std::set<int> owner_empire_ids;
-    std::vector<TemporaryPtr<const Planet> > system_planets = Objects().FindObjects<const Planet>(system->PlanetIDs());
+    auto system_planets = Objects().FindObjects<const Planet>(system->PlanetIDs());
 
-    for (std::vector<TemporaryPtr<const Planet> >::const_iterator planet_it = system_planets.begin();
-         planet_it != system_planets.end(); ++planet_it)
-    {
-        TemporaryPtr<const Planet> planet = *planet_it;
+    for (auto& planet : system_planets) {
         int planet_id = planet->ID();
 
-        if (known_destroyed_object_ids.find(planet_id) != known_destroyed_object_ids.end())
+        if (known_destroyed_object_ids.count(planet_id))
             continue;
 
         // is planet a capital?
         if (!capital) {
-            for (EmpireManager::const_iterator empire_it = empire_manager.begin();
-                 empire_it != empire_manager.end(); ++empire_it)
-            {
-                if (empire_it->second->CapitalID() == planet_id) {
+            for (const auto& entry : empire_manager) {
+                if (entry.second->CapitalID() == planet_id) {
                     capital = true;
                     break;
                 }
@@ -154,12 +138,10 @@ OwnerColoredSystemName::OwnerColoredSystemName(int system_id, int font_size, boo
 
         // is planet a homeworld? (for any species)
         if (!homeworld) {
-            for (SpeciesManager::iterator species_it = species_manager.begin();
-                 species_it != species_manager.end(); ++species_it)
-            {
-                if (const Species* species = species_it->second) {
-                    const std::set<int>& homeworld_ids = species->Homeworlds();
-                    if (homeworld_ids.find(planet_id) != homeworld_ids.end()) {
+            for (const auto& entry : species_manager) {
+                if (const auto& species = entry.second) {
+                    const auto& homeworld_ids = species->Homeworlds();
+                    if (homeworld_ids.count(planet_id)) {
                         homeworld = true;
                         break;
                     }
@@ -169,19 +151,13 @@ OwnerColoredSystemName::OwnerColoredSystemName(int system_id, int font_size, boo
 
         // does planet contain a shipyard?
         if (!has_shipyard) {
-            std::vector<TemporaryPtr<const Building> > buildings = Objects().FindObjects<const Building>(planet->BuildingIDs());
-            for (std::vector<TemporaryPtr<const Building> >::const_iterator building_it = buildings.begin();
-                 building_it != buildings.end(); ++building_it)
-            {
-                TemporaryPtr<const Building> building = *building_it;
+            for (auto& building : Objects().FindObjects<const Building>(planet->BuildingIDs())) {
                 int building_id = building->ID();
 
-                if (known_destroyed_object_ids.find(building_id) != known_destroyed_object_ids.end())
+                if (known_destroyed_object_ids.count(building_id))
                     continue;
 
-                std::list<std::string> shipyards_list;
-                UserStringList("FUNCTIONAL_SHIPYARD_BUILDING_LIST", shipyards_list);
-                if (std::find(shipyards_list.begin(), shipyards_list.end(), building->BuildingTypeName()) != shipyards_list.end()) {
+                if (building->HasTag(TAG_SHIPYARD)) {
                     has_shipyard = true;
                     break;
                 }
@@ -190,7 +166,7 @@ OwnerColoredSystemName::OwnerColoredSystemName(int system_id, int font_size, boo
 
         // is planet populated by neutral species
         if (!has_neutrals) {
-            if (planet->Unowned() && !planet->SpeciesName().empty() && planet->CurrentMeterValue(METER_POPULATION) > 0.0)
+            if (planet->Unowned() && !planet->SpeciesName().empty() && planet->InitialMeterValue(METER_POPULATION) > 0.0f)
                 has_neutrals = true;
         }
 
@@ -214,7 +190,7 @@ OwnerColoredSystemName::OwnerColoredSystemName(int system_id, int font_size, boo
         wrapped_system_name = "<i>" + wrapped_system_name + "</i>";
     if (has_shipyard)
         wrapped_system_name = "<u>" + wrapped_system_name + "</u>";
-    boost::shared_ptr<GG::Font> font;
+    std::shared_ptr<GG::Font> font;
     if (capital)
         font = ClientUI::GetBoldFont(font_size);
     else
@@ -228,13 +204,41 @@ OwnerColoredSystemName::OwnerColoredSystemName(int system_id, int font_size, boo
         text_color = ClientUI::TextColor();
     }
 
-    GG::Control* text = new GG::TextControl(GG::X0, GG::Y0, GG::X1, GG::Y1, "<s>" + wrapped_system_name + "</s>", font, text_color);
-    AttachChild(text);
-    Resize(GG::Pt(text->Width(), text->Height()));
+    if (GetOptionsDB().Get<bool>("ui.name.id.shown")) {
+        wrapped_system_name = wrapped_system_name + " (" + std::to_string(system_id) + ")";
+    }
+
+    m_text = GG::Wnd::Create<GG::TextControl>(
+        GG::X0, GG::Y0, GG::X1, GG::Y1,
+        "<s>" + wrapped_system_name + "</s>",
+        font, text_color);
+}
+
+void OwnerColoredSystemName::CompleteConstruction() {
+    GG::Control::CompleteConstruction();
+
+    if (!m_text) {
+        ErrorLogger() << "OwnerColoredSystemName::CompleteConstruction had empty m_text";
+        return;
+    }
+    AttachChild(m_text);
+    GG::Pt text_size(m_text->TextLowerRight() - m_text->TextUpperLeft());
+    m_text->SizeMove(GG::Pt(GG::X0, GG::Y0), text_size);
+    Resize(text_size);
 }
 
 void OwnerColoredSystemName::Render()
 {}
+
+void OwnerColoredSystemName::SizeMove(const GG::Pt& ul, const GG::Pt& lr) {
+    GG::Control::SizeMove(ul, lr);
+
+    // Center text
+    if (!Children().empty())
+        if (GG::TextControl* text = dynamic_cast<GG::TextControl*>(Children().begin()->get())) {
+            text->MoveTo(GG::Pt((Width() - text->Width()) / 2, (Height() - text->Height()) / 2));
+        }
+}
 
 ////////////////////////////////////////////////
 // SystemIcon
@@ -242,106 +246,99 @@ void OwnerColoredSystemName::Render()
 SystemIcon::SystemIcon(GG::X x, GG::Y y, GG::X w, int system_id) :
     GG::Control(x, y, w, GG::Y(Value(w)), GG::INTERACTIVE),
     m_system_id(system_id),
-    m_tiny_graphic(0),
-    m_selection_indicator(0),
-    m_tiny_selection_indicator(0),
-    m_mouseover_indicator(0),
-    m_mouseover_unexplored_indicator(0),
-    m_tiny_mouseover_indicator(0),
+    m_tiny_graphic(nullptr),
+    m_selection_indicator(nullptr),
+    m_tiny_selection_indicator(nullptr),
+    m_mouseover_indicator(nullptr),
+    m_mouseover_unexplored_indicator(nullptr),
+    m_tiny_mouseover_indicator(nullptr),
     m_selected(false),
-    m_colored_name(0),
+    m_colored_name(nullptr),
     m_showing_name(false)
-{
+{}
+
+void SystemIcon::CompleteConstruction() {
+    GG::Control::CompleteConstruction();
+
     ClientUI* ui = ClientUI::GetClientUI();
-    if (TemporaryPtr<const System> system = GetSystem(m_system_id)) {
+    if (auto system = GetSystem(m_system_id)) {
         StarType star_type = system->GetStarType();
         m_disc_texture = ui->GetModuloTexture(ClientUI::ArtDir() / "stars",
                                               ClientUI::StarTypeFilePrefixes()[star_type],
-                                              system_id);
+                                              m_system_id);
         m_halo_texture = ui->GetModuloTexture(ClientUI::ArtDir() / "stars",
                                               ClientUI::HaloStarTypeFilePrefixes()[star_type],
-                                              system_id);
+                                              m_system_id);
         m_tiny_texture = ui->GetModuloTexture(ClientUI::ArtDir() / "stars",
                                               "tiny_" + ClientUI::StarTypeFilePrefixes()[star_type],
-                                              system_id);
+                                              m_system_id);
     } else {
         m_disc_texture = ui->GetTexture(ClientUI::ArtDir() / "misc" / "missing.png");
         m_halo_texture = m_disc_texture;
         m_tiny_texture = m_disc_texture;
     }
 
-    m_tiny_graphic = new GG::StaticGraphic(m_tiny_texture);
+    m_tiny_graphic = GG::Wnd::Create<GG::StaticGraphic>(m_tiny_texture);
     m_tiny_graphic->Resize(GG::Pt(m_tiny_texture->Width(), m_tiny_texture->Height()));
     AttachChild(m_tiny_graphic);
     m_tiny_graphic->Hide();
 
     // selection indicator graphic
-    const std::vector<boost::shared_ptr<GG::Texture> >& textures = GetSelectionIndicatorTextures();
-    GG::X texture_width = textures.at(0)->DefaultWidth();
-    GG::Y texture_height = textures.at(0)->DefaultHeight();
-    m_selection_indicator = new GG::DynamicGraphic(GG::X0, GG::Y0,
-                                                   texture_width, texture_height, true,
-                                                   texture_width, texture_height, 0, textures,
-                                                   GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
-    m_selection_indicator->SetFPS(ClientUI::SystemSelectionIndicatorFPS());
+    const std::shared_ptr<GG::Texture>& texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "system_selection" / "system_selection2.png", true);
+
+    GG::X texture_width = texture->DefaultWidth();
+    GG::Y texture_height = texture->DefaultHeight();
+    m_selection_indicator = GG::Wnd::Create<RotatingGraphic>(texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
+    m_selection_indicator->SetRPM(ClientUI::SystemSelectionIndicatorRPM());
     AttachChild(m_selection_indicator);
-    m_selection_indicator->Play();
+    m_selection_indicator->Resize(GG::Pt(texture_width, texture_height));
 
     // tiny selection indicator graphic
-    const std::vector<boost::shared_ptr<GG::Texture> >& tiny_textures = GetSelectionIndicatorTinyTextures();
-    texture_width = tiny_textures.at(0)->DefaultWidth();
-    texture_height = tiny_textures.at(0)->DefaultHeight();
-    m_tiny_selection_indicator = new GG::DynamicGraphic(GG::X0, GG::Y0,
-                                                        texture_width, texture_height, true,
-                                                        texture_width, texture_height, 0, tiny_textures,
-                                                        GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
-    m_tiny_selection_indicator->SetFPS(ClientUI::SystemSelectionIndicatorFPS());
+    const std::shared_ptr<GG::Texture>& tiny_texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "system_selection_tiny" / "system_selection_tiny2.png", true);
+    texture_width = tiny_texture->DefaultWidth();
+    texture_height = tiny_texture->DefaultHeight();
+    m_tiny_selection_indicator = GG::Wnd::Create<RotatingGraphic>(tiny_texture, GG::GRAPHIC_NONE);
+    m_tiny_selection_indicator->SetRPM(ClientUI::SystemSelectionIndicatorRPM());
     AttachChild(m_tiny_selection_indicator);
-    m_tiny_selection_indicator->Play();
+    m_tiny_selection_indicator->Resize(GG::Pt(texture_width, texture_height));
 
     // mouseover indicator graphic
-    boost::shared_ptr<GG::Texture> mouseover_texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "system_mouseover.png");
+    const std::shared_ptr<GG::Texture> mouseover_texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "system_mouseover.png");
     texture_width = mouseover_texture->DefaultWidth();
     texture_height = mouseover_texture->DefaultHeight();
-    m_mouseover_indicator = new GG::StaticGraphic(mouseover_texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
+    m_mouseover_indicator = GG::Wnd::Create<GG::StaticGraphic>(mouseover_texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
     m_mouseover_indicator->Resize(GG::Pt(texture_width, texture_height));
 
     // unexplored mouseover indicator graphic
-    boost::shared_ptr<GG::Texture> unexplored_mouseover_texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "system_mouseover_unexplored.png");
+    std::shared_ptr<GG::Texture> unexplored_mouseover_texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "system_mouseover_unexplored.png");
     texture_width = unexplored_mouseover_texture->DefaultWidth();
     texture_height = unexplored_mouseover_texture->DefaultHeight();
-    m_mouseover_unexplored_indicator = new GG::StaticGraphic(unexplored_mouseover_texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
+    m_mouseover_unexplored_indicator = GG::Wnd::Create<GG::StaticGraphic>(unexplored_mouseover_texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
     m_mouseover_unexplored_indicator->Resize(GG::Pt(texture_width, texture_height));
 
     // tiny mouseover indicator graphic
-    boost::shared_ptr<GG::Texture> tiny_mouseover_texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "system_mouseover_tiny.png");
+    std::shared_ptr<GG::Texture> tiny_mouseover_texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "system_mouseover_tiny.png");
     texture_width = tiny_mouseover_texture->DefaultWidth();
     texture_height = tiny_mouseover_texture->DefaultHeight();
-    m_tiny_mouseover_indicator = new GG::StaticGraphic(tiny_mouseover_texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
+    m_tiny_mouseover_indicator = GG::Wnd::Create<GG::StaticGraphic>(tiny_mouseover_texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
     m_tiny_mouseover_indicator->Resize(GG::Pt(texture_width, texture_height));
 
     Refresh();
 }
 
-SystemIcon::~SystemIcon() {
-    delete m_tiny_graphic;
-    delete m_selection_indicator;
-    delete m_tiny_selection_indicator;
-    delete m_mouseover_indicator;
-    delete m_tiny_mouseover_indicator;
-    delete m_colored_name;
-}
+SystemIcon::~SystemIcon()
+{}
 
 int SystemIcon::SystemID() const
 { return m_system_id; }
 
-const boost::shared_ptr<GG::Texture>& SystemIcon::DiscTexture() const
+const std::shared_ptr<GG::Texture>& SystemIcon::DiscTexture() const
 { return m_disc_texture; }
 
-const boost::shared_ptr<GG::Texture>& SystemIcon::HaloTexture() const
+const std::shared_ptr<GG::Texture>& SystemIcon::HaloTexture() const
 { return m_halo_texture; }
 
-const boost::shared_ptr<GG::Texture>& SystemIcon::TinyTexture() const
+const std::shared_ptr<GG::Texture>& SystemIcon::TinyTexture() const
 { return m_tiny_texture; }
 
 GG::Pt SystemIcon::NthFleetButtonUpperLeft(unsigned int button_number, bool moving) const {
@@ -358,7 +355,7 @@ GG::Pt SystemIcon::NthFleetButtonUpperLeft(unsigned int button_number, bool movi
     FleetButton::SizeType fb_size_type = ClientUI::GetClientUI()->GetMapWnd()->FleetButtonSizeType();
     GG::Pt button_size = GG::Pt();
     double FB_RADIUS = 0.0;
-    const boost::shared_ptr<GG::Texture>& icon = FleetSizeIcon(1u, fb_size_type);
+    const std::shared_ptr<GG::Texture>& icon = FleetSizeIcon(1u, fb_size_type);
     if (icon) {
         button_size = GG::Pt(icon->DefaultWidth(), icon->DefaultHeight());
         FB_RADIUS = static_cast<double>(Value(button_size.x) + Value(button_size.y))/4.0;   // average half of two side lengths to get radius
@@ -447,17 +444,19 @@ GG::Pt SystemIcon::NthFleetButtonUpperLeft(unsigned int button_number, bool movi
 }
 
 int SystemIcon::EnclosingCircleDiameter() const
-{ return static_cast<const int>(Value(Width()) * GetOptionsDB().Get<double>("UI.system-circle-size")) + 1; }
+{ return static_cast<const int>(Value(Width()) * GetOptionsDB().Get<double>("ui.map.system.circle.size")) + 1; }
 
 void SystemIcon::SizeMove(const GG::Pt& ul, const GG::Pt& lr) {
     Wnd::SizeMove(ul, lr);
 
-    const bool USE_TINY_GRAPHICS = Value(Width()) < GetOptionsDB().Get<int>("UI.system-tiny-icon-size-threshold");
+    const bool USE_TINY_GRAPHICS = Value(Width()) < GetOptionsDB().Get<int>("ui.map.system.icon.tiny.threshold");
     GG::Pt middle = GG::Pt(Width() / 2, Height() / 2);
 
     // tiny graphic?
     if (m_tiny_graphic && USE_TINY_GRAPHICS) {
-        GG::Pt tiny_size = m_tiny_graphic->Size();
+        const GG::SubTexture& tiny_texture = m_tiny_graphic->GetTexture();
+        const GG::Texture* tiny_texture2 = tiny_texture.GetTexture();
+        GG::Pt tiny_size = GG::Pt(tiny_texture2->DefaultWidth(), tiny_texture2->DefaultHeight());
         GG::Pt tiny_ul(static_cast<GG::X>(middle.x - tiny_size.x / 2.0),
                        static_cast<GG::Y>(middle.y - tiny_size.y / 2.0));
         m_tiny_graphic->SizeMove(tiny_ul, tiny_ul + tiny_size);
@@ -470,7 +469,9 @@ void SystemIcon::SizeMove(const GG::Pt& ul, const GG::Pt& lr) {
 
     // tiny selection indicator
     if (m_selected && m_tiny_selection_indicator && USE_TINY_GRAPHICS) {
-        GG::Pt tiny_sel_ind_size = m_tiny_selection_indicator->Size();
+        const GG::SubTexture& tiny_texture = m_tiny_selection_indicator->GetTexture();
+        const GG::Texture* tiny_texture2 = tiny_texture.GetTexture();
+        GG::Pt tiny_sel_ind_size = GG::Pt(tiny_texture2->DefaultWidth(), tiny_texture2->DefaultHeight());
         GG::Pt tiny_sel_ind_ul(static_cast<GG::X>(middle.x - tiny_sel_ind_size.x / 2.0),
                                static_cast<GG::Y>(middle.y - tiny_sel_ind_size.y / 2.0));
         m_tiny_selection_indicator->SizeMove(tiny_sel_ind_ul, tiny_sel_ind_ul + tiny_sel_ind_size);
@@ -589,7 +590,7 @@ void SystemIcon::MouseEnter(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) {
         Empire* this_empire = GetEmpire(client_empire_id);
         bool explored = !this_empire || (this_empire && this_empire->HasExploredSystem(m_system_id)) ||
                 !m_mouseover_unexplored_indicator;
-        if (explored || !GetOptionsDB().Get<bool>("UI.show-unexplored_system_overlay")){
+        if (explored || !GetOptionsDB().Get<bool>("ui.map.system.unexplored.rollover.enabled")) {
             AttachChild(m_mouseover_indicator);
             MoveChildUp(m_mouseover_indicator);
         } else {
@@ -646,28 +647,29 @@ void SystemIcon::Refresh() {
     std::string name;
     m_system_connection.disconnect();
 
-    TemporaryPtr<const System> system = GetSystem(m_system_id);
+    auto system = GetSystem(m_system_id);
     if (system) {
         name = system->Name();
-        m_system_connection = GG::Connect(system->StateChangedSignal,   &SystemIcon::Refresh,   this,   boost::signals2::at_front);
+        m_system_connection = system->StateChangedSignal.connect(
+            boost::bind(&SystemIcon::Refresh, this), boost::signals2::at_front);
     }
 
     SetName(name);   // sets GG::Control name.  doesn't affect displayed system name
 
 
     // remove existing system name control
-    delete m_colored_name;  m_colored_name = 0;
+    DetachChildAndReset(m_colored_name);
 
     // create new system name control
     if (!name.empty()) {
         // get font size
         int name_pts = ClientUI::Pts();
-        if (const MapWnd* map_wnd = ClientUI::GetClientUI()->GetMapWnd()) {
+        if (const auto& map_wnd = ClientUI::GetClientUI()->GetMapWnd()) {
             name_pts = map_wnd->SystemNamePts();
         }
 
         // create and position
-        m_colored_name = new OwnerColoredSystemName(m_system_id, name_pts, true);
+        m_colored_name = GG::Wnd::Create<OwnerColoredSystemName>(m_system_id, name_pts, true);
         PositionSystemName();
 
         // attach if appropriate, to display
@@ -698,8 +700,8 @@ void SystemIcon::HideName() {
 
 void SystemIcon::PositionSystemName() {
     if (m_colored_name) {
-        GG::X name_left = ( Width()  - m_colored_name->Width()          )/2;
-        GG::Y name_top =  ( Height() + GG::Y(EnclosingCircleDiameter()) )/2;
+        GG::X name_left = ( Width()  - m_colored_name->Width()                                      )/2;
+        GG::Y name_top =  ( Height() + GG::Y(EnclosingCircleDiameter()*2) - m_colored_name->Height())/2;
         m_colored_name->MoveTo(GG::Pt(name_left, name_top));
     }
 }

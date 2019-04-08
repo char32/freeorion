@@ -1,0 +1,44 @@
+Species
+    name = "SP_UGMORS"
+    description = "SP_UGMORS_DESC"
+    gameplay_description = "SP_UGMORS_GAMEPLAY_DESC"
+    Native
+    CanProduceShips
+    CanColonize
+
+    tags = [ "LITHIC" "GOOD_INDUSTRY" "BAD_RESEARCH" "AVERAGE_SUPPLY" "GOOD_ATTACKTROOPS" "PEDIA_LITHIC_SPECIES_CLASS" ]
+
+    foci = [
+        [[HAS_INDUSTRY_FOCUS]]
+        [[HAS_RESEARCH_FOCUS]]
+        [[HAS_GROWTH_FOCUS]]
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    preferredfocus = "FOCUS_INDUSTRY"
+
+    effectsgroups = [
+        [[GOOD_INDUSTRY]]
+        [[BAD_RESEARCH]]
+        [[AVERAGE_STOCKPILE]]
+
+        [[AVERAGE_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[AVERAGE_SUPPLY]]
+        [[GOOD_DEFENSE_TROOPS]]
+        [[GOOD_OFFENSE_TROOPS]]
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[NARROW_EP]]
+        [[STANDARD_SHIP_SHIELDS]]
+    ]
+
+    [[INFERNO_NARROW_EP]]
+
+    graphic = "icons/species/amorphous-06.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

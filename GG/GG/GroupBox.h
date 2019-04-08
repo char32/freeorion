@@ -43,18 +43,19 @@ class GG_API GroupBox : public Wnd
 {
 public:
     /** \name Structors */ ///@{
-    /** Ctor. Height is determined from the font and point size used. */
-    GroupBox(X x, Y y, X w, Y h, const std::string& label, const boost::shared_ptr<Font>& font, Clr color,
+    /** Height is determined from the font and point size used. */
+    GroupBox(X x, Y y, X w, Y h, const std::string& label, const std::shared_ptr<Font>& font, Clr color,
              Clr text_color = CLR_BLACK, Clr interior = CLR_ZERO, Flags<WndFlag> flags = NO_WND_FLAGS);
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ ///@{
-    virtual Pt ClientUpperLeft() const;
-    virtual Pt ClientLowerRight() const;
+    Pt ClientUpperLeft() const override;
+    Pt ClientLowerRight() const override;
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void Render();
+    void Render() override;
 
     /** Sets the color of the group box. */
     void SetColor(Clr c);
@@ -77,7 +78,7 @@ public:
 
 protected:
     /** \name Structors */ ///@{
-    GroupBox(); ///< Default ctor.
+    GroupBox();
     //@}
 
     /** The thickness with which to render the frame. */
@@ -91,8 +92,8 @@ private:
     Clr                     m_color;      ///< Color of box frame
     Clr                     m_text_color; ///< Color of label text
     Clr                     m_int_color;  ///< Color of background inside box
-    boost::shared_ptr<Font> m_font;
-    TextControl*            m_label;
+    std::shared_ptr<Font> m_font;
+    std::shared_ptr<TextControl>            m_label;
     bool                    m_set_client_corners_equal_to_box_corners;
 };
 

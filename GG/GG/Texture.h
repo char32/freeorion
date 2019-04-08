@@ -34,9 +34,7 @@
 #include <GG/Base.h>
 #include <GG/Exception.h>
 
-#include <boost/serialization/access.hpp>
-#include <boost/serialization/binary_object.hpp>
-
+#include <boost/filesystem/path.hpp>
 
 namespace GG {
 
@@ -66,28 +64,30 @@ class GG_API Texture
 {
 public:
     /** \name Structors */ ///@{
-    Texture();          ///< ctor
-    virtual ~Texture(); ///< virtual dtor
+    Texture();
+
+    virtual ~Texture();
     //@}
 
     /** \name Accessors */ ///@{
-    std::string      Filename() const;         ///< returns the filename from which this texture was loaded ("" if this texture was not loaded from a file)
-    GLenum           WrapS() const;            ///< returns S-wrap mode associated with this opengl texture
-    GLenum           WrapT() const;            ///< returns T-wrap mode associated with this opengl texture
-    GLenum           MinFilter() const;        ///< returns minimization filter modes associated with this opengl texture
-    GLenum           MagFilter() const;        ///< returns maximization filter modes associated with this opengl texture
-    unsigned int     BytesPP() const;          ///< returns the image's color depth in bytes
-    X                Width() const;            ///< returns width of entire texture
-    Y                Height() const;           ///< returns height of entire texture
-    bool             MipMapped() const;        ///< returns true if the texture has mipmaps
-    GLuint           OpenGLId() const;         ///< GLuint "name" of the opengl texture object associated with this object
-    const GLfloat*   DefaultTexCoords() const; ///< texture coordinates to use by default when blitting this texture
-    X                DefaultWidth() const;     ///< returns width in pixels, based on initial image (0 if texture was not loaded)
-    Y                DefaultHeight() const;    ///< returns height in pixels, based on initial image (0 if texture was not loaded)
+    const boost::filesystem::path&  Path() const;   ///< returns the file path from which this texture was loaded (default / empty if this texture was not loaded from a file)
+
+    GLenum           WrapS() const;             ///< returns S-wrap mode associated with this opengl texture
+    GLenum           WrapT() const;             ///< returns T-wrap mode associated with this opengl texture
+    GLenum           MinFilter() const;         ///< returns minimization filter modes associated with this opengl texture
+    GLenum           MagFilter() const;         ///< returns maximization filter modes associated with this opengl texture
+    unsigned int     BytesPP() const;           ///< returns the image's color depth in bytes
+    X                Width() const;             ///< returns width of entire texture
+    Y                Height() const;            ///< returns height of entire texture
+    bool             MipMapped() const;         ///< returns true if the texture has mipmaps
+    GLuint           OpenGLId() const;          ///< GLuint "name" of the opengl texture object associated with this object
+    const GLfloat*   DefaultTexCoords() const;  ///< texture coordinates to use by default when blitting this texture
+    X                DefaultWidth() const;      ///< returns width in pixels, based on initial image (0 if texture was not loaded)
+    Y                DefaultHeight() const;     ///< returns height in pixels, based on initial image (0 if texture was not loaded)
 
     /** Blit any portion of texture to any place on screen, scaling as
         necessary*/
-    void OrthoBlit(const Pt& pt1, const Pt& pt2, const GLfloat* tex_coords = 0) const;
+    void OrthoBlit(const Pt& pt1, const Pt& pt2, const GLfloat* tex_coords = nullptr) const;
 
     /** Blit default portion of texture unscaled to \a pt (upper left
         corner)*/
@@ -97,9 +97,9 @@ public:
     /** \name Mutators */ ///@{
     // intialization functions
     /** Frees any currently-held memory and loads a texture from file \a
-        filename.  \throw GG::Texture::BadFile Throws if the texture creation
+        path.  \throw GG::Texture::BadFile Throws if the texture creation
         fails. */
-    void Load(const std::string& filename, bool mipmap = false);
+    void Load(const boost::filesystem::path& path, bool mipmap = false);
 
     /** Frees any currently-held memory and creates a texture from supplied
         array \a image.  \throw GG::Texture::Exception Throws applicable
@@ -142,7 +142,7 @@ private:
                          unsigned int bytes_per_pixel, bool mipmap);
     unsigned char* GetRawBytes();
 
-    std::string m_filename;   ///< filename from which this Texture was constructed ("" if not loaded from a file)
+    boost::filesystem::path m_path;     ///< file path from which this Texture was constructed
 
     unsigned int m_bytes_pp;
     X            m_width;
@@ -160,10 +160,6 @@ private:
     GLfloat      m_tex_coords[4];  ///< the texture coords used to blit from this texture by default (reflecting original image width and height)
     X            m_default_width;  ///< the original width and height of this texture to be used in blitting 
     Y            m_default_height;
-
-    friend class boost::serialization::access;
-    template <class Archive>
-    void serialize(Archive& ar, const unsigned int version);
 };
 
 /** \brief This class is a convenient way to store the info needed to use a
@@ -172,22 +168,24 @@ class GG_API SubTexture
 {
 public:
     /** \name Structors */ ///@{
-    SubTexture(); ///< default ctor
+    SubTexture();
 
     /** Creates a SubTexture from a GG::Texture and coordinates into it.
         \throw GG::SubTexture::BadTexture Throws if the given Texture is null.
         \throw GG::SubTexture::InvalidTextureCoordinates Throws if the texture
         coordinates are not well formed.*/
-    SubTexture(const boost::shared_ptr<const Texture>& texture, X x1, Y y1, X x2, Y y2);
+    SubTexture(const std::shared_ptr<const Texture>& texture, X x1, Y y1, X x2, Y y2);
 
     /** Creates a SubTexture from a GG::Texture and uses coordinates to cover
         the whole texture.
         \throw GG::SubTexture::BadTexture Throws if the given Texture is null.*/
-    SubTexture(const boost::shared_ptr<const Texture>& texture);
+    SubTexture(const std::shared_ptr<const Texture>& texture);
 
-    SubTexture(const SubTexture& rhs); ///< copy ctor
-    const SubTexture& operator=(const SubTexture& rhs); ///< assignment operator
-    virtual ~SubTexture(); ///< virtual dtor
+    SubTexture(const SubTexture& rhs);
+
+    const SubTexture& operator=(const SubTexture& rhs);
+
+    virtual ~SubTexture();
     //@}
 
     /** \name Accessors */ ///@{
@@ -206,6 +204,10 @@ public:
     void OrthoBlit(const Pt& pt) const;
     //@}
 
+    /** \name Mutators */ ///@{
+    void Clear();
+    //@}
+
     /** \name Exceptions */ ///@{
     /** The base class for SubTexture exceptions. */
     GG_ABSTRACT_EXCEPTION(Exception);
@@ -220,10 +222,11 @@ public:
     //@}
 
 private:
-    boost::shared_ptr<const Texture> m_texture;        ///< shared_ptr to texture object with entire image
-    X                                m_width;
-    Y                                m_height;
-    GLfloat                          m_tex_coords[4];  ///< position of element within containing texture 
+    /** shared_ptr to texture object with entire image. */
+    std::shared_ptr<const Texture>  m_texture;
+    X                               m_width;
+    Y                               m_height;
+    GLfloat                         m_tex_coords[4];    ///< position of element within containing texture 
 };
 
 /** \brief A singleton that loads and stores textures for use by GG.
@@ -237,43 +240,52 @@ private:
 class GG_API TextureManager
 {
 public:
+    /** \name Accessors */ ///@{
+    const std::map<std::string, std::shared_ptr<Texture>>& Textures() const;
+    //@}
+
     /** \name Mutators */ ///@{
     /** Stores a pre-existing GG::Texture in the manager's texture pool, and
         returns a shared_ptr to it. \warning Calling code <b>must not</b>
         delete \a texture; \a texture becomes the property of the manager,
         which will eventually delete it. */
-    boost::shared_ptr<Texture> StoreTexture(Texture* texture, const std::string& texture_name);
+    std::shared_ptr<Texture> StoreTexture(Texture* texture, const std::string& texture_name);
 
     /** Stores a pre-existing GG::Texture in the manager's texture pool, and
         returns a shared_ptr to it. \warning Calling code <b>must not</b>
         delete \a texture; \a texture becomes the property of the manager,
         which will eventually delete it. */
-    boost::shared_ptr<Texture> StoreTexture(const boost::shared_ptr<Texture>& texture, const std::string& texture_name);
+    std::shared_ptr<Texture> StoreTexture(const std::shared_ptr<Texture>& texture, const std::string& texture_name);
 
-    /** Returns a shared_ptr to the texture created from image file \a name.
+    /** Returns a shared_ptr to the texture created from image file \a path.
         If the texture is not present in the manager's pool, it will be loaded
         from disk. */
-    boost::shared_ptr<Texture> GetTexture(const std::string& name, bool mipmap = false);
+    std::shared_ptr<Texture> GetTexture(const boost::filesystem::path& path, bool mipmap = false);
 
     /** Removes the manager's shared_ptr to the texture created from image
-        file \a name, if it exists.  \note Due to shared_ptr semantics, the
+        file \a path, if it exists.  \note Due to shared_ptr semantics, the
         texture may not be deleted until much later. */
-    void                FreeTexture(const std::string& name);
+    void                     FreeTexture(const boost::filesystem::path& path);
+
+    /** Removes the manager's shared_ptr to the texture stored with the name
+        \a name, if it exists.  \note Due to shared_ptr semantics, the
+        texture may not be deleted until much later. */
+    void                     FreeTexture(const std::string& name);
     //@}
 
 private:
     TextureManager();
-    boost::shared_ptr<Texture> LoadTexture(const std::string& filename, bool mipmap);
+    std::shared_ptr<Texture> LoadTexture(const boost::filesystem::path& path, bool mipmap);
 
-    static bool s_created;
-    static bool s_il_initialized;
-    std::map<std::string, boost::shared_ptr<Texture> > m_textures;
+    /** Indexed by string, not path, because some textures may be stored by a
+        name and not loaded from a path. */
+    std::map<std::string, std::shared_ptr<Texture>> m_textures;
 
-    friend TextureManager& GetTextureManager();
+    friend GG_API TextureManager& GetTextureManager();
 };
 
 /** Returns the singleton TextureManager instance. */
-TextureManager& GetTextureManager();
+GG_API TextureManager& GetTextureManager();
 
 } // namespace GG
 

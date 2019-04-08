@@ -1,0 +1,44 @@
+Species
+    name = "SP_TAEGHIRUS"
+    description = "SP_TAEGHIRUS_DESC"
+    gameplay_description = "SP_TAEGHIRUS_GAMEPLAY_DESC"
+    Native
+    CanProduceShips
+    CanColonize
+
+    tags = [ "ORGANIC" "TELEPATHIC" "GOOD_POPULATION" "GOOD_INDUSTRY" "BAD_WEAPONS" "AVERAGE_SUPPLY" "BAD_ATTACKTROOPS" "PEDIA_ORGANIC_SPECIES_CLASS" ]
+
+    foci = [
+        [[HAS_INDUSTRY_FOCUS]]
+        [[HAS_RESEARCH_FOCUS]]
+        [[HAS_GROWTH_FOCUS]]
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    preferredfocus = "FOCUS_INDUSTRY"
+
+    effectsgroups = [
+        [[GOOD_INDUSTRY]]
+        [[AVERAGE_RESEARCH]]
+        [[AVERAGE_STOCKPILE]]
+
+        [[GOOD_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[AVERAGE_SUPPLY]]
+        [[BAD_DEFENSE_TROOPS]]
+        [[BAD_OFFENSE_TROOPS]]
+        [[BAD_WEAPONS]]
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[STANDARD_SHIP_SHIELDS]]
+    ]
+
+    [[SWAMP_STANDARD_EP]]
+
+    graphic = "icons/species/t-aeghirus.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

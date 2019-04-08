@@ -1,13 +1,28 @@
 #include "AIClientApp.h"
 
-#include "../../parse/Parse.h"
 #include "../../util/OptionsDB.h"
 #include "../../util/Directories.h"
 #include "../../util/Logger.h"
+#include "../../util/Version.h"
+#include "../../util/i18n.h"
 
 #include <GG/utf8/checked.h>
 
 #include <boost/filesystem/fstream.hpp>
+
+#if defined(FREEORION_LINUX)
+/* Freeorion aims to have exceptions handled and operation continue normally.
+An example of good exception handling is the exceptions caught around config.xml loading.
+After catching and informing the user it continues normally with the default values.
+
+An exception that can not be handled should allow freeorion to crash and keep
+a complete stack trace of the intial exception.
+Some platforms do not support this behavior.
+
+When FREEORION_CAMAIN_KEEP_BACKTRACE is defined, do not catch an unhandled exceptions,
+unroll and hide the stack trace, print a message and still crash anyways. */
+#define FREEORION_CAMAIN_KEEP_STACKTRACE
+#endif
 
 #ifndef FREEORION_WIN32
 int main(int argc, char* argv[]) {
@@ -29,48 +44,53 @@ int wmain(int argc, wchar_t* argv[], wchar_t* envp[]) {
     InitDirs((args.empty() ? "" : *args.begin()));
 #endif
 
+    GetOptionsDB().Add<std::string>('h', "help", UserStringNop("OPTIONS_DB_HELP"), "NOOP",
+                                    Validator<std::string>(), false);
+
+    // if config.xml and persistent_config.xml are present, read and set options entries
+    GetOptionsDB().SetFromFile(GetConfigPath(), FreeOrionVersionString());
+    GetOptionsDB().SetFromFile(GetPersistentConfigPath());
+    GetOptionsDB().SetFromCommandLine(args);
+
+    auto help_arg = GetOptionsDB().Get<std::string>("help");
+    if (help_arg != "NOOP") {
+        GetOptionsDB().GetUsage(std::cerr, help_arg);
+        ShutdownLoggingSystemFileSink();
+        return 0;
+    }
+
+#ifndef FREEORION_CAMAIN_KEEP_STACKTRACE
     try {
-        XMLDoc doc;
-        {
-            boost::filesystem::ifstream ifs(GetConfigPath());
-            if (ifs) {
-                doc.ReadDoc(ifs);
-                GetOptionsDB().SetFromXML(doc);
-            }
-            boost::filesystem::ifstream pifs(GetPersistentConfigPath());
-            if (pifs) {
-                doc.ReadDoc(pifs);
-                GetOptionsDB().SetFromXML(doc);
-            }
-        }
-        GetOptionsDB().SetFromCommandLine(args);
-
-        parse::init();
-
+#endif
         AIClientApp g_app(args);
-
-        DebugLogger() << "AIClientApp and logging initialized.  Running app.";
 
         g_app();
 
+#ifndef FREEORION_CAMAIN_KEEP_STACKTRACE
     } catch (const std::invalid_argument& e) {
         ErrorLogger() << "main() caught exception(std::invalid_arg): " << e.what();
         std::cerr << "main() caught exception(std::invalid_arg): " << e.what() << std::endl;
+        ShutdownLoggingSystemFileSink();
         return 1;
     } catch (const std::runtime_error& e) {
         ErrorLogger() << "main() caught exception(std::runtime_error): " << e.what();
         std::cerr << "main() caught exception(std::runtime_error): " << e.what() << std::endl;
+        ShutdownLoggingSystemFileSink();
         return 1;
     } catch (const std::exception& e) {
         ErrorLogger() << "main() caught exception(std::exception): " << e.what();
         std::cerr << "main() caught exception(std::exception): " << e.what() << std::endl;
+        ShutdownLoggingSystemFileSink();
         return 1;
     } catch (...) {
         ErrorLogger() << "main() caught unknown exception.";
         std::cerr << "main() caught unknown exception." << std::endl;
+        ShutdownLoggingSystemFileSink();
         return 1;
     }
-
+#endif
+    DebugLogger() << "AI client main exited cleanly.";
+    ShutdownLoggingSystemFileSink();
     return 0;
 }
 

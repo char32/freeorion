@@ -1,37 +1,16 @@
-// -*- C++ -*-
 #ifndef _UniverseGenerator_h_
 #define _UniverseGenerator_h_
 
 #include "Condition.h"
 #include "Universe.h"
 
-#include "../util/DataTable.h"
-#include "../util/MultiplayerCommon.h"
-
-
-// Minimum distance between systems in universe units [0.0, m_universe_width]
-const double    MIN_SYSTEM_SEPARATION       = 35.0;
 
 struct PlayerSetupData;
 
-// Class representing a position on the galaxy map, used
-// to store the positions at which systems shall be created
-struct SystemPosition {
-    double x;
-    double y;
-
-    SystemPosition(double pos_x, double pos_y) :
-        x(pos_x),
-        y(pos_y)
-    {}
-    
-    bool operator == (const SystemPosition &p)
-    { return ((x == p.x) && (y == p.y)); }
-};
-
 /** A combination of names of ShipDesign that can be put together to make a
- * fleet of ships, and a name for such a fleet, loaded from starting_fleets.txt
- * ShipDesign names refer to designs listed in premade_ship_designs.txt.
+ * fleet of ships, and a name for such a fleet, loaded from
+ * default/scripting/starting_unlocks/fleets.inf
+ * ShipDesign names refer to designs listed in default/scripting/ship_designs.
  * Useful for saving or specifying prearranged combinations of prearranged
  * ShipDesigns to automatically put together, such as during universe creation.*/
 class FleetPlan {
@@ -50,6 +29,7 @@ public:
     virtual ~FleetPlan() {};
     const std::string&              Name() const;
     const std::vector<std::string>& ShipDesigns() const { return m_ship_designs; }
+
 protected:
     std::string                     m_name;
     std::vector<std::string>        m_ship_designs;
@@ -61,54 +41,28 @@ protected:
 class FO_COMMON_API MonsterFleetPlan : public FleetPlan {
 public:
     MonsterFleetPlan(const std::string& fleet_name, const std::vector<std::string>& ship_design_names,
-                     double spawn_rate = 1.0, int spawn_limit = 9999, const Condition::ConditionBase* location = 0,
+                     double spawn_rate = 1.0, int spawn_limit = 9999,
+                     std::unique_ptr<Condition::ConditionBase>&& location = nullptr,
                      bool lookup_name_userstring = false) :
         FleetPlan(fleet_name, ship_design_names, lookup_name_userstring),
         m_spawn_rate(spawn_rate),
         m_spawn_limit(spawn_limit),
-        m_location(location)
+        m_location(std::move(location))
     {}
     MonsterFleetPlan() :
-        FleetPlan(),
-        m_spawn_rate(1.0),
-        m_spawn_limit(9999),
-        m_location(0)
+        FleetPlan()
     {}
     virtual ~MonsterFleetPlan()
-    { delete m_location; }
+    {}
     double                          SpawnRate() const   { return m_spawn_rate; }
     int                             SpawnLimit() const  { return m_spawn_limit; }
-    const Condition::ConditionBase* Location() const    { return m_location; }
+    const Condition::ConditionBase* Location() const    { return m_location.get(); }
 protected:
-    double                          m_spawn_rate;
-    int                             m_spawn_limit;
-    const Condition::ConditionBase* m_location;
+    double                          m_spawn_rate = 1.0;
+    int                             m_spawn_limit = 9999;
+    // Use shared_ptr insead of unique_ptr because boost::python requires a deleter
+    const std::shared_ptr<Condition::ConditionBase> m_location = nullptr;
 };
-
-
-// Returns map of universe tables
-DataTableMap& UniverseDataTables();
-
-// Calculates typical universe width based on number of systems
-// A 150 star universe should be 1000 units across
-double CalcTypicalUniverseWidth(int size);
-
-// Helper functions that calculate system positions for various
-// predefined galaxy shapes
-void SpiralGalaxyCalcPositions(std::vector<SystemPosition>& positions,
-                               unsigned int arms, unsigned int stars, double width, double height);
-
-void EllipticalGalaxyCalcPositions(std::vector<SystemPosition>& positions,
-                                   unsigned int stars, double width, double height);
-
-void ClusterGalaxyCalcPositions(std::vector<SystemPosition>& positions, unsigned int clusters,
-                                unsigned int stars, double width, double height);
-
-void RingGalaxyCalcPositions(std::vector<SystemPosition>& positions, unsigned int stars,
-                             double width, double height);
-
-void IrregularGalaxyPositions(std::vector<SystemPosition>& positions, unsigned int stars,
-                              double width, double height);
 
 /** Set active meter current values equal to target/max meter current
  * values.  Useful when creating new object after applying effects. */
@@ -119,7 +73,7 @@ void SetActiveMetersToTargetMaxCurrentValues(ObjectMap& object_map);
 void SetNativePopulationValues(ObjectMap& object_map);
     
 /** Creates starlanes and adds them systems already generated. */
-void GenerateStarlanes(GalaxySetupOption freq);
+void GenerateStarlanes(int max_jumps_between_systems, int max_starlane_length);
 
 /** Sets empire homeworld
  * This includes setting ownership, capital, species,

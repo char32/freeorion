@@ -49,6 +49,21 @@ EffectsGroup
 //                tag = "system" data = Target.SystemID
 //            ]
 //            empire = Source.Owner
+//
+//EffectsGroup
+//    scope = Source
+//    activation = Turn low = 0 high = 0
+//    effects =
+//        GenerateSitRepMessage
+//            message = "A number: %rawtext:number%  A boolean value: %rawtext:boolean%"
+//            label = "Custom_1"
+//            NoStringtableLookup
+//            icon = "icons/tech/categories/spy.png"
+//            parameters = [
+//                tag = "number" data = GameRule name = "RULE_NUM_COMBAT_ROUNDS"
+//                tag = "boolean" data = GameRule name = "RULE_CHEAP_AND_FAST_TECH_RESEARCH"
+//            ]
+//            empire = Source.Owner
 
 
 
@@ -89,6 +104,54 @@ EffectsGroup
             ]
             empire = Source.Owner
 
+
+EffectsGroup
+    scope = And [
+        System
+        // The following assets need protection
+        Contains And [
+            OwnedBy empire = Source.Owner
+            Or [
+                Planet
+                Ship
+            ]
+        ]
+        // Dont warn about system where there are already enemies this turn
+        Not Contains And [
+            Ship
+            Or [
+                OwnedBy affiliation = EnemyOf empire = Source.Owner
+                UnOwned
+            ]
+            VisibleToEmpire empire = Source.Owner
+        ]
+        // Only warn if enemies are incoming
+        WithinDistance distance = 120 condition = And [
+            Fleet
+            Not Stationary
+            Or [
+                OwnedBy affiliation = EnemyOf empire = Source.Owner
+                UnOwned
+            ]
+            VisibleToEmpire empire = Source.Owner
+            Turn low = [[ETA_NEXT_TURN]] high = [[ETA_NEXT_TURN]]
+            (RootCandidate.ID = LocalCandidate.NextSystemID)
+        ]
+    ]
+    activation = Source
+    priority = [[END_CLEANUP_PRIORITY]]
+    effects =
+        GenerateSitRepMessage
+            message = "SITREP_SYSTEM_GOT_INCOMING_WARNING"
+            label = "SITREP_SYSTEM_GOT_INCOMING_WARNING_LABEL"
+            icon = "icons/meter/ammo.png"
+            parameters = [
+                tag = "system"  data = Target.ID
+            ]
+            empire = Source.Owner
+
+ETA_NEXT_TURN
+'''(CurrentTurn + LocalCandidate.ETA - 1)'''
 
 
 //*********************************************************************************************************************************************************
@@ -181,7 +244,7 @@ EffectsGroup
 //     activation = Source
 //     effects =
 //         GenerateSitRepMessage
-//             message = "There are defenseless natives at %planet%!  Go invade them with <encyclopedia TROOP_TITLE>Troops</encyclopedia>!"
+//             message = "There are defenseless natives at %planet%!  Go invade them with [[metertype METER_TROOPS]]!"
 //             label = "Custom_4"
 //             NoStringtableLookup
 //             icon = "icons/meter/troops.png"
@@ -190,9 +253,46 @@ EffectsGroup
 //             ]
 //             empire = Source.Owner
 
+//#####     RANDOM BEGINNER HINTS     #####//
 
-
-
+EffectsGroup
+    scope = Source
+    activation = Turn low = 0 high = 100
+    stackinggroup = "HINTSSYSTEM"
+    effects = [
+        GenerateSitrepMessage
+            message = "RANDOM_BEGINNER_HINT"
+            label = "BEGINNER_HINTS"
+            icon = "icons/sitrep/beginner_hint.png"
+            parameters = [
+                tag = "rawtext" data = OneOf(
+                    UserString("BEGINNER_HINT_01"),
+                    UserString("BEGINNER_HINT_02"),
+                    UserString("BEGINNER_HINT_03"),
+                    UserString("BEGINNER_HINT_04"),
+                    UserString("BEGINNER_HINT_05"),
+                    UserString("BEGINNER_HINT_06"),
+                    UserString("BEGINNER_HINT_07"),
+                    UserString("BEGINNER_HINT_08"),
+                    UserString("BEGINNER_HINT_09"),
+                    UserString("BEGINNER_HINT_10"),
+                    UserString("BEGINNER_HINT_11"),
+                    UserString("BEGINNER_HINT_12"),
+                    UserString("BEGINNER_HINT_13"),
+                    UserString("BEGINNER_HINT_14"),
+                    UserString("BEGINNER_HINT_15"),
+                    UserString("BEGINNER_HINT_16"),
+                    UserString("BEGINNER_HINT_17"),
+                    UserString("BEGINNER_HINT_18"),
+                    UserString("BEGINNER_HINT_19"),
+                    UserString("BEGINNER_HINT_20"),
+                    UserString("BEGINNER_HINT_21"),
+                    UserString("BEGINNER_HINT_22"))
+            ]
+            empire = Source.Owner
+    ]
 
 // Note, the "]" on the following line is functional and important; it must be present and all EffectsGroups must be above it.
 ]
+
+#include "/scripting/common/priorities.macros"

@@ -71,14 +71,57 @@ public:
 
     /** \name Structors */ ///@{
     /** Ctor. */
-    TextControl(X x, Y y, X w, Y h, const std::string& str, const boost::shared_ptr<Font>& font,
+    TextControl(X x, Y y, X w, Y h, const std::string& str,
+                const std::shared_ptr<Font>& font,
                 Clr color = CLR_BLACK, Flags<TextFormat> format = FORMAT_NONE,
                 Flags<WndFlag> flags = NO_WND_FLAGS);
-    //@}
+
+    /** Fast constructor.
+
+     This constructor requires a \p str and \text_elements that are consistent
+     with each other. Font::ExpensiveParseFromTextToTextElements() will not be
+     called on \p str.  Hence this constructor is much faster than the first
+     constructor.*/
+    TextControl(X x, Y y, X w, Y h, const std::string& str,
+                const std::vector<std::shared_ptr<Font::TextElement>>&text_elements,
+                const std::shared_ptr<Font>& font,
+                Clr color = CLR_BLACK, Flags<TextFormat> format = FORMAT_NONE,
+                Flags<WndFlag> flags = NO_WND_FLAGS);
+
+    /** Copy constructor.
+
+        Text Control requires a copy-constructor because m_text_elements
+        contains pointers to m_text which need to be bound with Bind() to the
+        m_text in the new TextControl.
+
+        Using the copy constructor is faster than constructing a TextControl
+        with text from another TextControl because it avoids the XML parse
+        overhead.
+
+        Since Control does not have a way to access Flags the copy using default
+        flags.
+    */
+    explicit TextControl(const TextControl& that);
+
     virtual ~TextControl();
+    //@}
+
+    /** Assignment operator.
+
+        Text Control requires an assignment operator because m_text_elements
+        contains pointers to m_text which need to be bound with Bind() to the
+        m_text in this TextControl.
+
+        Using the assignment operator is faster than using SetText() with text
+        from another TextControl because it avoids the XML parse overhead.
+    */
+    TextControl& operator=(const TextControl& that);
 
     /** \name Accessors */ ///@{
-    virtual Pt        MinUsableSize() const;
+    Pt MinUsableSize() const override;
+
+    /** Returns the minimum usable size if the text were reflowed into a \a width box.*/
+    virtual Pt MinUsableSize(X width) const;
 
     /** Returns the text displayed in this control. */
     const std::string& Text() const;
@@ -106,7 +149,7 @@ public:
         MinSize(), if any has been set.  Note that this operates independently
         of fit-to-text behavior, which sets the window size, not its minimum
         size. */
-    bool              SetMinSize() const;
+    bool              IsResetMinSize() const;
 
     /** Sets the value of \a t to the interpreted value of the control's text.
         If the control's text can be interpreted as an object of type T by
@@ -154,7 +197,13 @@ public:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void Render();
+    void Render() override;
+
+    void SizeMove(const Pt& ul, const Pt& lr) override;
+
+    /** Just like Control::SetColor(), except that this one also adjusts the
+        text color. */
+    void SetColor(Clr c) override;
 
     /** Sets the text displayed in this control to \a str.  May resize the
         window.  If the control was constructed with FORMAT_NOWRAP, calls
@@ -162,13 +211,51 @@ public:
         the newly rendered text occupies. */
     virtual void SetText(const std::string& str);
 
+    /** Sets the text displayed in this control to the \p str \p text_elements
+        pair.  This is faster than SetText without \p text_elements.
+
+        This may resize the window.  If the control was constructed with FORMAT_NOWRAP, calls to
+        this function cause the window to be resized to whatever space the newly rendered text
+        occupies.
+
+        If the \p str and \p text_elements are inconsistent and \p str is shorter than expected
+        from examining \p text_elements then it will return without changing the TextControl.
+    */
+    virtual void SetText(const std::string& str,
+                         const std::vector<std::shared_ptr<Font::TextElement>>&text_elements);
+
+    /** Change TextControl's text to replace the text at templated \p targ_offset with \p new_text.
+
+        This replaces the entire text of the TextElement at offset \p targ_offset and adjusts the
+        string \p text to be consistent even if the \p new_text is longer/shorter than the original
+        TEXT type TextElement.
+
+        This does not reparse the TextControl's text. It is faster than SetText on a new
+        string. It will not find white space in the inserted text.
+
+        \p targ_offset is the zero based offset of the TextElements of type TEXT.  It ignores
+        other types of TextElements such as TAGS, WHITESPACE and NEWLINE, when determining the
+        offset.
+
+        Here is an example of changing a ship name from "oldname" to "New Ship Name":
+
+        original text:             "<i>Ship:<\i> oldname ID:"
+        orignal m_text_elements:   [<OPEN_TAG i>, <TEXT "Ship:">, <CLOSE_TAG i>, <WHITESPACE>, <TEXT oldname>, <WHITESPACE>, <TEXT ID:>]
+
+        ChangeTemplatedText(text, text_elements, "New Ship Name", 1);
+
+        changed text:              "<i>Ship:<\i> New Ship Name ID:"
+        changed m_text_elements:   [<OPEN_TAG i>, <TEXT "Ship:">, <CLOSE_TAG i>, <WHITESPACE>, <TEXT New Ship Name>, <WHITESPACE>, <TEXT ID:>]
+
+    */
+
+    void ChangeTemplatedText(const std::string& new_text, size_t targ_offset);
+
     /** Returns the Font used by this TextControl to render its text. */
-    const boost::shared_ptr<Font>& GetFont() const;
+    const std::shared_ptr<Font>& GetFont() const;
 
     /** Sets the Font used by this TextControl to render its text. */
-    void         SetFont(boost::shared_ptr<Font> font);
-
-    virtual void SizeMove(const Pt& ul, const Pt& lr);
+    void SetFont(std::shared_ptr<Font> font);
 
     /** Sets the text format; ensures that the flags are sane. */
     void         SetTextFormat(Flags<TextFormat> format);
@@ -176,16 +263,12 @@ public:
     /** Sets the text color. */
     void         SetTextColor(Clr color);
 
-    /** Just like Control::SetColor(), except that this one also adjusts the
-        text color. */
-    virtual void SetColor(Clr c);
-
     /** Enables/disables text clipping to the client area. */
     void         ClipText(bool b);
 
     /** Enables/disables setting the minimum size of the window to be the text
         size. */
-    void         SetMinSize(bool b);
+    void         SetResetMinSize(bool b);
 
     /** Sets the value of the control's text to the stringified version of t.
         If t can be converted to a string representation by a
@@ -210,7 +293,7 @@ public:
     void  Insert(CPSize pos, const std::string& s);
 
     /** Erases \a num code points from the text starting at position \a
-        pos. */
+        pos up to the end of the line that pos is on. */
     void  Erase(CPSize pos, CPSize num = CP1);
 
     /** Inserts \a c at text position \a pos within line \a line.  \note Just
@@ -222,16 +305,20 @@ public:
     void  Insert(std::size_t line, CPSize pos, const std::string& s);
 
     /** Erases \a num code points from the text starting at position \a
-        pos within line \a line. */
+        pos within line \a line up to the end of the line \a line. */
     void  Erase(std::size_t line, CPSize pos, CPSize num = CP1);
+
+    /** Erases code points from the text between the specified starting and
+      * ending line and character positions. */
+    void  Erase(std::size_t line1, CPSize pos1, std::size_t line2, CPSize pos2);
     //@}
 
 protected:
     /** \name Accessors */ ///@{
     /** Returns the line data for the text in this TextControl. */
-    const std::vector<Font::LineData>& GetLineData() const;
+    virtual const std::vector<Font::LineData>& GetLineData() const;
 
-    friend class StateButton;
+    friend class StateButtonRepresenter;
     //@}
 
 private:
@@ -241,19 +328,25 @@ private:
     void RefreshCache();
     void PurgeCache();
 
+    /** Recompute line data, code points, text extent and minusable size cache when
+        m_text_elements changes.*/
+    void RecomputeLineData();
+
     std::string                 m_text;
     Flags<TextFormat>           m_format;      ///< the formatting used to display the text (vertical and horizontal alignment, etc.)
     Clr                         m_text_color;  ///< the color of the text itself (may differ from GG::Control::m_color)
     bool                        m_clip_text;
     bool                        m_set_min_size;
-    std::vector<boost::shared_ptr<Font::TextElement> >
-                                m_text_elements;
+    std::vector<std::shared_ptr<Font::TextElement>> m_text_elements;
     std::vector<Font::LineData> m_line_data;
     CPSize                      m_code_points;
-    boost::shared_ptr<Font>     m_font;
+    std::shared_ptr<Font> m_font;
     Pt                          m_text_ul;     ///< stored relative to the control's UpperLeft()
     Pt                          m_text_lr;     ///< stored relative to the control's UpperLeft()
-    Font::RenderCache*          m_render_cache;///< Cache much of text rendering.
+    std::unique_ptr<Font::RenderCache> m_render_cache;///< Cache much of text rendering.
+
+    mutable X                   m_cached_minusable_size_width;
+    mutable Pt                  m_cached_minusable_size;
 };
 
 typedef TextControl Label;

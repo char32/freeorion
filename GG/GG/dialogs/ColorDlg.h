@@ -44,8 +44,10 @@ class Slider;
     possible. */
 struct GG_API HSVClr
 {
-    HSVClr(); ///< default ctor
-    HSVClr(double h_, double s_, double v_, GLubyte a_ = 255); ///< ctor
+    HSVClr();
+
+    HSVClr(double h_, double s_, double v_, GLubyte a_ = 255);
+
     double  h;   ///< hue
     double  s;   ///< saturation
     double  v;   ///< value
@@ -64,13 +66,15 @@ public:
     //@}
 
     /** \name Structors */ ///@{
-    HueSaturationPicker(X x, Y y, X w, Y h); ///< basic ctor
+    HueSaturationPicker(X x, Y y, X w, Y h);
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void Render();
-    virtual void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys);
+    void Render() override;
+
+    void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys) override;
+
+    void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys) override;
 
     void SetHueSaturation(double hue, double saturation); ///< sets the current hue and saturation.  Note that this does not cause a signal to be emitted.
     //@}
@@ -82,8 +86,8 @@ private:
 
     double m_hue;
     double m_saturation;
-    std::vector<std::vector<std::pair<double, double> > >  m_vertices;
-    std::vector<std::vector<Clr> > m_colors;
+    std::vector<std::vector<std::pair<double, double>>> m_vertices;
+    std::vector<std::vector<Clr>>                       m_colors;
 };
 
 
@@ -98,13 +102,13 @@ public:
     //@}
 
     /** \name Structors */ ///@{
-    ValuePicker(X x, Y y, X w, Y h, Clr arrow_color); ///< basic ctor
+    ValuePicker(X x, Y y, X w, Y h, Clr arrow_color);
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void Render();
-    virtual void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys);
+    void Render() override;
+    void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys) override;
 
     /** Sets the current hue and saturation.  These are only used to render
         the control, and do not otherwise influence its operation. */
@@ -155,9 +159,9 @@ public:
 
     protected:
         /** \name Mutators */ ///@{
-        virtual void RenderUnpressed();
-        virtual void RenderPressed();
-        virtual void RenderRollover();
+        void RenderUnpressed() override;
+        void RenderPressed() override;
+        void RenderRollover() override;
         //@}
 
     private:
@@ -174,19 +178,19 @@ public:
     {
     public:
         /** \name Structors */ ///@{
-        ColorDisplay(Clr color); ///< ctor.
+        ColorDisplay(Clr color);
         //@}
 
         /** \name Accessors */ ///@{
-        virtual void Render();
+        void Render() override;
         //@}
     };
 
     /** \name Structors */ ///@{
-    /** ctor */
-    ColorDlg(X x, Y y, Clr original_color, const boost::shared_ptr<Font>& font,
+    ColorDlg(X x, Y y, Clr original_color, const std::shared_ptr<Font>& font,
              Clr dialog_color, Clr border_color, Clr text_color = CLR_BLACK);
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ ///@{
     /** Returns true iff the user selected a color and then clicked the "Ok"
@@ -198,25 +202,15 @@ public:
     Clr Result() const;
     //@}
 
-    virtual void Render();
-    virtual void KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
+    void Render() override;
+    void KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys) override;
     //@}
 
     static const std::size_t INVALID_COLOR_BUTTON;
 
 private:
-    struct ColorButtonClickFunctor
-    {
-        ColorButtonClickFunctor(std::size_t id, ColorDlg* picker_);
-        void operator()();
-        const std::size_t button_id;
-        ColorDlg* picker;
-    };
-
     enum {R, G, B, A, H, S, V};
 
-    void Init(const boost::shared_ptr<Font>& font);
-    void ConnectSignals();
     void ColorChanged(HSVClr color);
     void HueSaturationPickerChanged(double hue, double saturation);
     void ValuePickerChanged(double value);
@@ -234,36 +228,34 @@ private:
     void OkClicked();
     void CancelClicked();
 
-    HSVClr                    m_current_color;
-    Clr                       m_original_color;
-    bool                      m_original_color_specified;
-    bool                      m_color_was_picked;
+    HSVClr  m_current_color;
+    Clr     m_original_color;
+    bool    m_original_color_specified = true;
+    bool    m_color_was_picked = false;
 
-    HueSaturationPicker*      m_hue_saturation_picker;
-    ValuePicker*              m_value_picker;
-    Layout*                   m_pickers_layout;
-    ColorDisplay*             m_new_color_square;
-    ColorDisplay*             m_old_color_square;
-    TextControl*              m_new_color_square_text;
-    TextControl*              m_old_color_square_text;
-    Layout*                   m_color_squares_layout;
-    std::vector<ColorButton*> m_color_buttons;
-    Layout*                   m_color_buttons_layout;
-    std::size_t               m_current_color_button;
-    std::vector<TextControl*> m_slider_labels;
-    std::vector<TextControl*> m_slider_values;
-    std::vector<Slider<int>*> m_sliders;
-    Button*                   m_ok;
-    Button*                   m_cancel;
-    Layout*                   m_sliders_ok_cancel_layout;
+    std::shared_ptr<HueSaturationPicker>      m_hue_saturation_picker;
+    std::shared_ptr<ValuePicker>              m_value_picker;
+    std::shared_ptr<Layout>                   m_pickers_layout;
+    std::shared_ptr<ColorDisplay>             m_new_color_square;
+    std::shared_ptr<ColorDisplay>             m_old_color_square;
+    std::shared_ptr<TextControl>              m_new_color_square_text;
+    std::shared_ptr<TextControl>              m_old_color_square_text;
+    std::shared_ptr<Layout>                   m_color_squares_layout;
+    std::vector<std::shared_ptr<ColorButton>> m_color_buttons;
+    std::shared_ptr<Layout>                   m_color_buttons_layout;
+    std::size_t                               m_current_color_button;
+    std::vector<std::shared_ptr<TextControl>> m_slider_labels;
+    std::vector<std::shared_ptr<TextControl>> m_slider_values;
+    std::vector<std::shared_ptr<Slider<int>>> m_sliders;
+    std::shared_ptr<Button>                   m_ok;
+    std::shared_ptr<Button>                   m_cancel;
+    std::shared_ptr<Layout>                   m_sliders_ok_cancel_layout;
 
-    Clr                       m_color;
-    Clr                       m_border_color;
-    Clr                       m_text_color;
+    Clr m_color;
+    Clr m_border_color;
+    Clr m_text_color;
 
     static std::vector<Clr>   s_custom_colors;
-
-    friend struct ColorButtonClickFunctor;
 };
 
 } // namespace GG

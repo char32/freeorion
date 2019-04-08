@@ -1,0 +1,12 @@
+ShipDesign
+    name = "SD_ORG_OUTPOST_SHIP"
+    uuid = "08a58b08-0929-496d-84fc-faa91424ca08"
+    description = "SD_ORG_OUTPOST_SHIP_DESC"
+    hull = "SH_ORGANIC"
+    parts = [
+        ""
+        ""
+        ""
+        "CO_OUTPOST_POD"
+    ]
+    model = "seed"

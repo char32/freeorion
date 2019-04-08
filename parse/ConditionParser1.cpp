@@ -1,240 +1,219 @@
-#include "ConditionParserImpl.h"
+#include "ConditionParser1.h"
 
-#include "EnumParser.h"
-#include "Label.h"
-#include "ValueRefParser.h"
 #include "../universe/Condition.h"
 #include "../universe/ValueRef.h"
+#include "../universe/Enums.h"
 
 #include <boost/spirit/include/phoenix.hpp>
 
 namespace qi = boost::spirit::qi;
 namespace phoenix = boost::phoenix;
 
-
 #if DEBUG_CONDITION_PARSERS
 namespace std {
-    inline ostream& operator<<(ostream& os, const std::vector<Condition::ConditionBase*>&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::vector<condition_payload>&) { return os; }
 }
 #endif
-
-namespace {
-    struct condition_parser_rules_1 {
-        condition_parser_rules_1() {
-            const parse::lexer& tok = parse::lexer::instance();
-
-            const parse::value_ref_parser_rule<int>::type& int_value_ref =
-                parse::value_ref_parser<int>();
-
-            qi::_1_type _1;
-            qi::_a_type _a;
-            qi::_val_type _val;
-            qi::eps_type eps;
-            qi::lit_type lit;
-            using phoenix::new_;
-            using phoenix::push_back;
-
-            all
-                =   tok.All_ [ _val = new_<Condition::All>() ]
-                ;
-
-            none
-                =   tok.None_ [ _val = new_<Condition::None>() ]
-                ;
-
-            source
-                =   tok.Source_ [ _val = new_<Condition::Source>() ]
-                ;
-
-            root_candidate
-                =   tok.RootCandidate_ [ _val = new_<Condition::RootCandidate>() ]
-                ;
-
-            target
-                =   tok.Target_ [ _val = new_<Condition::Target>() ]
-                ;
-
-            stationary
-                =   tok.Stationary_ [ _val = new_<Condition::Stationary>() ]
-                ;
-
-            can_colonize
-                =   tok.CanColonize_ [ _val = new_<Condition::CanColonize>() ]
-                ;
-
-            can_produce_ships
-                =   tok.CanProduceShips_ [ _val = new_<Condition::CanProduceShips>() ]
-                ;
-
-            capital
-                =   tok.Capital_ [ _val = new_<Condition::Capital>() ]
-                ;
-
-            monster
-                =   tok.Monster_ [ _val = new_<Condition::Monster>() ]
-                ;
-
-            armed
-                =   tok.Armed_ [ _val = new_<Condition::Armed>() ]
-                ;
-
-            owned_by_1
-                =   tok.OwnedBy_
-                >>  parse::label(Empire_token) > int_value_ref
-                    [ _val = new_<Condition::EmpireAffiliation>(_1) ]
-                ;
-
-            owned_by_2
-                =   tok.OwnedBy_
-                >>  parse::label(Affiliation_token) >> tok.AnyEmpire_
-                [ _val = new_<Condition::EmpireAffiliation>( AFFIL_ANY ) ]
-                ;
-
-            owned_by_3
-                =   tok.Unowned_
-                    [ _val = new_<Condition::EmpireAffiliation>( AFFIL_NONE ) ]
-                ;
-
-            owned_by_4
-                =   tok.OwnedBy_
-                >>  parse::label(Affiliation_token) >> parse::enum_parser<EmpireAffiliationType>() [ _a = _1 ]
-                >>  parse::label(Empire_token)      >  int_value_ref
-                [ _val = new_<Condition::EmpireAffiliation>(_1, _a) ]
-                ;
-
-            owned_by
-                %=  owned_by_1
-                |   owned_by_2
-                |   owned_by_3
-                |   owned_by_4
-                ;
-
-            and_
-                =   tok.And_
-                >   '[' > +parse::detail::condition_parser [ push_back(_a, _1) ] > lit(']')
-                [ _val = new_<Condition::And>(_a) ]
-                ;
-
-            or_
-                =   tok.Or_
-                >   '[' > +parse::detail::condition_parser [ push_back(_a, _1) ] > lit(']')
-                [ _val = new_<Condition::Or>(_a) ]
-                ;
-
-            not_
-                =   tok.Not_
-                >   parse::detail::condition_parser [ _val = new_<Condition::Not>(_1) ]
-                ;
-
-            described
-                =   tok.Described_
-                >   parse::label(Description_token) > tok.string [ _a = _1 ]
-                >   parse::label(Condition_token) > parse::detail::condition_parser
-                [ _val = new_<Condition::Described>(_1, _a) ]
-                ;
-
-            start
-                %=  all
-                |   none
-                |   source
-                |   root_candidate
-                |   target
-                |   stationary
-                |   can_colonize
-                |   can_produce_ships
-                |   capital
-                |   monster
-                |   armed
-                |   owned_by
-                |   and_
-                |   or_
-                |   not_
-                |   described
-                ;
-
-            all.name("All");
-            none.name("None");
-            source.name("Source");
-            root_candidate.name("RootCandidate");
-            target.name("Target");
-            stationary.name("Stationary");
-            can_colonize.name("CanColonize");
-            can_produce_ships.name("CanProduceShips");
-            capital.name("Capital");
-            monster.name("Monster");
-            armed.name("Armed");
-            owned_by.name("OwnedBy");  // TODO: Should this be renamed Affilated or similar?
-            and_.name("And");
-            or_.name("Or");
-            not_.name("Not");
-            described.name("Described");
-
-#if DEBUG_CONDITION_PARSERS
-            debug(all);
-            debug(none);
-            debug(source);
-            debug(root_candidate);
-            debug(target);
-            debug(stationary);
-            debug(capital);
-            debug(monster);
-            debug(armed);
-            debug(owned_by);
-            debug(and_);
-            debug(or_);
-            debug(not_);
-            debug(described);
-#endif
-        }
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Condition::ConditionBase* (),
-            qi::locals<EmpireAffiliationType>,
-            parse::skipper_type
-        > owned_by_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Condition::ConditionBase* (),
-            qi::locals<std::vector<Condition::ConditionBase*> >,
-            parse::skipper_type
-        > and_or_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Condition::ConditionBase* (),
-            qi::locals<std::string>,
-            parse::skipper_type
-        > described_rule;
-
-        parse::condition_parser_rule    all;
-        parse::condition_parser_rule    none;
-        parse::condition_parser_rule    source;
-        parse::condition_parser_rule    root_candidate;
-        parse::condition_parser_rule    target;
-        parse::condition_parser_rule    stationary;
-        parse::condition_parser_rule    can_colonize;
-        parse::condition_parser_rule    can_produce_ships;
-        parse::condition_parser_rule    capital;
-        parse::condition_parser_rule    monster;
-        parse::condition_parser_rule    armed;
-        parse::condition_parser_rule    owned_by_1;
-        parse::condition_parser_rule    owned_by_2;
-        parse::condition_parser_rule    owned_by_3;
-        owned_by_rule                   owned_by_4;
-        parse::condition_parser_rule    owned_by;
-        and_or_rule                     and_;
-        and_or_rule                     or_;
-        parse::condition_parser_rule    not_;
-        described_rule                  described;
-        parse::condition_parser_rule    start;
-    };
-}
 
 namespace parse { namespace detail {
-    const condition_parser_rule& condition_parser_1() {
-        static condition_parser_rules_1 retval;
-        return retval.start;
+    condition_parser_rules_1::condition_parser_rules_1(
+        const parse::lexer& tok,
+        Labeller& label,
+        const condition_parser_grammar& condition_parser,
+        const value_ref_grammar<std::string>& string_grammar
+    ) :
+        condition_parser_rules_1::base_type(start, "condition_parser_rules_1"),
+        int_rules(tok, label, condition_parser, string_grammar),
+        empire_affiliation_type_enum(tok)
+    {
+        qi::_1_type _1;
+        qi::_2_type _2;
+        qi::_val_type _val;
+        qi::eps_type eps;
+        qi::lit_type lit;
+        qi::_pass_type _pass;
+        qi::omit_type omit_;
+        const boost::phoenix::function<construct_movable> construct_movable_;
+        const boost::phoenix::function<deconstruct_movable> deconstruct_movable_;
+        const boost::phoenix::function<deconstruct_movable_vector> deconstruct_movable_vector_;
+
+        using phoenix::new_;
+        using phoenix::construct;
+        using phoenix::push_back;
+
+        all
+            =   tok.All_ [ _val = construct_movable_(new_<Condition::All>()) ]
+            ;
+
+        none
+            =   tok.None_ [ _val = construct_movable_(new_<Condition::None>()) ]
+            ;
+
+        source
+            =   tok.Source_ [ _val = construct_movable_(new_<Condition::Source>()) ]
+            ;
+
+        root_candidate
+            =   tok.RootCandidate_ [ _val = construct_movable_(new_<Condition::RootCandidate>()) ]
+            ;
+
+        target
+            =   tok.Target_ [ _val = construct_movable_(new_<Condition::Target>()) ]
+            ;
+
+        stationary
+            =   tok.Stationary_ [ _val = construct_movable_(new_<Condition::Stationary>()) ]
+            ;
+
+        aggressive
+            = ((tok.Aggressive_ [ _val = construct_movable_(new_<Condition::Aggressive>(true)) ])
+               |(tok.Passive_ [ _val = construct_movable_(new_<Condition::Aggressive>(false)) ])
+              )
+            ;
+
+        can_colonize
+            =   tok.CanColonize_ [ _val = construct_movable_(new_<Condition::CanColonize>()) ]
+            ;
+
+        can_produce_ships
+            =   tok.CanProduceShips_ [ _val = construct_movable_(new_<Condition::CanProduceShips>()) ]
+            ;
+
+        capital
+            =   tok.Capital_ [ _val = construct_movable_(new_<Condition::Capital>()) ]
+            ;
+
+        monster
+            =   tok.Monster_ [ _val = construct_movable_(new_<Condition::Monster>()) ]
+            ;
+
+        armed
+            =   tok.Armed_ [ _val = construct_movable_(new_<Condition::Armed>()) ]
+            ;
+
+        owned_by_1
+            =   (   tok.OwnedBy_
+                 >> label(tok.Empire_)
+                ) > int_rules.expr
+            [ _val = construct_movable_(new_<Condition::EmpireAffiliation>(deconstruct_movable_(_1, _pass))) ]
+            ;
+
+        owned_by_2
+            =   tok.OwnedBy_
+            >>  label(tok.Affiliation_) >> tok.AnyEmpire_
+            [ _val = construct_movable_(new_<Condition::EmpireAffiliation>( AFFIL_ANY )) ]
+            ;
+
+        owned_by_3
+            =   tok.Unowned_
+            [ _val = construct_movable_(new_<Condition::EmpireAffiliation>( AFFIL_NONE )) ]
+            ;
+
+        owned_by_4
+            =   tok.Human_
+            [ _val = construct_movable_(new_<Condition::EmpireAffiliation>( AFFIL_HUMAN )) ]
+            ;
+
+        owned_by_5
+            =  ((omit_[tok.OwnedBy_]
+                 >>  label(tok.Affiliation_) >> empire_affiliation_type_enum
+                 >>  label(tok.Empire_)    ) >  int_rules.expr)
+            [ _val = construct_movable_(new_<Condition::EmpireAffiliation>(deconstruct_movable_(_2, _pass), _1)) ]
+            ;
+
+        owned_by
+            %=  owned_by_1
+            |   owned_by_2
+            |   owned_by_3
+            |   owned_by_4
+            |   owned_by_5
+            ;
+
+        and_
+            = ( omit_[tok.And_] > '[' > +condition_parser > lit(']'))
+            [ _val = construct_movable_(new_<Condition::And>(deconstruct_movable_vector_(_1, _pass))) ]
+            ;
+
+        or_
+            = ( omit_[tok.Or_] > '[' > +condition_parser > lit(']'))
+            [ _val = construct_movable_(new_<Condition::Or>(deconstruct_movable_vector_(_1, _pass))) ]
+            ;
+
+        not_
+            = tok.Not_ > condition_parser
+            [ _val = construct_movable_(new_<Condition::Not>(deconstruct_movable_(_1, _pass))) ]
+            ;
+
+        ordered_alternatives_of
+            = ( omit_[tok.OrderedAlternativesOf_] > '[' > +condition_parser > lit(']'))
+            [ _val = construct_movable_(new_<Condition::OrderedAlternativesOf>(deconstruct_movable_vector_(_1, _pass))) ]
+            ;
+
+        described
+            = ( omit_[tok.Described_]
+                > label(tok.Description_) > tok.string
+                > label(tok.Condition_) > condition_parser)
+            [ _val = construct_movable_( new_<Condition::Described>(deconstruct_movable_(_2, _pass), _1)) ]
+            ;
+
+        start
+            %=  all
+            |   none
+            |   source
+            |   root_candidate
+            |   target
+            |   stationary
+            |   aggressive
+            |   can_colonize
+            |   can_produce_ships
+            |   capital
+            |   monster
+            |   armed
+            |   owned_by
+            |   and_
+            |   or_
+            |   not_
+            |   ordered_alternatives_of
+            |   described
+            ;
+
+        all.name("All");
+        none.name("None");
+        source.name("Source");
+        root_candidate.name("RootCandidate");
+        target.name("Target");
+        stationary.name("Stationary");
+        aggressive.name("Aggressive");
+        can_colonize.name("CanColonize");
+        can_produce_ships.name("CanProduceShips");
+        capital.name("Capital");
+        monster.name("Monster");
+        armed.name("Armed");
+        owned_by.name("OwnedBy");  // TODO: Should this be renamed Affilated or similar?
+        and_.name("And");
+        or_.name("Or");
+        not_.name("Not");
+        ordered_alternatives_of.name("OrderedAlternativesOf");
+        described.name("Described");
+
+#if DEBUG_CONDITION_PARSERS
+        debug(all);
+        debug(none);
+        debug(source);
+        debug(root_candidate);
+        debug(target);
+        debug(stationary);
+        debug(aggressive);
+        debug(capital);
+        debug(monster);
+        debug(armed);
+        debug(owned_by);
+        debug(and_);
+        debug(or_);
+        debug(not_);
+        debug(ordered_alternatives_of);
+        debug(described);
+#endif
     }
+
 } }

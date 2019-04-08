@@ -1,10 +1,11 @@
 import freeorion as fo
-from planets import planet_types_real, planet_sizes_real
+
+from planets import planet_sizes_real, planet_types_real
 
 
-###############################
-## STAR GROUP NAMING OPTIONS ##
-###############################
+#############################
+# STAR GROUP NAMING OPTIONS #
+#############################
 
 # if star_groups_use_chars is true use entries from the stringtable entry STAR_GROUP_CHARS (single characters),
 # otherwise use words like 'Alpha' from the stringtable entry STAR_GROUP_WORDS.
@@ -22,9 +23,9 @@ TARGET_INDIV_RATIO_LARGE = 0.3  # in large galaxies, 30% of the star systems get
 NAMING_LARGE_GALAXY_SIZE = 200  # a galaxy with 200+ star systems is considered as large, below that value as small
 
 
-###################################
-## HOME SYSTEM SELECTION OPTIONS ##
-###################################
+#################################
+# HOME SYSTEM SELECTION OPTIONS #
+#################################
 
 # These options are needed in the home system selection/placement process. They determine the minimum number of
 # systems and planets that a home system must have in its near vicinity, define the extend of this "near vicinity", etc.
@@ -50,7 +51,7 @@ HS_MAX_JUMP_DISTANCE_LIMIT = 10
 # As long as the jump distance limit which home systems must at least be apart does not get reduced below this limit
 # during the home system selection process, the minimum systems in home system vicinity requirement takes
 # precedence over the jump distance limit. If the jump distance limit drops below this minimum jump distance limit,
-# the process is restarted giving th jump distance limit precedence.
+# the process is restarted giving the jump distance limit precedence.
 HS_MIN_DISTANCE_PRIORITY_LIMIT = 5
 
 # These two options define which types of planets are counted when determining the number of planets in the near

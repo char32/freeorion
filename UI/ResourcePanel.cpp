@@ -6,14 +6,15 @@
 #include "../util/Logger.h"
 #include "../universe/Effect.h"
 #include "../universe/ResourceCenter.h"
-#include "../universe/TemporaryPtr.h"
 #include "../universe/UniverseObject.h"
+#include "../universe/Enums.h"
 #include "../client/human/HumanClientApp.h"
 #include "ClientUI.h"
 #include "CUIControls.h"
 #include "MeterBrowseWnd.h"
 #include "MultiIconValueIndicator.h"
 #include "MultiMeterStatusBar.h"
+
 
 namespace {
     const int       EDGE_PAD(3);
@@ -31,67 +32,110 @@ namespace {
 }
 
 ResourcePanel::ResourcePanel(GG::X w, int object_id) :
-    AccordionPanel(w),
+    AccordionPanel(w, GG::Y(ClientUI::Pts()*2)),
     m_rescenter_id(object_id),
     m_meter_stats(),
-    m_multi_icon_value_indicator(0),
-    m_multi_meter_status_bar(0)
-{
+    m_multi_icon_value_indicator(nullptr),
+    m_multi_meter_status_bar(nullptr)
+{}
+
+void ResourcePanel::CompleteConstruction() {
+    AccordionPanel::CompleteConstruction();
+
     SetName("ResourcePanel");
 
-    TemporaryPtr<const ResourceCenter> res = GetResCenter();
+    auto res = GetResCenter();
     if (!res)
         throw std::invalid_argument("Attempted to construct a ResourcePanel with an UniverseObject that is not a ResourceCenter");
 
-    SetChildClippingMode(ClipToClient);
+    m_expand_button->LeftPressedSignal.connect(
+        boost::bind(&ResourcePanel::ExpandCollapseButtonPressed, this));
 
-    GG::Connect(m_expand_button->LeftClickedSignal, &ResourcePanel::ExpandCollapseButtonPressed, this);
-
-    // small meter indicators - for use when panel is collapsed
-    m_meter_stats.push_back(std::make_pair(METER_INDUSTRY, new StatisticIcon(ClientUI::MeterIcon(METER_INDUSTRY), 0, 3, false)));
-    m_meter_stats.push_back(std::make_pair(METER_RESEARCH, new StatisticIcon(ClientUI::MeterIcon(METER_RESEARCH), 0, 3, false)));
-    m_meter_stats.push_back(std::make_pair(METER_CONSTRUCTION, new StatisticIcon(ClientUI::MeterIcon(METER_CONSTRUCTION), 0, 3, false)));
-    m_meter_stats.push_back(std::make_pair(METER_TRADE, new StatisticIcon(ClientUI::MeterIcon(METER_TRADE), 0, 3, false)));
+    const auto obj = GetUniverseObject(m_rescenter_id);
+    if (!obj) {
+        ErrorLogger() << "Invalid object id " << m_rescenter_id;
+        return;
+    }
 
     // meter and production indicators
-    std::vector<std::pair<MeterType, MeterType> > meters;
+    std::vector<std::pair<MeterType, MeterType>> meters;
 
-    for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-        AttachChild(it->second);
-        meters.push_back(std::make_pair(it->first, AssociatedMeterType(it->first)));
+    // small meter indicators - for use when panel is collapsed
+    for (MeterType meter : {METER_INDUSTRY, METER_RESEARCH,
+                            METER_SUPPLY, METER_STOCKPILE})
+    {
+        auto stat = GG::Wnd::Create<StatisticIcon>(
+            ClientUI::MeterIcon(meter), obj->InitialMeterValue(meter),
+            3, false, MeterIconSize().x, MeterIconSize().y);
+        stat->InstallEventFilter(shared_from_this());
+        AttachChild(stat);
+        m_meter_stats.push_back({meter, stat});
+        meters.push_back({meter, AssociatedMeterType(meter)});
     }
 
     // attach and show meter bars and large resource indicators
-    m_multi_meter_status_bar =      new MultiMeterStatusBar(Width() - 2*EDGE_PAD,       m_rescenter_id, meters);
-    m_multi_icon_value_indicator =  new MultiIconValueIndicator(Width() - 2*EDGE_PAD,   m_rescenter_id, meters);
+    m_multi_meter_status_bar =      GG::Wnd::Create<MultiMeterStatusBar>(Width() - 2*EDGE_PAD,       m_rescenter_id, meters);
+    m_multi_icon_value_indicator =  GG::Wnd::Create<MultiIconValueIndicator>(Width() - 2*EDGE_PAD,   m_rescenter_id, meters);
 
     // determine if this panel has been created yet.
-    std::map<int, bool>::iterator it = s_expanded_map.find(m_rescenter_id);
+    auto it = s_expanded_map.find(m_rescenter_id);
     if (it == s_expanded_map.end())
         s_expanded_map[m_rescenter_id] = false; // if not, default to collapsed state
 
     Refresh();
 }
 
-ResourcePanel::~ResourcePanel() {
-    // manually delete all pointed-to controls that may or may not be attached as a child window at time of deletion
-    delete m_multi_icon_value_indicator;
-    delete m_multi_meter_status_bar;
-
-    for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-        delete it->second;
-    }
-}
+ResourcePanel::~ResourcePanel()
+{}
 
 void ResourcePanel::ExpandCollapse(bool expanded) {
     if (expanded == s_expanded_map[m_rescenter_id]) return; // nothing to do
     s_expanded_map[m_rescenter_id] = expanded;
 
-    DoLayout();
+    RequirePreRender();
 }
 
+bool ResourcePanel::EventFilter(GG::Wnd* w, const GG::WndEvent& event) {
+    if (event.Type() != GG::WndEvent::RClick)
+        return false;
+    const GG::Pt& pt = event.Point();
+
+    MeterType meter_type = INVALID_METER_TYPE;
+    for (const auto& meter_stat : m_meter_stats) {
+        if (meter_stat.second.get() == w) {
+            meter_type = meter_stat.first;
+            break;
+        }
+    }
+
+    if (meter_type == INVALID_METER_TYPE)
+        return false;
+
+    std::string meter_string = boost::lexical_cast<std::string>(meter_type);
+    std::string meter_title;
+    if (UserStringExists(meter_string))
+        meter_title = UserString(meter_string);
+    if (meter_title.empty())
+        return false;
+
+    bool retval = false;
+    auto pedia_zoom_to_article_action = [&meter_string, &retval]() {
+        retval = ClientUI::GetClientUI()->ZoomToMeterTypeArticle(meter_string); };
+
+    auto popup = GG::Wnd::Create<CUIPopupMenu>(pt.x, pt.y);
+    std::string popup_label = boost::io::str(FlexibleFormat(UserString("ENC_LOOKUP")) % meter_title);
+    popup->AddMenuItem(GG::MenuItem(popup_label, false, false, pedia_zoom_to_article_action));
+    popup->Run();
+
+    return retval;
+}
+
+
+
 namespace {
-    bool sortByMeterValue(std::pair<MeterType, StatisticIcon*> left, std::pair<MeterType, StatisticIcon*> right) {
+    bool SortByMeterValue(std::pair<MeterType, std::shared_ptr<StatisticIcon>> left,
+                          std::pair<MeterType, std::shared_ptr<StatisticIcon>> right)
+    {
         if (left.second->GetValue() == right.second->GetValue()) {
             if (left.first == METER_TRADE && right.first == METER_CONSTRUCTION) {
                 // swap order of METER_TRADE and METER_CONSTRUCTION in relation to
@@ -108,12 +152,12 @@ namespace {
 
 void ResourcePanel::Update() {
     // remove any old browse wnds
-    for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-        it->second->ClearBrowseInfoWnd();
-        m_multi_icon_value_indicator->ClearToolTip(it->first);
+    for (auto& meter_stat : m_meter_stats) {
+        meter_stat.second->ClearBrowseInfoWnd();
+        m_multi_icon_value_indicator->ClearToolTip(meter_stat.first);
     }
 
-    TemporaryPtr<const UniverseObject> obj = GetUniverseObject(m_rescenter_id);
+    auto obj = GetUniverseObject(m_rescenter_id);
     if (!obj) {
         ErrorLogger() << "BuildingPanel::Update couldn't get object with id " << m_rescenter_id;
         return;
@@ -124,20 +168,26 @@ void ResourcePanel::Update() {
     m_multi_icon_value_indicator->Update();
 
     // tooltips
-    boost::shared_ptr<GG::BrowseInfoWnd> browse_wnd;
+    for (auto& meter_stat : m_meter_stats) {
+        meter_stat.second->SetValue(obj->InitialMeterValue(meter_stat.first));
 
-    for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-        it->second->SetValue(obj->InitialMeterValue(it->first));
-
-        browse_wnd = boost::shared_ptr<GG::BrowseInfoWnd>(new MeterBrowseWnd(m_rescenter_id, it->first, AssociatedMeterType(it->first)));
-        it->second->SetBrowseInfoWnd(browse_wnd);
-        m_multi_icon_value_indicator->SetToolTip(it->first, browse_wnd);
+        auto browse_wnd = GG::Wnd::Create<MeterBrowseWnd>(m_rescenter_id, meter_stat.first, AssociatedMeterType(meter_stat.first));
+        meter_stat.second->SetBrowseInfoWnd(browse_wnd);
+        m_multi_icon_value_indicator->SetToolTip(meter_stat.first, browse_wnd);
     }
 
-    std::sort(m_meter_stats.begin(), m_meter_stats.end(), sortByMeterValue);
+    std::sort(m_meter_stats.begin(), m_meter_stats.end(), SortByMeterValue);
 }
 
 void ResourcePanel::Refresh() {
+    for (auto& meter_stat : m_meter_stats)
+        meter_stat.second->RequirePreRender();
+
+    RequirePreRender();
+}
+
+void ResourcePanel::PreRender() {
+    AccordionPanel::PreRender();
     Update();
     DoLayout();
 }
@@ -148,8 +198,8 @@ void ResourcePanel::ExpandCollapseButtonPressed()
 void ResourcePanel::DoLayout() {
     AccordionPanel::DoLayout();
 
-    for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-        DetachChild(it->second);
+    for (auto& meter_stat : m_meter_stats) {
+        DetachChild(meter_stat.second);
     }
 
     // detach / hide meter bars and large resource indicators
@@ -160,16 +210,19 @@ void ResourcePanel::DoLayout() {
     if (!s_expanded_map[m_rescenter_id]) {
         // position and reattach icons to be shown
         int n = 0;
-        for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-            GG::X x = MeterIconSize().x*n*7/2;
+        GG::X stride = MeterIconSize().x * 7/2;
+        for (auto& meter_stat : m_meter_stats) {
+            GG::X x = n * stride;
 
-            if (x > Width() - m_expand_button->Width() - MeterIconSize().x*5/2) break;  // ensure icon doesn't extend past right edge of panel
-
-            StatisticIcon* icon = it->second;
-            AttachChild(icon);
+            auto& icon = meter_stat.second;
             GG::Pt icon_ul(x, GG::Y0);
             GG::Pt icon_lr = icon_ul + MeterIconSize();
             icon->SizeMove(icon_ul, icon_lr);
+
+            if (x + icon->MinUsableSize().x >= ClientWidth())
+                break;
+
+            AttachChild(icon);
             icon->Show();
 
             n++;
@@ -193,21 +246,14 @@ void ResourcePanel::DoLayout() {
         Resize(GG::Pt(Width(), m_multi_meter_status_bar->Bottom() + EDGE_PAD - top));
     }
 
-    m_expand_button->MoveTo(GG::Pt(Width() - m_expand_button->Width(), GG::Y0));
-
     SetCollapsed(!s_expanded_map[m_rescenter_id]);
 }
 
-TemporaryPtr<const ResourceCenter> ResourcePanel::GetResCenter() const {
-    TemporaryPtr<const UniverseObject> obj = GetUniverseObject(m_rescenter_id);
-    if (!obj) {
-        ErrorLogger() << "ResourcePanel tried to get an object with an invalid m_rescenter_id";
-        return TemporaryPtr<const ResourceCenter>();
-    }
-    TemporaryPtr<const ResourceCenter> res = boost::dynamic_pointer_cast<const ResourceCenter>(obj);
+std::shared_ptr<const ResourceCenter> ResourcePanel::GetResCenter() const {
+    auto res = GetResourceCenter(m_rescenter_id);
     if (!res) {
-        ErrorLogger() << "ResourcePanel failed casting an object pointer to a ResourceCenter pointer";
-        return TemporaryPtr<const ResourceCenter>();
+        ErrorLogger() << "ResourcePanel tried to get an object with an invalid m_rescenter_id";
+        return nullptr;
     }
     return res;
 }

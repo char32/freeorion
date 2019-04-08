@@ -3,28 +3,52 @@
 #include "../util/i18n.h"
 #include "../util/Logger.h"
 #include "../util/OptionsDB.h"
-#include "../util/Directories.h"
-#include "../parse/Parse.h"
+#include "../util/CheckSums.h"
 
-const Encyclopedia& GetEncyclopedia() {
+
+Encyclopedia& GetEncyclopedia() {
     static Encyclopedia encyclopedia;
     return encyclopedia;
 }
 
 Encyclopedia::Encyclopedia() :
-    articles()
-{
-    parse::encyclopedia_articles(GetResourceDir() / "encyclopedia.txt", *this);
-    if (GetOptionsDB().Get<bool>("verbose-logging")) {
-        DebugLogger() << "(Category) Encyclopedia Articles:";
-        for (std::map<std::string, std::vector<EncyclopediaArticle> >::const_iterator
-             category_it = articles.begin(); category_it != articles.end(); ++category_it)
-        {
-            const std::string& category = category_it->first;
-            const std::vector<EncyclopediaArticle>& article_vec = category_it->second;
-            for (std::vector<EncyclopediaArticle>::const_iterator article_it = article_vec.begin();
-                 article_it != article_vec.end(); ++article_it)
-            { DebugLogger() << "(" << UserString(category) << ") : " << UserString(article_it->name); }
+    empty_article(),
+    m_articles()
+{}
+
+unsigned int Encyclopedia::GetCheckSum() const {
+    unsigned int retval{0};
+
+    for (const auto& n : Articles()) {
+        CheckSums::CheckSumCombine(retval, n.first);
+        for (const auto& a : n.second) {
+            CheckSums::CheckSumCombine(retval, a.name);
+            CheckSums::CheckSumCombine(retval, a.category);
+            CheckSums::CheckSumCombine(retval, a.short_description);
+            CheckSums::CheckSumCombine(retval, a.description);
+            CheckSums::CheckSumCombine(retval, a.icon);
+        }
+        CheckSums::CheckSumCombine(retval, n.second.size());
+    }
+    CheckSums::CheckSumCombine(retval, Articles().size());
+
+    return retval;
+}
+
+void Encyclopedia::SetArticles(Pending::Pending<ArticleMap>&& future)
+{ m_pending_articles = std::move(future); }
+
+const Encyclopedia::ArticleMap& Encyclopedia::Articles() const {
+    if (auto parsed = WaitForPending(m_pending_articles)) {
+        std::swap(m_articles, *parsed);
+
+        TraceLogger() << "(Category) Encyclopedia Articles:";
+        for (const auto& entry : m_articles) {
+            const std::string& category = entry.first;
+            for (const EncyclopediaArticle& article : entry.second)
+            { TraceLogger() << "(" << category << ") : " << article.name; }
         }
     }
+
+    return m_articles;
 }

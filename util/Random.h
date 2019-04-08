@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _Random_h_
 #define _Random_h_
 
@@ -17,20 +16,26 @@
 
 #include "Export.h"
 
-/** \file Random.h
-    A collection of robust and portable random number generation functors and functions.
-    If you need to generate one or two random numbers, prefer the functions (e.g. RandomInt()).
-    If you need to generate a large volume of random numbers with the
-    same parameterization,
-    generate a functor (e.g. with a call to IntDist()) and then call the functor repeatedly to
-    generate the numbers.  This eliminates the overhead associated with repeatedly contructing 
-    distributions, when you call the Random*() functions. */
+/** \file
+ *
+ * A collection of robust and portable random number generation functors and
+ * functions.
+ *
+ * If you need to generate one or two random numbers, prefer the functions
+ * (e.g. RandomInt()).
+ *
+ * If you need to generate a large volume of random numbers with the same
+ * parameterization, generate a functor (e.g. with a call to IntDist()) and
+ * then call the functor repeatedly to generate the numbers.  This eliminates
+ * the overhead associated with repeatedly contructing distributions, when you
+ * call the Random*() functions.
+ */
 
 typedef boost::mt19937                                                          GeneratorType;
-typedef boost::variate_generator<GeneratorType&, boost::uniform_smallint<> >    SmallIntDistType;
-typedef boost::variate_generator<GeneratorType&, boost::uniform_int<> >         IntDistType;
-typedef boost::variate_generator<GeneratorType&, boost::uniform_real<> >        DoubleDistType;
-typedef boost::variate_generator<GeneratorType&, boost::normal_distribution<> > GaussianDistType;
+typedef boost::variate_generator<GeneratorType&, boost::uniform_smallint<>>     SmallIntDistType;
+typedef boost::variate_generator<GeneratorType&, boost::uniform_int<>>          IntDistType;
+typedef boost::variate_generator<GeneratorType&, boost::uniform_real<>>         DoubleDistType;
+typedef boost::variate_generator<GeneratorType&, boost::normal_distribution<>>  GaussianDistType;
 
 /** seeds the underlying random number generator used to drive all random number distributions */
 FO_COMMON_API void Seed(unsigned int seed);
@@ -71,6 +76,6 @@ FO_COMMON_API double RandDouble(double min, double max);
 
 /** returns a double from a Gaussian (normal) distribution of doubles centered around \a mean, 
     with standard deviation \a sigma */
-double RandGaussian(double mean, double sigma);
+FO_COMMON_API double RandGaussian(double mean, double sigma);
 
 #endif // _Random_h_

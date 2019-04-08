@@ -1,0 +1,58 @@
+// For long term changes - Do not modify this definition directly
+//                     Instead modify and execute col_bld_gen.py and use the result.
+BuildingType
+    name = "BLD_COL_EXOBOT"
+    description = "BLD_COL_EXOBOT_DESC"
+    buildcost = 70 * [[COLONY_UPKEEP_MULTIPLICATOR]] * [[BUILDING_COST_MULTIPLIER]]
+    buildtime = 5
+    tags = [ "SP_EXOBOT" "CTRL_ALWAYS_REPORT" ]
+    location = And [
+        Planet
+        OwnedBy empire = Source.Owner
+        Population high = 0
+        Not Planet environment = Uninhabitable species = "SP_EXOBOT"
+        Not Contains Building name = "BLD_COL_EXOBOT"
+        // no existing Exobot colony required!
+    ]
+    EnqueueLocation = And [
+        Planet
+        OwnedBy empire = Source.Owner
+        Population high = 0
+        Not Planet environment = Uninhabitable species = "SP_EXOBOT"
+        Not Contains Building name = "BLD_COL_EXOBOT"
+        Not Enqueued type = Building name = "BLD_COL_EXOBOT"
+        // no existing Exobot colony required!
+    ]
+    effectsgroups = [
+        [[LIFECYCLE_MANIP_POPULATION_EFFECTS("SP_EXOBOT")]]
+        
+        EffectsGroup
+            scope = And [
+                Object id = Source.PlanetID
+                Planet
+            ]
+            activation = Turn low = Source.CreationTurn + 1 high = Source.CreationTurn + 1
+            effects = [
+                GenerateSitRepMessage
+                    message = "SITREP_NEW_COLONY_ESTABLISHED"
+                    label = "SITREP_NEW_COLONY_ESTABLISHED_LABEL"
+                    icon = "icons/species/robotic-01.png"
+                    parameters = [
+                        tag = "species" data = "SP_EXOBOT"
+                        tag = "planet" data = Target.ID
+                    ]
+                    empire = Source.Owner
+            ]
+            
+        EffectsGroup
+            scope = Source
+            activation = Turn low = Source.CreationTurn + 2
+            effects = Destroy
+    ]
+    icon = "icons/species/robotic-01.png"
+
+#include "/scripting/common/misc.macros"
+#include "/scripting/common/upkeep.macros"
+#include "/scripting/common/priorities.macros"
+#include "/scripting/common/base_prod.macros"
+#include "/scripting/species/common/population.macros"

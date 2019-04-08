@@ -6,12 +6,13 @@
 #include "Meter.h"
 #include "System.h"
 #include "Special.h"
+#include "Pathfinder.h"
 #include "Universe.h"
 #include "Predicates.h"
+#include "Enums.h"
 
 #include <stdexcept>
 #include <boost/lexical_cast.hpp>
-
 
 // static(s)
 const int INVALID_OBJECT_ID      = -1;
@@ -22,61 +23,48 @@ const int       UniverseObject::INVALID_OBJECT_AGE = -(1 << 30) - 1;  // using b
 const int       UniverseObject::SINCE_BEFORE_TIME_AGE = (1 << 30) + 1;
 
 UniverseObject::UniverseObject() :
-    StateChangedSignal(blocking_combiner<boost::signals2::optional_last_value<void> >(GetUniverse().UniverseObjectSignalsInhibited())),
-    m_name(""),
-    m_id(INVALID_OBJECT_ID),
+    StateChangedSignal(blocking_combiner<boost::signals2::optional_last_value<void>>(
+        GetUniverse().UniverseObjectSignalsInhibited())),
     m_x(INVALID_POSITION),
     m_y(INVALID_POSITION),
-    m_owner_empire_id(ALL_EMPIRES),
-    m_system_id(INVALID_OBJECT_ID),
-    m_meters(),
-    m_created_on_turn(INVALID_GAME_TURN)
-{
-    m_created_on_turn = CurrentTurn();
-}
+    m_created_on_turn(CurrentTurn() )
+{}
 
 UniverseObject::UniverseObject(const std::string name, double x, double y) :
-    StateChangedSignal(blocking_combiner<boost::signals2::optional_last_value<void> >(GetUniverse().UniverseObjectSignalsInhibited())),
+    StateChangedSignal(blocking_combiner<boost::signals2::optional_last_value<void>>(
+        GetUniverse().UniverseObjectSignalsInhibited())),
     m_name(name),
-    m_id(INVALID_OBJECT_ID),
     m_x(x),
     m_y(y),
-    m_owner_empire_id(ALL_EMPIRES),
-    m_system_id(INVALID_OBJECT_ID),
-    m_meters(),
-    m_created_on_turn(INVALID_GAME_TURN)
-{
-    m_created_on_turn = CurrentTurn();
-}
+    m_created_on_turn(CurrentTurn() )
+{}
 
 UniverseObject::~UniverseObject()
 {}
 
-void UniverseObject::Copy(TemporaryPtr<const UniverseObject> copied_object, Visibility vis,
-                          const std::set<std::string>& visible_specials)
+void UniverseObject::Copy(std::shared_ptr<const UniverseObject> copied_object,
+                          Visibility vis, const std::set<std::string>& visible_specials)
 {
-    if (copied_object == this)
+    if (copied_object.get() == this)
         return;
     if (!copied_object) {
         ErrorLogger() << "UniverseObject::Copy passed a null object";
         return;
     }
 
-    std::map<MeterType, Meter> censored_meters = copied_object->CensoredMeters(vis);
-    for (std::map<MeterType, Meter>::const_iterator it = copied_object->m_meters.begin();
-         it != copied_object->m_meters.end(); ++it)
-    {
-        MeterType type = it->first;
+    auto censored_meters = copied_object->CensoredMeters(vis);
+    for (const auto& entry : copied_object->m_meters) {
+        MeterType type = entry.first;
 
         // get existing meter in this object, or create a default one
-        std::map<MeterType, Meter>::iterator m_meter_it = m_meters.find(type);
+        auto m_meter_it = m_meters.find(type);
         bool meter_already_known = (m_meter_it != m_meters.end());
         if (!meter_already_known)
             m_meters[type]; // default initialize to (0, 0).  Alternative: = Meter(Meter::INVALID_VALUE, Meter::INVALID_VALUE);*/
         Meter& this_meter = m_meters[type];
 
         // if there is an update to meter from censored meters, update this object's copy
-        std::map<MeterType, Meter>::const_iterator censored_it = censored_meters.find(type);
+        auto censored_it = censored_meters.find(type);
         if (censored_it != censored_meters.end()) {
             const Meter& copied_object_meter = censored_it->second;
 
@@ -84,7 +72,7 @@ void UniverseObject::Copy(TemporaryPtr<const UniverseObject> copied_object, Visi
                 // have no previous info, so just use whatever is given
                 this_meter = copied_object_meter;
 
-            } else if (meter_already_known) {
+            } else {
                 // don't want to override legit meter history with sentinel values used for insufficiently visible objects
                 if (copied_object_meter.Initial() != Meter::LARGE_VALUE ||
                     copied_object_meter.Current() != Meter::LARGE_VALUE)
@@ -103,11 +91,9 @@ void UniverseObject::Copy(TemporaryPtr<const UniverseObject> copied_object, Visi
         this->m_y =                     copied_object->m_y;
 
         this->m_specials.clear();
-        for (std::map<std::string, std::pair<int, float> >::const_iterator copied_special_it = copied_object->m_specials.begin();
-             copied_special_it != copied_object->m_specials.end(); ++copied_special_it)
-        {
-            if (visible_specials.find(copied_special_it->first) != visible_specials.end())
-            { this->m_specials[copied_special_it->first] = copied_special_it->second; }
+        for (const auto& entry_special : copied_object->m_specials) {
+            if (visible_specials.count(entry_special.first))
+                this->m_specials[entry_special.first] = entry_special.second;
         }
 
         if (vis >= VIS_PARTIAL_VISIBILITY) {
@@ -153,21 +139,21 @@ int UniverseObject::Owner() const
 int UniverseObject::SystemID() const
 { return m_system_id; }
 
-const std::map<std::string, std::pair<int, float> >& UniverseObject::Specials() const
+const std::map<std::string, std::pair<int, float>>& UniverseObject::Specials() const
 { return m_specials; }
 
 bool UniverseObject::HasSpecial(const std::string& name) const
-{ return m_specials.find(name) != m_specials.end(); }
+{ return m_specials.count(name); }
 
 int UniverseObject::SpecialAddedOnTurn(const std::string& name) const {
-    std::map<std::string, std::pair<int, float> >::const_iterator it = m_specials.find(name);
+    auto it = m_specials.find(name);
     if (it == m_specials.end())
         return INVALID_GAME_TURN;
     return it->second.first;
 }
 
 float UniverseObject::SpecialCapacity(const std::string& name) const {
-    std::map<std::string, std::pair<int, float> >::const_iterator it = m_specials.find(name);
+    auto it = m_specials.find(name);
     if (it == m_specials.end())
         return 0.0f;
     return it->second.second;
@@ -182,8 +168,8 @@ bool UniverseObject::HasTag(const std::string& name) const
 UniverseObjectType UniverseObject::ObjectType() const
 { return INVALID_UNIVERSE_OBJECT_TYPE; }
 
-std::string UniverseObject::Dump() const {
-    TemporaryPtr<const System> system = GetSystem(this->SystemID());
+std::string UniverseObject::Dump(unsigned short ntabs) const {
+    auto system = GetSystem(this->SystemID());
 
     std::stringstream os;
 
@@ -198,20 +184,20 @@ std::string UniverseObject::Dump() const {
             os << "  at: " << sys_name;
     } else {
         os << "  at: (" << this->X() << ", " << this->Y() << ")";
-        int near_id = GetUniverse().NearestSystemTo(this->X(), this->Y());
-        TemporaryPtr<const System> system = GetSystem(near_id);
-        if (system) {
-            const std::string& sys_name = system->Name();
+        int near_id = GetPathfinder()->NearestSystemTo(this->X(), this->Y());
+        auto near_system = GetSystem(near_id);
+        if (near_system) {
+            const std::string& sys_name = near_system->Name();
             if (sys_name.empty())
-                os << " nearest (System " << system->ID() << ")";
+                os << " nearest (System " << near_system->ID() << ")";
             else
-                os << " nearest " << system->Name();
+                os << " nearest " << near_system->Name();
         }
     }
     if (Unowned()) {
         os << " owner: (Unowned) ";
     } else {
-        std::string empire_name = Empires().GetEmpireName(m_owner_empire_id);
+        const std::string& empire_name = Empires().GetEmpireName(m_owner_empire_id);
         if (!empire_name.empty())
             os << " owner: " << empire_name;
         else
@@ -219,12 +205,12 @@ std::string UniverseObject::Dump() const {
     }
     os << " created on turn: " << m_created_on_turn
        << " specials: ";
-    for (std::map<std::string, std::pair<int, float> >::const_iterator it = m_specials.begin(); it != m_specials.end(); ++it)
-        os << "(" << it->first << ", " << it->second.first << ", " << it->second.second << ") ";
+    for (const auto& entry : m_specials)
+        os << "(" << entry.first << ", " << entry.second.first << ", " << entry.second.second << ") ";
     os << "  Meters: ";
-    for (std::map<MeterType, Meter>::const_iterator it = m_meters.begin(); it != m_meters.end(); ++it)
-        os << UserString(EnumToString(it->first))
-           << ": " << it->second.Dump() << "  ";
+    for (const auto& entry : m_meters)
+        os << entry.first
+           << ": " << entry.second.Dump() << "  ";
     return os.str();
 }
 
@@ -238,9 +224,7 @@ const std::set<int>& UniverseObject::ContainedObjectIDs() const
 std::set<int> UniverseObject::VisibleContainedObjectIDs(int empire_id) const {
     std::set<int> retval;
     const Universe& universe = GetUniverse();
-    const std::set<int>& contained_obj_ids = ContainedObjectIDs();
-    for (std::set<int>::const_iterator it = contained_obj_ids.begin(); it != contained_obj_ids.end(); ++it) {
-        int object_id = *it;
+    for (int object_id : ContainedObjectIDs()) {
         if (universe.GetObjectVisibilityByEmpire(object_id, empire_id) >= VIS_BASIC_VISIBILITY)
             retval.insert(object_id);
     }
@@ -257,14 +241,14 @@ bool UniverseObject::ContainedBy(int object_id) const
 { return false; }
 
 const Meter* UniverseObject::GetMeter(MeterType type) const {
-    std::map<MeterType, Meter>::const_iterator it = m_meters.find(type);
+    auto it = m_meters.find(type);
     if (it != m_meters.end())
         return &(it->second);
-    return 0;
+    return nullptr;
 }
 
 float UniverseObject::CurrentMeterValue(MeterType type) const {
-    std::map<MeterType, Meter>::const_iterator it = m_meters.find(type);
+    auto it = m_meters.find(type);
     if (it == m_meters.end())
         throw std::invalid_argument("UniverseObject::CurrentMeterValue was passed a MeterType that this UniverseObject does not have: " + boost::lexical_cast<std::string>(type));
 
@@ -272,15 +256,12 @@ float UniverseObject::CurrentMeterValue(MeterType type) const {
 }
 
 float UniverseObject::InitialMeterValue(MeterType type) const {
-    std::map<MeterType, Meter>::const_iterator it = m_meters.find(type);
+    auto it = m_meters.find(type);
     if (it == m_meters.end())
         throw std::invalid_argument("UniverseObject::InitialMeterValue was passed a MeterType that this UniverseObject does not have: " + boost::lexical_cast<std::string>(type));
 
     return it->second.Initial();
 }
-
-float UniverseObject::NextTurnCurrentMeterValue(MeterType type) const
-{ return UniverseObject::CurrentMeterValue(type); }
 
 void UniverseObject::AddMeter(MeterType meter_type) {
     if (INVALID_METER_TYPE == meter_type)
@@ -290,10 +271,13 @@ void UniverseObject::AddMeter(MeterType meter_type) {
 }
 
 bool UniverseObject::Unowned() const
-{ return m_owner_empire_id == ALL_EMPIRES; }
+{ return Owner() == ALL_EMPIRES; }
 
-bool UniverseObject::OwnedBy(int empire) const 
-{ return empire != ALL_EMPIRES && empire == m_owner_empire_id; }
+bool UniverseObject::OwnedBy(int empire) const
+{ return empire != ALL_EMPIRES && empire == Owner(); }
+
+bool UniverseObject::HostileToEmpire(int empire_id) const
+{ return false; }
 
 Visibility UniverseObject::GetVisibility(int empire_id) const
 { return GetUniverse().GetObjectVisibilityByEmpire(this->ID(), empire_id); }
@@ -301,8 +285,8 @@ Visibility UniverseObject::GetVisibility(int empire_id) const
 const std::string& UniverseObject::PublicName(int empire_id) const
 { return m_name; }
 
-TemporaryPtr<UniverseObject> UniverseObject::Accept(const UniverseObjectVisitor& visitor) const
-{ return visitor.Visit(boost::const_pointer_cast<UniverseObject>(TemporaryFromThis()));}
+std::shared_ptr<UniverseObject> UniverseObject::Accept(const UniverseObjectVisitor& visitor) const
+{ return visitor.Visit(std::const_pointer_cast<UniverseObject>(shared_from_this())); }
 
 void UniverseObject::SetID(int id) {
     m_id = id;
@@ -320,7 +304,7 @@ void UniverseObject::Move(double x, double y)
 void UniverseObject::MoveTo(int object_id)
 { MoveTo(GetUniverseObject(object_id)); }
 
-void UniverseObject::MoveTo(TemporaryPtr<UniverseObject> object) {
+void UniverseObject::MoveTo(std::shared_ptr<UniverseObject> object) {
     if (!object) {
         ErrorLogger() << "UniverseObject::MoveTo : attempted to move to a null object.";
         return;
@@ -329,9 +313,6 @@ void UniverseObject::MoveTo(TemporaryPtr<UniverseObject> object) {
 }
 
 void UniverseObject::MoveTo(double x, double y) {
-    if (x < 0.0 || GetUniverse().UniverseWidth() < x || y < 0.0 || GetUniverse().UniverseWidth() < y)
-        DebugLogger() << "UniverseObject::MoveTo : Placing object \"" + m_name + "\" off the map area.";
-
     if (m_x == x && m_y == y)
         return;
 
@@ -342,16 +323,16 @@ void UniverseObject::MoveTo(double x, double y) {
 }
 
 Meter* UniverseObject::GetMeter(MeterType type) {
-    std::map<MeterType, Meter>::iterator it = m_meters.find(type);
+    auto it = m_meters.find(type);
     if (it != m_meters.end())
         return &(it->second);
-    return 0;
+    return nullptr;
 }
 
-void UniverseObject::BackPropegateMeters() {
+void UniverseObject::BackPropagateMeters() {
     for (MeterType i = MeterType(0); i != NUM_METER_TYPES; i = MeterType(i + 1))
         if (Meter* meter = this->GetMeter(i))
-            meter->BackPropegate();
+            meter->BackPropagate();
 }
 
 void UniverseObject::SetOwner(int id) {
@@ -376,7 +357,7 @@ void UniverseObject::AddSpecial(const std::string& name, float capacity)
 { m_specials[name] = std::make_pair(CurrentTurn(), capacity); }
 
 void UniverseObject::SetSpecialCapacity(const std::string& name, float capacity) {
-    if (m_specials.find(name) != m_specials.end())
+    if (m_specials.count(name))
         m_specials[name].second = capacity;
     else
         AddSpecial(name, capacity);
@@ -389,9 +370,8 @@ std::map<MeterType, Meter> UniverseObject::CensoredMeters(Visibility vis) const 
     std::map<MeterType, Meter> retval;
     if (vis >= VIS_PARTIAL_VISIBILITY) {
         retval = m_meters;
-    } else if (vis == VIS_BASIC_VISIBILITY && m_meters.find(METER_STEALTH) != m_meters.end()) {
+    } else if (vis == VIS_BASIC_VISIBILITY && m_meters.count(METER_STEALTH))
         retval[METER_STEALTH] = Meter(Meter::LARGE_VALUE, Meter::LARGE_VALUE);
-    }
     return retval;
 }
 
@@ -415,4 +395,3 @@ void UniverseObject::ResetPairedActiveMeters() {
 
 void UniverseObject::ClampMeters()
 { GetMeter(METER_STEALTH)->ClampCurrentToRange(); }
-

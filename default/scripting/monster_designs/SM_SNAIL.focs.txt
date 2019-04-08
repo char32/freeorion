@@ -1,0 +1,15 @@
+ShipDesign
+    name = "SM_SNAIL"
+    uuid = "08a58b08-0929-496d-84fc-fba91424ca21"
+    description = "SM_SNAIL_DESC"
+    hull = "SH_ASTEROID"
+    parts = [
+        "SR_WEAPON_3_1"
+        ""
+        "SR_JAWS"
+        ""
+        ""
+        ""
+    ]
+    icon = "icons/monsters/snail.png"
+    model = "seed"

@@ -1,0 +1,46 @@
+Species
+    name = "SP_MISIORLA"
+    description = "SP_MISIORLA_DESC"
+    gameplay_description = "SP_MISIORLA_GAMEPLAY_DESC"
+    CanProduceShips
+    CanColonize
+
+    tags = [ "ORGANIC" "BAD_INDUSTRY" "BAD_RESEARCH" "BAD_POPULATION" "ULTIMATE_WEAPONS" "BAD_SUPPLY" "BAD_DETECTION" "BAD_STEALTH" "CTRL_EXTINCT" "PEDIA_ORGANIC_SPECIES_CLASS" ]
+
+    foci = [
+        [[HAS_INDUSTRY_FOCUS]]
+        [[HAS_RESEARCH_FOCUS]]
+        [[HAS_GROWTH_FOCUS]]
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    effectsgroups = [
+        [[BAD_INDUSTRY]]
+        [[BAD_RESEARCH]]
+        [[AVERAGE_STOCKPILE]]
+
+        [[BAD_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[BAD_SUPPLY]]
+        [[BAD_DEFENSE_TROOPS]]
+
+        [[ULTIMATE_WEAPONS]]
+
+        [[BAD_DETECTION]]
+        [[BAD_STEALTH]]
+
+        [[BAD_FUEL]]
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[STANDARD_SHIP_SHIELDS]]
+    ]
+
+    [[TOXIC_STANDARD_EP]]
+
+    graphic = "icons/species/misiorla.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

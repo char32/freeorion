@@ -4,6 +4,7 @@
 #include "../Empire/Empire.h"
 #include "../Empire/EmpireManager.h"
 #include "../universe/Tech.h"
+#include "../universe/Enums.h"
 #include "../client/human/HumanClientApp.h"
 #include "TechTreeLayout.h"
 
@@ -21,9 +22,9 @@ namespace {
 /////////////////////////////////
 //// Implementation ////////////
 ///////////////////////////////
-class TechTreeArcsImplementation {
+class TechTreeArcs::Impl {
 public:
-    TechTreeArcsImplementation(const TechTreeLayout& layout, const std::set<std::string>& techs_to_show) :
+    Impl(const TechTreeLayout& layout, const std::set<std::string>& techs_to_show) :
         m_layout(layout)
     {
         FillArcBuffer(m_buffer, techs_to_show);
@@ -36,7 +37,9 @@ public:
         // redraw thicker highlight arcs
         GG::Clr arc_highlight_colour = GG::CLR_WHITE;   arc_highlight_colour.a = 127;
 
-
+        glEnable(GL_LINE_SMOOTH);
+        glDisable(GL_TEXTURE_2D);
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
         glEnableClientState(GL_VERTEX_ARRAY);
 
         // First draw transparent wide lines
@@ -70,7 +73,8 @@ public:
         glDrawArrays(GL_LINES, 0, m_highlight_buffer.size());
 
         glLineWidth(1.0);
-        glDisableClientState(GL_VERTEX_ARRAY);
+        glPopClientAttrib();
+        glEnable(GL_TEXTURE_2D);
     }
 
     // Fill m_highlight_buffer with the lines that should be highlighted
@@ -80,18 +84,16 @@ public:
         // We highlight lines that lead to techs that are queued for research
         if (const Empire* empire = GetEmpire(HumanClientApp::GetApp()->EmpireID())) {
             const ResearchQueue& queue = empire->GetResearchQueue();
-            for(std::map<std::string, std::set<std::string> >::const_iterator set_it = m_edges_to_show.begin();
-                set_it != m_edges_to_show.end(); ++set_it) {
+            for (const auto& edge : m_edges_to_show) {
+                std::string tech1 = edge.first;
+                const std::set<std::string>& heads = edge.second;
 
-                std::string tech1 = set_it->first;
-                const std::set<std::string>& heads = set_it->second;
-
-                for (std::set<std::string>::const_iterator it = heads.begin(); it != heads.end(); ++it) {
-                    if (queue.InQueue(*it) && (queue.InQueue(tech1) || empire->GetTechStatus(tech1) == TS_COMPLETE)) {
+                for (const std::string& head : heads) {
+                    if (queue.InQueue(head) && (queue.InQueue(tech1) || empire->GetTechStatus(tech1) == TS_COMPLETE)) {
                         // FillArcBuffer will put lines whose both ends are in highlights
                         // into the buffer
                         highlights.insert(tech1);
-                        highlights.insert(*it);
+                        highlights.insert(head);
                     }
                 }
             }
@@ -101,7 +103,7 @@ public:
 
 private:
     const TechTreeLayout& m_layout;
-    std::map<std::string, std::set<std::string> > m_edges_to_show;
+    std::map<std::string, std::set<std::string>> m_edges_to_show;
 
     GG::GL2DVertexBuffer m_buffer;
     GG::GL2DVertexBuffer m_highlight_buffer;
@@ -109,21 +111,17 @@ private:
     /// Fills \a buffer with the ends points for the lines that connect
     /// technologies in \a techs
     void FillArcBuffer(GG::GL2DVertexBuffer& buffer, const std::set<std::string>& techs) {
-        for (std::set<std::string>::const_iterator it = techs.begin(); it != techs.end(); ++it) {
-
-            const std::vector<TechTreeLayout::Edge*> edges = m_layout.GetOutEdges(*it);
+        for (const std::string& tech_name : techs) {
+            const std::vector<TechTreeLayout::Edge*> edges = m_layout.GetOutEdges(tech_name);
             //prerequisite edge
-            for (std::vector<TechTreeLayout::Edge*>::const_iterator edge = edges.begin();
-                 edge != edges.end(); edge++)
-            {
-                std::vector<std::pair<double, double> > points;
-                const std::string& from = (*edge)->GetTechFrom();
-                const std::string& to   = (*edge)->GetTechTo();
+            for (TechTreeLayout::Edge* edge : edges) {
+                std::vector<std::pair<double, double>> points;
+                const std::string& from = edge->GetTechFrom();
+                const std::string& to   = edge->GetTechTo();
                 // Do not show lines leading to techs
                 // we are not showing
-                if (techs.find(to) == techs.end()) {
+                if (!techs.count(to))
                     continue;
-                }
                 // Remember what edges we are showing so
                 // we can eventually highlight them
                 m_edges_to_show[from].insert(to);
@@ -131,7 +129,7 @@ private:
                     ErrorLogger() << "TechTreeArcs::FillArcBuffer missing arc endpoint tech " << from << "->" << to;
                     continue;
                 }
-                (*edge)->ReadPoints(points);
+                edge->ReadPoints(points);
                 // To be able to draw all the lines in one call,
                 // we will draw the with GL_LINES, which means all
                 // vertices except the first and the last must occur twice
@@ -145,36 +143,24 @@ private:
     }
 };
 
-/////////////////////////////////
-//// Public interface //////////
-///////////////////////////////
-TechTreeArcs::TechTreeArcs() :
-    m_impl(0)
-{}
+
+TechTreeArcs::TechTreeArcs() = default;
 
 TechTreeArcs::TechTreeArcs(const TechTreeLayout& layout, const std::set<std::string>& techs_to_show) :
-    m_impl(new TechTreeArcsImplementation(layout, techs_to_show))
+    m_impl(new Impl(layout, techs_to_show))
 {}
 
-TechTreeArcs::~TechTreeArcs() {
-    if (m_impl != 0) {
-        delete m_impl;
-    }
-    m_impl = 0;
+TechTreeArcs::~TechTreeArcs() = default;
+
+void TechTreeArcs::Render(double scale) {
+    if (m_impl)
+        m_impl->Render(scale);
 }
 
-void TechTreeArcs::Render(double scale)
-{ m_impl->Render(scale); }
-
-void TechTreeArcs::Reset()
-{ m_impl = 0; }
+void TechTreeArcs::Reset() {
+    m_impl.reset();
+}
 
 void TechTreeArcs::Reset(const TechTreeLayout& layout, const std::set< std::string >& techs_to_show) {
-    if (m_impl != 0) {
-        delete m_impl;
-        m_impl = 0;
-    }
-    m_impl = new TechTreeArcsImplementation(layout, techs_to_show);
+    m_impl.reset(new Impl(layout, techs_to_show));
 }
-
-

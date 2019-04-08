@@ -35,8 +35,6 @@
 
 namespace GG {
 
-struct SetMarginAction;
-
 /** \brief An invisible Wnd subclass that arranges its child Wnds.
 
     A Layout consists of a grid of cells.  A cell may have at most one Wnd
@@ -110,7 +108,7 @@ public:
     //@}
 
     /** \name Accessors */ ///@{
-    virtual Pt MinUsableSize() const;
+    Pt MinUsableSize() const override;
 
     std::size_t      Rows() const;                             ///< returns the number of rows in the layout
     std::size_t      Columns() const;                          ///< returns the number of columns in the layout
@@ -121,11 +119,11 @@ public:
     double           ColumnStretch(std::size_t column) const;  ///< returns the stretch factor for column \a column.  Note that \a column is not range-checked.
     Y                MinimumRowHeight(std::size_t row) const;  ///< returns the minimum height allowed for row \a row.  Note that \a row is not range-checked.
     X                MinimumColumnWidth(std::size_t column) const; ///< returns the minimum height allowed for column \a column.  Note that \a column is not range-checked.
-    std::vector<std::vector<const Wnd*> >
+    std::vector<std::vector<const Wnd*>>
                      Cells() const;                            ///< returns a matrix of the Wnds that can be found in each cell
-    std::vector<std::vector<Rect> >
+    std::vector<std::vector<Rect>>
                      CellRects() const;                        ///< returns a matrix of rectangles in screen space that cover the cells in which child Wnds are placed
-    std::vector<std::vector<Rect> >
+    std::vector<std::vector<Rect>>
                      RelativeCellRects() const;                ///< returns a matrix of rectangles in layout client space that cover the cells in which child Wnds are placed
 
     /** Returns true iff this layout will render an outline of itself; this is
@@ -139,16 +137,16 @@ public:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void StartingChildDragDrop(const Wnd* wnd, const Pt& offset);
-    virtual void CancellingChildDragDrop(const std::vector<const Wnd*>& wnds);
-    virtual void ChildrenDraggedAway(const std::vector<Wnd*>& wnds, const Wnd* destination);
-    virtual void SizeMove(const Pt& ul, const Pt& lr);
-    virtual void Render();
+    void StartingChildDragDrop(const Wnd* wnd, const Pt& offset) override;
+    void CancellingChildDragDrop(const std::vector<const Wnd*>& wnds) override;
+    void ChildrenDraggedAway(const std::vector<Wnd*>& wnds, const Wnd* destination) override;
+    void SizeMove(const Pt& ul, const Pt& lr) override;
+    void Render() override;
 
     /** Inserts \a w into the layout in the indicated cell, expanding the
         layout grid as necessary.  \throw GG::Layout::AttemptedOverwrite
         Throws if there is already a Wnd in the given cell. */
-    void Add(Wnd* wnd, std::size_t row, std::size_t column, Flags<Alignment> alignment = ALIGN_NONE);
+    void Add(std::shared_ptr<Wnd> wnd, std::size_t row, std::size_t column, Flags<Alignment> alignment = ALIGN_NONE);
 
     /** Inserts \a w into the layout, covering the indicated cell(s),
         expanding the layout grid as necessary.  The num_rows and num_columns
@@ -157,7 +155,7 @@ public:
         Note that \a num_rows and \a num_columns must be positive, though this
         is not checked. \throw GG::Layout::AttemptedOverwrite Throws if there
         is already a Wnd in one of the given cells. */
-    void Add(Wnd* wnd, std::size_t row, std::size_t column, std::size_t num_rows, std::size_t num_columns, Flags<Alignment> alignment = ALIGN_NONE);
+    void Add(std::shared_ptr<Wnd> wnd, std::size_t row, std::size_t column, std::size_t num_rows, std::size_t num_columns, Flags<Alignment> alignment = ALIGN_NONE);
 
     /** Removes \a w from the layout, recalculating the layout as needed.
         Note that this causes the layout to relinquish responsibility for \a
@@ -239,9 +237,19 @@ public:
 
 protected:
     /** \name Mutators */ ///@{
-    virtual void MouseWheel(const Pt& pt, int move, Flags<ModKey> mod_keys);
-    virtual void KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
-    virtual void KeyRelease(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
+    void MouseWheel(const Pt& pt, int move, Flags<ModKey> mod_keys) override;
+    void KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys) override;
+    void KeyRelease(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys) override;
+
+    virtual void DoLayout(Pt ul, Pt lr);
+
+    /** Redo the layout.  This is called internally when something changes and
+        it needs to redo the layout.
+
+        Bug:  This does nothing if the size has not changed.  Fixing it to use
+        call DoLayout() even when the size has not changed breaks all text boxes.
+    */
+    virtual void RedoLayout();
     //@}
 
 private:
@@ -276,10 +284,9 @@ private:
     X      TotalMinWidth() const;
     Y      TotalMinHeight() const;
     void   ValidateAlignment(Flags<Alignment>& alignment);
-    void   RedoLayout();
-    void   ChildSizeOrMinSizeOrMaxSizeChanged();
+    void   ChildSizeOrMinSizeChanged();
 
-    std::vector<std::vector<Wnd*> > m_cells;
+    std::vector<std::vector<std::weak_ptr<Wnd>>>  m_cells;
     unsigned int                    m_border_margin;
     unsigned int                    m_cell_margin;
     std::vector<RowColParams>       m_row_params;
@@ -287,12 +294,11 @@ private:
     std::map<Wnd*, WndPosition>     m_wnd_positions;
     Pt                              m_min_usable_size;
     bool                            m_ignore_child_resize;
-    bool                            m_ignore_parent_resize;
+    bool                            m_stop_resize_recursion;
     bool                            m_render_outline;
     Clr                             m_outline_color;
 
     friend class Wnd;
-    friend struct SetMarginAction;
 };
 
 } // namespace GG

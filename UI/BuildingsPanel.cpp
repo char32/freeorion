@@ -4,7 +4,6 @@
 #include <GG/DrawUtil.h>
 #include <GG/StaticGraphic.h>
 
-#include "../util/Directories.h"
 #include "../util/i18n.h"
 #include "../util/Logger.h"
 #include "../util/OptionsDB.h"
@@ -12,6 +11,7 @@
 #include "../universe/Building.h"
 #include "../universe/Effect.h"
 #include "../universe/Planet.h"
+#include "../universe/Enums.h"
 #include "../Empire/Empire.h"
 #include "../client/human/HumanClientApp.h"
 #include "CUIControls.h"
@@ -19,7 +19,6 @@
 #include "MapWnd.h"
 #include "MultiIconValueIndicator.h"
 #include "MultiMeterStatusBar.h"
-#include "ShaderProgram.h"
 
 namespace {
     /** How big we want meter icons with respect to the current UI font size.
@@ -36,10 +35,9 @@ namespace {
         const ClientApp* app = ClientApp::GetApp();
         if (!app)
             return retval;
-        const OrderSet& orders = app->Orders();
-        for (OrderSet::const_iterator it = orders.begin(); it != orders.end(); ++it) {
-            if (boost::shared_ptr<ScrapOrder> order = boost::dynamic_pointer_cast<ScrapOrder>(it->second)) {
-                retval[order->ObjectID()] = it->first;
+        for (const auto& id_and_order : app->Orders()) {
+            if (auto order = std::dynamic_pointer_cast<ScrapOrder>(id_and_order.second)) {
+                retval[order->ObjectID()] = id_and_order.first;
             }
         }
         return retval;
@@ -50,11 +48,15 @@ namespace {
 }
 
 BuildingsPanel::BuildingsPanel(GG::X w, int columns, int planet_id) :
-    AccordionPanel(w),
+    AccordionPanel(w, GG::Y(ClientUI::Pts()*2)),
     m_planet_id(planet_id),
     m_columns(columns),
     m_building_indicators()
-{
+{}
+
+void BuildingsPanel::CompleteConstruction() {
+    AccordionPanel::CompleteConstruction();
+
     SetName("BuildingsPanel");
 
     if (m_columns < 1) {
@@ -62,26 +64,24 @@ BuildingsPanel::BuildingsPanel(GG::X w, int columns, int planet_id) :
         m_columns = 1;
     }
 
-    GG::Connect(m_expand_button->LeftClickedSignal, &BuildingsPanel::ExpandCollapseButtonPressed, this);
+    m_expand_button->LeftPressedSignal.connect(
+        boost::bind(&BuildingsPanel::ExpandCollapseButtonPressed, this));
 
     // get owner, connect its production queue changed signal to update this panel
-    TemporaryPtr<const UniverseObject> planet = GetUniverseObject(m_planet_id);
+    auto planet = GetUniverseObject(m_planet_id);
     if (planet) {
         if (const Empire* empire = GetEmpire(planet->Owner())) {
             const ProductionQueue& queue = empire->GetProductionQueue();
-            GG::Connect(queue.ProductionQueueChangedSignal, &BuildingsPanel::Refresh, this);
+            queue.ProductionQueueChangedSignal.connect(
+                boost::bind(&BuildingsPanel::RequirePreRender, this));
         }
     }
 
-    Refresh();
+    RequirePreRender();
 }
 
-BuildingsPanel::~BuildingsPanel() {
-    // delete building indicators
-    for (std::vector<BuildingIndicator*>::iterator it = m_building_indicators.begin(); it != m_building_indicators.end(); ++it)
-        delete *it;
-    m_building_indicators.clear();
-}
+BuildingsPanel::~BuildingsPanel()
+{}
 
 void BuildingsPanel::ExpandCollapse(bool expanded) {
     if (expanded == s_expanded_map[m_planet_id]) return; // nothing to do
@@ -94,37 +94,32 @@ void BuildingsPanel::Update() {
     //std::cout << "BuildingsPanel::Update" << std::endl;
 
     // remove old indicators
-    for (std::vector<BuildingIndicator*>::iterator it = m_building_indicators.begin(); it != m_building_indicators.end(); ++it) {
-        DetachChild(*it);
-        delete (*it);
-    }
+    for (auto& indicator : m_building_indicators)
+        DetachChild(indicator.get());
     m_building_indicators.clear();
 
-    TemporaryPtr<const Planet> planet = GetPlanet(m_planet_id);
+    auto planet = GetPlanet(m_planet_id);
     if (!planet) {
         ErrorLogger() << "BuildingsPanel::Update couldn't get planet with id " << m_planet_id;
         return;
     }
-    const std::set<int>& buildings = planet->BuildingIDs();
     int system_id = planet->SystemID();
 
     const int indicator_size = static_cast<int>(Value(Width() * 1.0 / m_columns));
 
     int this_client_empire_id = HumanClientApp::GetApp()->EmpireID();
-    const std::set<int>& this_client_known_destroyed_objects = GetUniverse().EmpireKnownDestroyedObjectIDs(this_client_empire_id);
-    const std::set<int>& this_client_stale_object_info = GetUniverse().EmpireStaleKnowledgeObjectIDs(this_client_empire_id);
+    const auto& this_client_known_destroyed_objects = GetUniverse().EmpireKnownDestroyedObjectIDs(this_client_empire_id);
+    const auto& this_client_stale_object_info = GetUniverse().EmpireStaleKnowledgeObjectIDs(this_client_empire_id);
 
     // get existing / finished buildings and use them to create building indicators
-    for (std::set<int>::const_iterator it = buildings.begin(); it != buildings.end(); ++it) {
-        int object_id = *it;
-
+    for (int object_id : planet->BuildingIDs()) {
         // skip known destroyed and stale info objects
-        if (this_client_known_destroyed_objects.find(object_id) != this_client_known_destroyed_objects.end())
+        if (this_client_known_destroyed_objects.count(object_id))
             continue;
-        if (this_client_stale_object_info.find(object_id) != this_client_stale_object_info.end())
+        if (this_client_stale_object_info.count(object_id))
             continue;
 
-        TemporaryPtr<const Building> building = GetBuilding(object_id);
+        auto building = GetBuilding(object_id);
         if (!building) {
             ErrorLogger() << "BuildingsPanel::Update couldn't get building with id: " << object_id << " on planet " << planet->Name();
             continue;
@@ -133,10 +128,10 @@ void BuildingsPanel::Update() {
         if (building->SystemID() != system_id || building->PlanetID() != m_planet_id)
             continue;
 
-        BuildingIndicator* ind = new BuildingIndicator(GG::X(indicator_size), object_id);
+        auto ind = GG::Wnd::Create<BuildingIndicator>(GG::X(indicator_size), object_id);
         m_building_indicators.push_back(ind);
 
-        GG::Connect(ind->RightClickedSignal,    BuildingRightClickedSignal);
+        ind->RightClickedSignal.connect(BuildingRightClickedSignal);
     }
 
     // get in-progress buildings
@@ -144,42 +139,51 @@ void BuildingsPanel::Update() {
     if (!empire)
         return;
 
-    const ProductionQueue& queue = empire->GetProductionQueue();
-
-    int queue_index = 0;
-    for (ProductionQueue::const_iterator queue_it = queue.begin(); queue_it != queue.end(); ++queue_it, ++queue_index) {
-        const ProductionQueue::Element elem = *queue_it;
-
+    int queue_index = -1;
+    for (const auto& elem : empire->GetProductionQueue()) {
+        ++queue_index;
+        //std::cout << "queue index: " << queue_index << " elem: " << elem.Dump() << std::endl;
         if (elem.item.build_type != BT_BUILDING) continue;  // don't show in-progress ships in BuildingsPanel...
         if (elem.location != m_planet_id) continue;         // don't show buildings located elsewhere
 
         double total_cost;
         int total_turns;
-        boost::tie(total_cost, total_turns) = empire->ProductionCostAndTime(elem);
+        double turn_spending = elem.allocated_pp;
+        std::tie(total_cost, total_turns) = empire->ProductionCostAndTime(elem);
 
         double progress = std::max(0.0f, empire->ProductionStatus(queue_index));
-        double turns_completed = total_turns * std::min<double>(1.0, progress / total_cost);
-        BuildingIndicator* ind = new BuildingIndicator(GG::X(indicator_size), elem.item.name,
-                                                       turns_completed, total_turns);
+        double turns_completed = progress / std::max(total_cost, 1.0);
+        auto ind = GG::Wnd::Create<BuildingIndicator>(GG::X(indicator_size), elem.item.name,
+                                                      turns_completed, total_turns, total_cost, turn_spending);
+
         m_building_indicators.push_back(ind);
     }
 }
 
+void BuildingsPanel::PreRender() {
+    AccordionPanel::PreRender();
+    RefreshImpl();
+}
+
 void BuildingsPanel::Refresh() {
+    RequirePreRender();
+}
+
+void BuildingsPanel::RefreshImpl() {
     Update();
     DoLayout();
 }
 
 void BuildingsPanel::EnableOrderIssuing(bool enable/* = true*/) {
-    for (std::vector<BuildingIndicator*>::iterator it = m_building_indicators.begin();
-         it != m_building_indicators.end(); ++it)
-    { (*it)->EnableOrderIssuing(enable); }
+    for (auto& indicator : m_building_indicators)
+    { indicator->EnableOrderIssuing(enable); }
 }
 
 void BuildingsPanel::ExpandCollapseButtonPressed()
 { ExpandCollapse(!s_expanded_map[m_planet_id]); }
 
 void BuildingsPanel::DoLayout() {
+    auto old_size = Size();
     AccordionPanel::DoLayout();
 
     int row = 0;
@@ -192,9 +196,7 @@ void BuildingsPanel::DoLayout() {
     // update size of panel and position and visibility of widgets
     if (!s_expanded_map[m_planet_id]) {
         int n = 0;
-        for (std::vector<BuildingIndicator*>::iterator it = m_building_indicators.begin(); it != m_building_indicators.end(); ++it) {
-            BuildingIndicator* ind = *it;
-
+        for (auto& ind : m_building_indicators) {
             const GG::Pt ul = GG::Pt(MeterIconSize().x * n, GG::Y0);
             const GG::Pt lr = ul + MeterIconSize();
 
@@ -202,16 +204,14 @@ void BuildingsPanel::DoLayout() {
                 ind->SizeMove(ul, lr);
                 AttachChild(ind);
             } else {
-                DetachChild(ind);
+                DetachChild(ind.get());
             }
             ++n;
         }
 
         height = m_expand_button->Height();
     } else {
-        for (std::vector<BuildingIndicator*>::iterator it = m_building_indicators.begin(); it != m_building_indicators.end(); ++it) {
-            BuildingIndicator* ind = *it;
-
+        for (auto& ind : m_building_indicators) {
             const GG::Pt ul = GG::Pt(GG::X(padding * (column + 1) + indicator_size * column), GG::Y(padding * (row + 1) + indicator_size * row));
             const GG::Pt lr = ul + GG::Pt(GG::X(indicator_size), GG::Y(indicator_size));
 
@@ -234,7 +234,7 @@ void BuildingsPanel::DoLayout() {
 
     if (m_building_indicators.empty()) {
         height = GG::Y(0);  // hide if empty
-        DetachChild(m_expand_button);
+        DetachChild(m_expand_button.get());
     } else {
         AttachChild(m_expand_button);
         m_expand_button->Show();
@@ -244,11 +244,11 @@ void BuildingsPanel::DoLayout() {
 
     Resize(GG::Pt(Width(), height));
 
-    Wnd::MoveChildUp(m_expand_button);
-
-    m_expand_button->MoveTo(GG::Pt(Width() - m_expand_button->Width(), GG::Y0));
-
     SetCollapsed(!s_expanded_map[m_planet_id]);
+
+    if (old_size != Size())
+        if (auto&& parent = Parent())
+            parent->RequirePreRender();
 }
 
 std::map<int, bool> BuildingsPanel::s_expanded_map;
@@ -256,46 +256,53 @@ std::map<int, bool> BuildingsPanel::s_expanded_map;
 /////////////////////////////////////
 //       BuildingIndicator         //
 /////////////////////////////////////
-boost::shared_ptr<ShaderProgram> BuildingIndicator::s_scanline_shader;
+ScanlineRenderer BuildingIndicator::s_scanline_shader;
 
 BuildingIndicator::BuildingIndicator(GG::X w, int building_id) :
     GG::Wnd(GG::X0, GG::Y0, w, GG::Y(Value(w)), GG::INTERACTIVE),
-    m_graphic(0),
-    m_scrap_indicator(0),
-    m_progress_bar(0),
-    m_building_id(building_id),
-    m_order_issuing_enabled(true)
+    m_building_id(building_id)
 {
-    if (TemporaryPtr<const Building> building = GetBuilding(m_building_id))
-        GG::Connect(building->StateChangedSignal,   &BuildingIndicator::Refresh,     this);
-    Refresh();
+    if (auto building = GetBuilding(m_building_id))
+        building->StateChangedSignal.connect(
+            boost::bind(&BuildingIndicator::RequirePreRender, this));
 }
 
 BuildingIndicator::BuildingIndicator(GG::X w, const std::string& building_type,
-                                     double turns_completed, double total_turns) :
+                                     double turns_completed, double total_turns, double total_cost, double turn_spending) :
     GG::Wnd(GG::X0, GG::Y0, w, GG::Y(Value(w)), GG::INTERACTIVE),
-    m_graphic(0),
-    m_scrap_indicator(0),
-    m_progress_bar(0),
-    m_building_id(INVALID_OBJECT_ID),
-    m_order_issuing_enabled(true)
+    m_building_id(INVALID_OBJECT_ID)
 {
-    boost::shared_ptr<GG::Texture> texture = ClientUI::BuildingIcon(building_type);
+    auto texture = ClientUI::BuildingIcon(building_type);
 
     const BuildingType* type = GetBuildingType(building_type);
     const std::string& desc = type ? type->Description() : "";
 
-    SetBrowseInfoWnd(boost::shared_ptr<GG::BrowseInfoWnd>(
-        new IconTextBrowseWnd(texture, UserString(building_type), UserString(desc))));
+    SetBrowseInfoWnd(GG::Wnd::Create<IconTextBrowseWnd>(
+        texture, UserString(building_type), UserString(desc)));
 
-    m_graphic = new GG::StaticGraphic(texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
-    AttachChild(m_graphic);
+    m_graphic = GG::Wnd::Create<GG::StaticGraphic>(texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
 
-    m_progress_bar = new MultiTurnProgressBar(total_turns, turns_completed, GG::LightColor(ClientUI::TechWndProgressBarBackgroundColor()),
-                                              ClientUI::TechWndProgressBarColor(), GG::LightColor(ClientUI::ResearchableTechFillColor()));
-    AttachChild(m_progress_bar);
+    float next_progress = turn_spending / std::max(1.0, total_cost);
 
-    Refresh();
+    m_progress_bar = GG::Wnd::Create<MultiTurnProgressBar>(total_turns,
+                                                           turns_completed,
+                                                           next_progress,
+                                                           GG::LightColor(ClientUI::TechWndProgressBarBackgroundColor()),
+                                                           ClientUI::TechWndProgressBarColor(),
+                                                           GG::LightColor(ClientUI::ResearchableTechFillColor()));
+
+}
+
+void BuildingIndicator::CompleteConstruction() {
+    GG::Wnd::CompleteConstruction();
+
+    if (m_building_id == INVALID_OBJECT_ID) {
+        AttachChild(m_graphic);
+        AttachChild(m_progress_bar);
+        RequirePreRender();
+    } else {
+        Refresh();
+    }
 }
 
 void BuildingIndicator::Render() {
@@ -308,71 +315,71 @@ void BuildingIndicator::Render() {
 
     // Scanlines for not currently-visible objects?
     int empire_id = HumanClientApp::GetApp()->EmpireID();
-    if (!s_scanline_shader || empire_id == ALL_EMPIRES || !GetOptionsDB().Get<bool>("UI.system-fog-of-war"))
+    if (empire_id == ALL_EMPIRES || !GetOptionsDB().Get<bool>("ui.map.scanlines.shown"))
         return;
     if (m_building_id == INVALID_OBJECT_ID)
         return;
     if (GetUniverse().GetObjectVisibilityByEmpire(m_building_id, empire_id) >= VIS_BASIC_VISIBILITY)
         return;
 
-    float fog_scanline_spacing = static_cast<float>(GetOptionsDB().Get<double>("UI.system-fog-of-war-spacing"));
-    s_scanline_shader->Use();
-    s_scanline_shader->Bind("scanline_spacing", fog_scanline_spacing);
-    glBegin(GL_POLYGON);
-        glColor(GG::CLR_WHITE);
-        glVertex(ul.x, ul.y);
-        glVertex(lr.x, ul.y);
-        glVertex(lr.x, lr.y);
-        glVertex(ul.x, lr.y);
-        glVertex(ul.x, ul.y);
-    glEnd();
-    s_scanline_shader->stopUse();
+    s_scanline_shader.StartUsing();
+
+    GLfloat verts[8];
+    verts[0] = Value(ul.x); verts[1] = Value(ul.y);
+    verts[2] = Value(lr.x); verts[3] = Value(ul.y);
+    verts[4] = Value(lr.x); verts[5] = Value(lr.y);
+    verts[6] = Value(ul.x); verts[7] = Value(lr.y);
+
+    glDisable(GL_TEXTURE_2D);
+    glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+    glVertexPointer(2, GL_FLOAT, 0, verts);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+    glPopClientAttrib();
+    glEnable(GL_TEXTURE_2D);
+
+    s_scanline_shader.StopUsing();
+}
+
+void BuildingIndicator::PreRender() {
+    GG::Wnd::PreRender();
+    Refresh();
 }
 
 void BuildingIndicator::Refresh() {
-    if (!s_scanline_shader && GetOptionsDB().Get<bool>("UI.system-fog-of-war")) {
-        boost::filesystem::path shader_path = GetRootDataDir() / "default" / "shaders" / "scanlines.frag";
-        std::string shader_text;
-        ReadFile(shader_path, shader_text);
-        s_scanline_shader = boost::shared_ptr<ShaderProgram>(
-            ShaderProgram::shaderProgramFactory("", shader_text));
-    }
+    SetBrowseModeTime(GetOptionsDB().Get<int>("ui.tooltip.delay"));
 
-    SetBrowseModeTime(GetOptionsDB().Get<int>("UI.tooltip-delay"));
-
-    TemporaryPtr<const Building> building = GetBuilding(m_building_id);
+    auto building = GetBuilding(m_building_id);
     if (!building)
         return;
 
     ClearBrowseInfoWnd();
 
-    if (m_graphic) {
-        delete m_graphic;
-        m_graphic = 0;
-    }
-    if (m_scrap_indicator) {
-        delete m_scrap_indicator;
-        m_scrap_indicator = 0;
-    }
+    DetachChildAndReset(m_graphic);
+    DetachChildAndReset(m_scrap_indicator);
 
     if (const BuildingType* type = GetBuildingType(building->BuildingTypeName())) {
-        boost::shared_ptr<GG::Texture> texture = ClientUI::BuildingIcon(type->Name());
-        m_graphic = new GG::StaticGraphic(texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
+        auto texture = ClientUI::BuildingIcon(type->Name());
+        m_graphic = GG::Wnd::Create<GG::StaticGraphic>(texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
         AttachChild(m_graphic);
 
         std::string desc = UserString(type->Description());
         if (building->GetMeter(METER_STEALTH))
             desc = UserString("METER_STEALTH") + boost::io::str(boost::format(": %3.1f\n\n") % building->GetMeter(METER_STEALTH)->Current()) + desc;
-        if (GetOptionsDB().Get<bool>("UI.autogenerated-effects-descriptions") && !type->Effects().empty())
-            desc += boost::io::str(FlexibleFormat(UserString("ENC_EFFECTS_STR")) % AutoGeneratedDescription(type->Effects()));
+        if (GetOptionsDB().Get<bool>("resource.effects.description.shown") && !type->Effects().empty())
+            desc += "\n" + Dump(type->Effects());
 
-        SetBrowseInfoWnd(boost::shared_ptr<GG::BrowseInfoWnd>(
-            new IconTextBrowseWnd(texture, UserString(type->Name()), desc)));
+        SetBrowseInfoWnd(GG::Wnd::Create<IconTextBrowseWnd>(
+            texture, UserString(type->Name()), desc));
     }
 
     if (building && building->OrderedScrapped()) {
-        boost::shared_ptr<GG::Texture> scrap_texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "scrapped.png", true);
-        m_scrap_indicator = new GG::StaticGraphic(scrap_texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
+        auto scrap_texture = ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "scrapped.png", true);
+        m_scrap_indicator = GG::Wnd::Create<GG::StaticGraphic>(scrap_texture, GG::GRAPHIC_FITGRAPHIC | GG::GRAPHIC_PROPSCALE);
         AttachChild(m_scrap_indicator);
     }
 
@@ -396,67 +403,49 @@ void BuildingIndicator::RClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys)
     // queued production item, and that the owner of the building is this
     // client's player's empire
     int empire_id = HumanClientApp::GetApp()->EmpireID();
-    TemporaryPtr<Building> building = GetBuilding(m_building_id);
+    auto building = GetBuilding(m_building_id);
     if (!building)
         return;
 
-    const MapWnd* map_wnd = ClientUI::GetClientUI()->GetMapWnd();
+    const auto& map_wnd = ClientUI::GetClientUI()->GetMapWnd();
     if (ClientPlayerIsModerator() && map_wnd->GetModeratorActionSetting() != MAS_NoAction) {
         RightClickedSignal(m_building_id);  // response handled in MapWnd
         return;
     }
 
-    GG::MenuItem menu_contents;
+    auto scrap_building_action = [this, empire_id]() {
+        HumanClientApp::GetApp()->Orders().IssueOrder(std::make_shared<ScrapOrder>(empire_id, m_building_id));};
+    auto un_scrap_building_action = [building]() {
+        // find order to scrap this building, and recind it
+        auto pending_scrap_orders = PendingScrapOrders();
+        auto it = pending_scrap_orders.find(building->ID());
+        if (it != pending_scrap_orders.end())
+            HumanClientApp::GetApp()->Orders().RescindOrder(it->second);
+    };
 
-    if (!building->OrderedScrapped()) {
-        // create popup menu with "Scrap" option
-        menu_contents.next_level.push_back(GG::MenuItem(UserString("ORDER_BUIDLING_SCRAP"), 3, false, false));
-    } else {
-        // create popup menu with "Cancel Scrap" option
-        menu_contents.next_level.push_back(GG::MenuItem(UserString("ORDER_CANCEL_BUIDLING_SCRAP"), 4, false, false));
+    auto popup = GG::Wnd::Create<CUIPopupMenu>(pt.x, pt.y);
+
+    if (m_order_issuing_enabled) {
+        if (!building->OrderedScrapped()) {
+            // create popup menu with "Scrap" option
+            popup->AddMenuItem(GG::MenuItem(UserString("ORDER_BUIDLING_SCRAP"), false, false, scrap_building_action));
+        } else {
+            // create popup menu with "Cancel Scrap" option
+            popup->AddMenuItem(GG::MenuItem(UserString("ORDER_CANCEL_BUIDLING_SCRAP"), false, false, un_scrap_building_action));
+        }
     }
 
     const std::string& building_type = building->BuildingTypeName();
     const BuildingType* bt = GetBuildingType(building_type);
     if (bt) {
-        std::string popup_label = boost::io::str(FlexibleFormat(UserString("ENC_LOOKUP")) % UserString(building_type));
-        menu_contents.next_level.push_back(GG::MenuItem(popup_label, 5, false, false));
-    }
-
-
-    GG::PopupMenu popup(pt.x, pt.y, ClientUI::GetFont(), menu_contents, ClientUI::TextColor(),
-                        ClientUI::WndOuterBorderColor(), ClientUI::WndColor(), ClientUI::EditHiliteColor());
-    if (popup.Run()) {
-        switch (popup.MenuID()) {
-        case 3: { // scrap building
-            if (m_order_issuing_enabled)
-                HumanClientApp::GetApp()->Orders().IssueOrder(
-                    OrderPtr(new ScrapOrder(empire_id, m_building_id)));
-            break;
-        }
-
-        case 4: { // un-scrap building
-            if (!m_order_issuing_enabled)
-                break;
-
-            // find order to scrap this building, and recind it
-            std::map<int, int> pending_scrap_orders = PendingScrapOrders();
-            std::map<int, int>::const_iterator it = pending_scrap_orders.find(building->ID());
-            if (it != pending_scrap_orders.end()) {
-                HumanClientApp::GetApp()->Orders().RecindOrder(it->second);
-            break;
-            }
-        }
-
-        case 5: { // pedia lookup building type
+        auto pedia_lookup_building_type_action = [building_type]() {
             ClientUI::GetClientUI()->ZoomToBuildingType(building_type);
-            break;
-        }
-
-        default:
-            break;
-        }
+        };
+        std::string popup_label = boost::io::str(FlexibleFormat(UserString("ENC_LOOKUP")) % UserString(building_type));
+        popup->AddMenuItem(GG::MenuItem(popup_label, false, false, pedia_lookup_building_type_action));
     }
+
+    popup->Run();
 }
 
 void BuildingIndicator::EnableOrderIssuing(bool enable/* = true*/)

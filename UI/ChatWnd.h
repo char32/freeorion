@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _ChatWnd_h_
 #define _ChatWnd_h_
 
@@ -15,20 +14,25 @@ class MessageWndEdit;
 
 class MessageWnd : public CUIWnd {
 public:
-    //! \name Structors //@{
-    MessageWnd(const std::string& config_name = "");
+    MessageWnd(GG::Flags<GG::WndFlag> flags, const std::string& config_name = "");
+    void CompleteConstruction() override;
     //@}
 
     //! \name Mutators //@{
-    void            HandlePlayerChatMessage(const std::string& text, int sender_player_id, int recipient_player_id);
-    void            HandlePlayerStatusUpdate(Message::PlayerStatus player_status, int about_player_id);
-    void            HandleTurnPhaseUpdate(Message::TurnProgressPhase phase_id);
+    void SizeMove(const GG::Pt& ul, const GG::Pt& lr) override;
+
+    void PreRender() override;
+
+    void            HandlePlayerChatMessage(const std::string& text,
+                                            const std::string& player_name,
+                                            GG::Clr text_color,
+                                            const boost::posix_time::ptime& timestamp,
+                                            int recipient_player_id);
+    void            HandleTurnPhaseUpdate(Message::TurnProgressPhase phase_id, bool prefixed = false);
     void            HandleGameStatusUpdate(const std::string& text);
     void            HandleLogMessage(const std::string& text);
     void            Clear();
     void            OpenForInput();
-
-    virtual void    SizeMove(const GG::Pt& ul, const GG::Pt& lr);
     //@}
 
     /** emitted when the edit gains focus.  Keyboard accelerators elsewhere
@@ -40,15 +44,15 @@ public:
     mutable boost::signals2::signal<void ()> ClosingSignal;
 
 private:
-    virtual void    CloseClicked();
+    void CloseClicked() override;
 
     void            DoLayout();
     void            MessageEntered();
     void            MessageHistoryUpRequested();
     void            MessageHistoryDownRequested();
 
-    GG::MultiEdit*          m_display;
-    MessageWndEdit*         m_edit;
+    std::shared_ptr<GG::MultiEdit>          m_display;
+    std::shared_ptr<MessageWndEdit>         m_edit;
     int                     m_display_show_time;
     std::deque<std::string> m_history;
     int                     m_history_position;

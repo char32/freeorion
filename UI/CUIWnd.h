@@ -1,5 +1,3 @@
-// -*- C++ -*-
-//CUIWnd.h
 #ifndef _CUIWnd_h_
 #define _CUIWnd_h_
 
@@ -8,33 +6,28 @@
 #include <GG/Wnd.h>
 #include <GG/WndEvent.h>
 #include <GG/GLClientAndServerBuffer.h>
+#include <unordered_set>
 
 
 /** a simple minimize/restore button that toggles its appearance between the styles for minimize and restore*/
 class CUI_MinRestoreButton : public GG::Button {
 public:
    /** the two modes of operation of this class of button: as a minimize button or as a restore button */
-   enum Mode {
-       MIN_BUTTON,
-       RESTORE_BUTTON
+   enum class Mode {
+       MINIMIZE,
+       RESTORE
    };
 
-   CUI_MinRestoreButton(); ///< basic ctor
+   CUI_MinRestoreButton();
 
    Mode GetMode() const {return m_mode;} ///< returns the current mode of this button (is it a minimize button or a restore button?)
 
-   void Render();
+   void Render() override;
 
    void Toggle(); ///< toggles modes between MIN_BUTTON and RESTORE_BUTTON
 
 private:
    Mode m_mode;
-};
-
-/** a basic X-shaped close button. */
-class CUI_CloseButton : public GG::Button {
-public:
-   CUI_CloseButton();
 };
 
 /** a basic Pin-shaped pin button. */
@@ -80,7 +73,7 @@ extern GG::WndFlag PINABLE;        ///< allows the window to be pinned
       is called before the window's memory is deallocated after the user clicks the close button.
       OnMinimize() is called before the window becomes minimized after clicking the Minimize button.
       OnResize() is called as part of a response to the resize signal emitted via GG::Wnd.  Users
-      are advised to use this function instead of making a slot connection with GG::Connect to respond
+      are advised to use this function instead of making a slot connection with boost::signals to respond
       to the resize signal.
 */
 class CUIWnd : public GG::Wnd {
@@ -90,7 +83,7 @@ public:
       * causes the window to save its position and other properties to the
       * OptionsDB under that name, if no other windows are currently using that
       * name. */
-    CUIWnd(const std::string& t,
+    CUIWnd(const std::string& wnd_name,
            GG::X x, GG::Y y, GG::X w, GG::Y h,
            GG::Flags<GG::WndFlag> flags = GG::INTERACTIVE,
            const std::string& config_name = "",
@@ -100,34 +93,54 @@ public:
       * position, either call InitSizeMove() if the window is positioned by
       * something else or override CalculatePosition() then call
       * ResetDefaultPosition() for windows that position themselves. */
-    CUIWnd(const std::string& t,
+    CUIWnd(const std::string& wnd_name,
            GG::Flags<GG::WndFlag> flags = GG::INTERACTIVE,
            const std::string& config_name = "",
            bool visible = true);
 
+    void CompleteConstruction() override;
     /** Virtual destructor. */
     virtual ~CUIWnd();
     //@}
 
     //! \name Accessors //@{
     bool            Minimized() const {return m_minimized;} //!< returns true if window is minimized
-    virtual GG::Pt  ClientUpperLeft() const;
-    virtual GG::Pt  ClientLowerRight() const;
-    virtual bool    InWindow(const GG::Pt& pt) const;
+
+    GG::Pt ClientUpperLeft() const override;
+
+    GG::Pt ClientLowerRight() const override;
+
+    bool InWindow(const GG::Pt& pt) const override;
+
+    GG::X           LeftBorder() const;                 //!< the distance on the left side between the outer edge of the window and the inner border
+    GG::Y           TopBorder() const;                  //!< the distance at the top between the outer edge of the window and the inner border
+    GG::X           RightBorder() const;                //!< the distance on the right side between the outer edge of the window and the inner border
+    GG::Y           BottomBorder() const;               //!< the distance at the bottom between the outer edge of the window and the inner border
     //@}
 
     //! \name Mutators //@{
-    virtual void    SizeMove(const GG::Pt& ul, const GG::Pt& lr);
-    virtual void    Render();
-    virtual void    LButtonDown(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    LDrag(const GG::Pt& pt, const GG::Pt& move, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    LButtonUp(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    LClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) {return LButtonUp(pt, mod_keys);}
-    virtual void    MouseEnter(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    MouseHere(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    MouseLeave();
-    virtual void    Hide(bool children = true);
-    virtual void    Show(bool children = true);
+    void SizeMove(const GG::Pt& ul, const GG::Pt& lr) override;
+
+    void Render() override;
+
+    void LButtonDown(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void LDrag(const GG::Pt& pt, const GG::Pt& move, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void LButtonUp(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void LClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override
+    { return LButtonUp(pt, mod_keys); }
+
+    void MouseEnter(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void MouseHere(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void MouseLeave() override;
+
+    void Hide() override;
+
+    void Show() override;
 
     void            ToggleMinimized() { MinimizeClicked(); }
     void            Close()           { CloseClicked(); }
@@ -142,15 +155,12 @@ public:
 
     //! \name Statics //@{
     static void     InvalidateUnusedOptions();          //!< removes unregistered and registered-but-unused window options from the OptionsDB so that new windows fall back to their default properties.
+
     //@}
 
 protected:
     //! \name Accessors //@{
     virtual GG::Pt  MinimizedSize() const;              //!< the size of a minimized CUIWnd
-    GG::X           LeftBorder() const;                 //!< the distance on the left side between the outer edge of the window and the inner border
-    GG::Y           TopBorder() const;                  //!< the distance at the top between the outer edge of the window and the inner border
-    GG::X           RightBorder() const;                //!< the distance on the right side between the outer edge of the window and the inner border
-    GG::Y           BottomBorder() const;               //!< the distance at the bottom between the outer edge of the window and the inner border
     int             InnerBorderAngleOffset() const;     //!< the distance from where the lower right corner of the inner border should be to where the angled portion of the inner border meets the right and bottom lines of the border
     bool            InResizeTab(const GG::Pt& pt) const;//!< returns true iff the specified \a pt is in the region where dragging will resize this Wnd
     void            SaveOptions() const;                //!< saves options for this window to the OptionsDB if config_name was specified in the constructor
@@ -167,7 +177,7 @@ protected:
                                               GG::X left, GG::Y top, GG::X width, GG::Y height,
                                               bool visible, bool pinned, bool minimized);   //!< overload that accepts GG::X and GG::Y instead of ints
 
-    static void              InvalidateWindowOptions(const std::string& config_name);       //!< removes options containing \a config_name, logs an error instead if "UI.windows."+config_name+".initialized" exists (i.e. if a window is currently using that name)
+    static void              InvalidateWindowOptions(const std::string& config_name);       //!< removes options containing \a config_name, logs an error instead if "ui."+config_name+".initialized" exists (i.e. if a window is currently using that name)
     //@}
 
     //! \name Mutators //@{
@@ -177,39 +187,44 @@ protected:
 
     virtual void    InitBuffers();
     void            LoadOptions();                  //!< loads options for this window from the OptionsDB
-    void            Init(const std::string& t);     //!< performs initialization common to all CUIWnd constructors
+    void            Init();                         //!< performs initialization common to all CUIWnd constructors
     void            ResetDefaultPosition();         //!< called via signal from the ClientUI, passes the value from CalculatePosition() to InitSizeMove()
+
+    void SetParent(const std::shared_ptr<GG::Wnd>& wnd) override;
+    /** Flags options currently at their default values for later use in SaveDefaultedOptions */
+    void            SetDefaultedOptions();
+    /** Sets the default value any options previously determined from calls to SetDefaultedOptions to their current value */
+    void            SaveDefaultedOptions();
     //@}
 
     bool                    m_resizable;            //!< true if the window is able to be resized
     bool                    m_closable;             //!< true if the window is able to be closed with a button press
     bool                    m_minimizable;          //!< true if the window is able to be minimized
-    bool                    m_minimized;            //!< true if the window is currently minimized
+    bool                    m_minimized = false;    //!< true if the window is currently minimized
     bool                    m_pinable;              //!< true if the window is able to be pinned
-    bool                    m_pinned;               //!< true if the window is currently pinned
+    bool                    m_pinned = false;       //!< true if the window is currently pinned
 
     GG::Pt                  m_drag_offset;          //!< offset from the lower-right corner of the point being used to drag-resize
     GG::Pt                  m_original_size;        //!< keeps track of the size of the window before resizing
 
-    bool                    m_mouse_in_resize_tab;
+    bool                    m_mouse_in_resize_tab = false;
 
-    bool                    m_config_save;          //!< true if SaveOptions() is currently allowed to write to the OptionsDB
+    bool                    m_config_save = true;   //!< true if SaveOptions() is currently allowed to write to the OptionsDB
     const std::string       m_config_name;          //!< the name that this window will use to save its properties to the OptionsDB, the default empty string means "do not save"
 
-    CUI_CloseButton*        m_close_button;         //!< the close button
-    CUI_MinRestoreButton*   m_minimize_button;      //!< the minimize/restore button
-    CUI_PinButton*          m_pin_button;           //!< the pin button
+    std::shared_ptr<GG::Button>             m_close_button = nullptr;     //!< the close button
+    std::shared_ptr<CUI_MinRestoreButton>   m_minimize_button = nullptr;  //!< the minimize/restore button
+    std::shared_ptr<CUI_PinButton>          m_pin_button = nullptr;       //!< the pin button
 
-    GG::GL2DVertexBuffer    m_minimized_buffer;
-    GG::GL2DVertexBuffer    m_outer_border_buffer;
-    GG::GL2DVertexBuffer    m_inner_border_buffer;
-    GG::GL2DVertexBuffer    m_resize_corner_lines_buffer;
+    std::unordered_set<std::string> m_defaulted_options;
+
+    GG::GL2DVertexBuffer                                m_vertex_buffer;
+    std::vector<std::pair<std::size_t, std::size_t>>    m_buffer_indices;
 
     static const GG::Y      BUTTON_TOP_OFFSET;
     static const GG::X      BUTTON_RIGHT_OFFSET;
     static const GG::X      MINIMIZED_WND_WIDTH;
     static const GG::X      BORDER_LEFT;
-    static const GG::Y      BORDER_TOP;
     static const GG::X      BORDER_RIGHT;
     static const GG::Y      BORDER_BOTTOM;
     static const int        OUTER_EDGE_ANGLE_OFFSET;
@@ -225,9 +240,11 @@ protected:
 class CUIEditWnd : public CUIWnd {
 public:
     CUIEditWnd(GG::X w, const std::string& prompt_text, const std::string& edit_text, GG::Flags<GG::WndFlag> flags = GG::MODAL);
+    void CompleteConstruction() override;
 
-    virtual void ModalInit();
-    virtual void KeyPress(GG::Key key, boost::uint32_t key_code_point, GG::Flags<GG::ModKey> mod_keys);
+    void ModalInit() override;
+
+    void KeyPress(GG::Key key, std::uint32_t key_code_point, GG::Flags<GG::ModKey> mod_keys) override;
 
     const std::string& Result() const;
 
@@ -236,9 +253,9 @@ private:
 
     std::string m_result;
 
-    GG::Edit*   m_edit;
-    GG::Button* m_ok_bn;
-    GG::Button* m_cancel_bn;
+    std::shared_ptr<GG::Edit>   m_edit;
+    std::shared_ptr<GG::Button> m_ok_bn;
+    std::shared_ptr<GG::Button> m_cancel_bn;
 
     static const GG::X BUTTON_WIDTH;
     static const int CONTROL_MARGIN;

@@ -31,7 +31,7 @@
 #include <GG/StyleFactory.h>
 #include <GG/TextControl.h>
 
-#include <boost/tuple/tuple.hpp>
+#include <tuple>
 
 
 using namespace GG;
@@ -76,7 +76,7 @@ void BrowseInfoWnd::UpdateImpl(std::size_t mode, const Wnd* target)
 ////////////////////////////////////////////////
 // GG::TextBoxBrowseInfoWnd
 ////////////////////////////////////////////////
-TextBoxBrowseInfoWnd::TextBoxBrowseInfoWnd(X w, const boost::shared_ptr<Font>& font, Clr color, Clr border_color, Clr text_color,
+TextBoxBrowseInfoWnd::TextBoxBrowseInfoWnd(X w, const std::shared_ptr<Font>& font, Clr color, Clr border_color, Clr text_color,
                                            Flags<TextFormat> format/* = FORMAT_LEFT | FORMAT_WORDBREAK*/,
                                            unsigned int border_width/* = 2*/, unsigned int text_margin/* = 4*/) :
     BrowseInfoWnd(X0, Y0, w, Y(100)),
@@ -86,12 +86,16 @@ TextBoxBrowseInfoWnd::TextBoxBrowseInfoWnd(X w, const boost::shared_ptr<Font>& f
     m_border_color(border_color),
     m_border_width(border_width),
     m_preferred_width(w),
-    m_text_control(GetStyleFactory()->NewTextControl("", m_font, text_color, format))
+    m_text_control(GetStyleFactory()->NewTextControl("", m_font, text_color, format)),
+    m_text_margin(text_margin)
+{}
+
+void TextBoxBrowseInfoWnd::CompleteConstruction()
 {
-    m_text_control->Resize(Pt(w, m_text_control->Height()));
+    m_text_control->Resize(Pt(Width(), m_text_control->Height()));
     AttachChild(m_text_control);
     GridLayout();
-    SetLayoutBorderMargin(text_margin);
+    SetLayoutBorderMargin(m_text_margin);
     InitBuffer();
 }
 
@@ -107,7 +111,7 @@ bool TextBoxBrowseInfoWnd::TextFromTarget() const
 const std::string& TextBoxBrowseInfoWnd::Text() const
 { return m_text_control->Text(); }
 
-const boost::shared_ptr<Font>& TextBoxBrowseInfoWnd::GetFont() const
+const std::shared_ptr<Font>& TextBoxBrowseInfoWnd::GetFont() const
 { return m_font; }
 
 Clr TextBoxBrowseInfoWnd::Color() const
@@ -131,7 +135,12 @@ unsigned int TextBoxBrowseInfoWnd::TextMargin() const
 void TextBoxBrowseInfoWnd::SetText(const std::string& str)
 {
     unsigned int margins = 2 * TextMargin();
-    Pt extent = m_font->TextExtent(str, GetTextFormat(), m_preferred_width - X(margins));
+
+    Flags<TextFormat> fmt = GetTextFormat();
+    auto text_elements = m_font->ExpensiveParseFromTextToTextElements(str, fmt);
+    auto lines = m_font->DetermineLines(str, fmt, m_preferred_width - X(margins),
+                                        text_elements);
+    Pt extent = m_font->TextExtent(lines);
     SetMinSize(extent + Pt(X(margins), Y(margins)));
     m_text_control->SetText(str);
     Resize(extent + Pt(X(margins), Y0));
@@ -188,7 +197,7 @@ void TextBoxBrowseInfoWnd::Render()
 void TextBoxBrowseInfoWnd::SetTextFromTarget(bool b)
 { m_text_from_target = b; }
 
-void TextBoxBrowseInfoWnd::SetFont(const boost::shared_ptr<Font>& font)
+void TextBoxBrowseInfoWnd::SetFont(const std::shared_ptr<Font>& font)
 { m_font = font; }
 
 void TextBoxBrowseInfoWnd::SetColor(Clr color)

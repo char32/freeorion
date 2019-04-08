@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _Tokens_h_
 #define _Tokens_h_
 
@@ -16,19 +15,21 @@
     (Adequate)                                  \
     (Affiliation)                               \
     (Age)                                       \
-    (Alignment)                                 \
-    (AlignmentEffects)                          \
+    (Aggressive)                                \
     (All)                                       \
+    (Allowed)                                   \
     (AllyOf)                                    \
     (And)                                       \
     (AnyEmpire)                                 \
     (Armed)                                     \
     (Armour)                                    \
+    (ArrivedOnTurn)                             \
     (Article)                                   \
     (Application)                               \
     (Asteroids)                                 \
     (Attack)                                    \
     (Barren)                                    \
+    (Basic)                                     \
     (BlackHole)                                 \
     (Blue)                                      \
     (Bombard)                                   \
@@ -51,12 +52,15 @@
     (Capture)                                   \
     (CaptureResult)                             \
     (Category)                                  \
+    (Ceil)                                      \
     (Class)                                     \
     (ClockwiseNextPlanetType)                   \
     (Colony)                                    \
     (Colour)                                    \
+    (CombatTargets)                             \
     (Condition)                                 \
     (Construction)                              \
+    (Consumption)                               \
     (ContainedBy)                               \
     (Contains)                                  \
     (Core)                                      \
@@ -77,6 +81,7 @@
 #define TOKEN_SEQ_3                             \
     (Damage)                                    \
     (Data)                                      \
+    (Default)                                   \
     (Defense)                                   \
     (Described)                                 \
     (Description)                               \
@@ -91,6 +96,7 @@
     (Destroy)                                   \
     (Detection)                                 \
     (DirectDistanceBetween)                     \
+    (Disabled)                                  \
     (Distance)                                  \
     (DistanceFromOriginalType)                  \
     (Effects)                                   \
@@ -99,28 +105,38 @@
     (Else)                                      \
     (Empire)                                    \
     (EmpireMeter)                               \
+    (EmpireMeterValue)                          \
+    (EmpireObjectVisibility)                    \
     (EmpireShipsDestroyed)                      \
+    (Enabled)                                   \
     (Endpoint)                                  \
     (EnemyOf)                                   \
     (Enqueued)                                  \
     (EnqueueLocation)                           \
     (Environment)                               \
     (Environments)                              \
+    (ETA)                                       \
     (ExploredByEmpire)                          \
+    (Exclusions)                                \
     (External)
 
 #define TOKEN_SEQ_4                             \
     (Field)                                     \
     (FieldType)                                 \
-    (Fighters)                                  \
+    (Fighter)                                   \
+    (FighterBay)                                \
+    (FighterHangar)                             \
+    (FighterWeapon)                             \
     (FinalDestinationID)                        \
     (Fleet)                                     \
     (FleetID)                                   \
     (FleetSupplyableByEmpire)                   \
+    (Floor)                                     \
     (Foci)                                      \
     (Focus)                                     \
     (FocusType)                                 \
     (Fuel)                                      \
+    (Full)                                      \
     (GalaxyAge)                                 \
     (GalaxyMaxAIAggression)                     \
     (GalaxyMonsterFrequency)                    \
@@ -132,6 +148,7 @@
     (GalaxySpecialFrequency)                    \
     (GalaxyStarlaneFrequency)                   \
     (Gameplay_Description)                      \
+    (GameRule)                                  \
     (GasGiant)                                  \
     (General)
 
@@ -140,6 +157,7 @@
     (GiveEmpireTech)                            \
     (Good)                                      \
     (Graphic)                                   \
+    (HabitableSize)                             \
     (Happiness)                                 \
     (HasSpecial)                                \
     (HasSpecialCapacity)                        \
@@ -157,6 +175,8 @@
     (HullSpeed)                                 \
     (HullStealth)                               \
     (HullStructure)                             \
+    (HullType)                                  \
+    (Human)                                     \
     (Icon)                                      \
     (ID)                                        \
     (If)                                        \
@@ -164,7 +184,9 @@
     (Inferno)                                   \
     (InSystem)                                  \
     (Interceptor)                               \
+    (Integer)                                   \
     (Internal)                                  \
+    (Invisible)                                 \
     (Item)                                      \
     (Jumps)                                     \
     (JumpsBetween)                              \
@@ -174,8 +196,12 @@
 #define TOKEN_SEQ_6                             \
     (Label)                                     \
     (Large)                                     \
-    (LastTurnBattleHere)                        \
     (LastTurnActiveInBattle)                    \
+    (LastTurnAttackedByShip)                    \
+    (LastTurnBattleHere)                        \
+    (LastTurnConquered)                         \
+    (LastTurnResupplied)                        \
+    (LaunchedFrom)                              \
     (LeastHappySpecies)                         \
     (LocalCandidate)                            \
     (Location)                                  \
@@ -190,7 +216,9 @@
     (MaxDefense)                                \
     (MaxFuel)                                   \
     (MaximumNumberOf)                           \
+    (MaxSecondaryStat)                          \
     (MaxShield)                                 \
+    (MaxStockpile)                              \
     (MaxStructure)                              \
     (MaxSupply)                                 \
     (MaxTroops)                                 \
@@ -229,7 +257,9 @@
     (NextSystemID)                              \
     (NextTurnPopGrowth)                         \
     (NextYoungerStarType)                       \
+    (NoDefaultCapacityEffect)                   \
     (None)                                      \
+    (NoOp)                                      \
     (NoStar)                                    \
     (NoStringtableLookup)                       \
     (Not)                                       \
@@ -242,6 +272,8 @@
     (Object)                                    \
     (ObjectType)                                \
     (Ocean)                                     \
+    (Off)                                       \
+    (On)                                        \
     (OneOf)                                     \
     (Opinion)                                   \
     (Or)                                        \
@@ -252,19 +284,24 @@
     (OutpostsOwned)                             \
     (OwnedBy)                                   \
     (Owner)                                     \
+    (OwnerHasShipPartAvailable)                 \
     (OwnerHasTech)                              \
     (OwnerTradeStockpile)                       \
     (Parameters)                                \
     (Part)                                      \
     (PartCapacity)                              \
-    (PartDamage)                                \
     (PartClass)                                 \
-    (PartName)
+    (PartDamage)                                \
+    (Partial)                                   \
+    (PartName)                                  \
+    (PartSecondaryStat)
 
 #define TOKEN_SEQ_9                             \
     (Parts)                                     \
-    (PartClassInShipDesign)                     \
+    (PartOfClassInShipDesign)                   \
     (PartsInShipDesign)                         \
+    (PartType)                                  \
+    (Passive)                                   \
     (Planet)                                    \
     (Planetbound)                               \
     (PlanetEnvironment)                         \
@@ -288,8 +325,9 @@
     (Product)                                   \
     (ProductionCenter)                          \
     (ProductionLocation)                        \
-    (Progress)                                  \
-    (Property)
+    (PropagatedSupplyRange)                     \
+    (Property)                                  \
+    (Progress)
 
 #define TOKEN_SEQ_10                            \
     (Radiated)                                  \
@@ -303,6 +341,7 @@
     (RandomTransferrableTech)                   \
     (RandomNumber)                              \
     (Range)                                     \
+    (Real)                                      \
     (Reason)                                    \
     (RebelTroops)                               \
     (Red)                                       \
@@ -318,7 +357,9 @@
     (Retain)                                    \
     (RMS)                                       \
     (RootCandidate)                             \
-    (Scope)
+    (Round)                                     \
+    (Scope)                                     \
+    (SecondaryStat)
 
 #define TOKEN_SEQ_11                            \
     (SetAggressive)                             \
@@ -331,7 +372,7 @@
     (SetEmpireCapital)                          \
     (SetEmpireMeter)                            \
     (SetEmpireTechProgress)                     \
-    (SetEmpireTradeStockpile)                   \
+    (SetEmpireStockpile)                        \
     (SetFuel)                                   \
     (SetHappiness)                              \
     (SetIndustry)                               \
@@ -339,7 +380,9 @@
     (SetMaxDamage)                              \
     (SetMaxDefense)                             \
     (SetMaxFuel)                                \
+    (SetMaxSecondaryStat)                       \
     (SetMaxShield)                              \
+    (SetMaxStockpile)                           \
     (SetMaxStructure)                           \
     (SetMaxSupply)                              \
     (SetMaxTroops)                              \
@@ -354,6 +397,7 @@
     (SetRange)                                  \
     (SetRebelTroops)                            \
     (SetResearch)                               \
+    (SetSecondaryStat)                          \
     (SetShield)                                 \
     (SetSize)                                   \
     (SetSpecialCapacity)                        \
@@ -362,6 +406,7 @@
     (SetSpeed)                                  \
     (SetStarType)                               \
     (SetStealth)                                \
+    (SetStockpile)                              \
     (SetStructure)                              \
     (SetSupply)                                 \
     (SetTargetConstruction)                     \
@@ -373,8 +418,12 @@
     (SetTexture)                                \
     (SetTrade)                                  \
     (SetTroops)                                 \
+    (SetVisibility)
+
+#define TOKEN_SEQ_13                            \
     (Shield)                                    \
     (ShipDesign)                                \
+    (ShipDesignOrdering)                        \
     (ShipDesignsDestroyed)                      \
     (ShipDesignsLost)                           \
     (ShipDesignsOwned)                          \
@@ -384,15 +433,17 @@
     (ShipHull)                                  \
     (ShipPart)                                  \
     (ShipPartMeter)                             \
+    (ShipPartsOwned)                            \
     (Ships)                                     \
     (Short_Description)                         \
     (ShortestPath)                              \
     (ShortRange)                                \
+    (Shots)                                     \
     (Sin)                                       \
     (Size)                                      \
     (SizeAsDouble)
 
-#define TOKEN_SEQ_13                            \
+#define TOKEN_SEQ_14                            \
     (Slot)                                      \
     (Slots)                                     \
     (SlotsInHull)                               \
@@ -406,10 +457,16 @@
     (SpawnLimit)                                \
     (SpawnRate)                                 \
     (Special)                                   \
+    (SpecialAddedOnTurn)                        \
+    (SpecialCapacity)                           \
     (Species)                                   \
+    (SpeciesID)                                 \
+    (SpeciesCensusOrdering)                     \
     (SpeciesOpinion)                            \
     (SpeciesPlanetsBombed)                      \
-    (SpeciesColoniesOwned)                      \
+    (SpeciesColoniesOwned)
+
+#define TOKEN_SEQ_15                            \
     (SpeciesPlanetsDepoped)                     \
     (SpeciesPlanetsInvaded)                     \
     (SpeciesShipsDestroyed)                     \
@@ -426,14 +483,18 @@
     (Statistic)                                 \
     (StDev)                                     \
     (Stealth)                                   \
+    (Stockpile)                                 \
+    (String)                                    \
+    (StringList)                                \
     (Structure)                                 \
     (Sum)                                       \
     (Supply)                                    \
+    (SupplyingEmpire)                           \
     (Swamp)                                     \
     (System)                                    \
     (SystemID)
 
-#define TOKEN_SEQ_14                            \
+#define TOKEN_SEQ_16                            \
     (Tag)                                       \
     (Tags)                                      \
     (Target)                                    \
@@ -444,7 +505,6 @@
     (TargetResearch)                            \
     (TargetTrade)                               \
     (Tech)                                      \
-    (TechType)                                  \
     (Terran)                                    \
     (TestValue)                                 \
     (TheEmpire)                                 \
@@ -457,16 +517,20 @@
     (ThisSpecies)                               \
     (ThisSpecial)                               \
     (Tiny)                                      \
+    (Toggle)                                    \
     (TopPriorityEnqueuedTech)                   \
     (TopPriorityResearchableTech)               \
     (TopPriorityTransferrableTech)              \
+    (OrderedAlternativesOf)                     \
     (Toxic)                                     \
-    (Trade)                                     \
-    (TradeStockpile)                            \
+    (Trade)
+
+#define TOKEN_SEQ_17                            \
     (Troops)                                    \
     (Tundra)                                    \
     (Turn)                                      \
     (TurnsSinceFocusChange)                     \
+    (TurnTechResearched)                        \
     (Type)                                      \
     (Uninhabitable)                             \
     (UniverseCentreX)                           \
@@ -476,35 +540,18 @@
     (Unowned)                                   \
     (Unproducible)                              \
     (Unresearchable)                            \
+    (UpgradeVisibility)                         \
     (UserString)                                \
+    (UUID)                                      \
     (Value)                                     \
-    (ValueTest)                                 \
     (Victory)                                   \
     (VisibleToEmpire)                           \
+    (Visibility)                                \
     (White)                                     \
     (WithinDistance)                            \
     (WithinStarlaneJumps)                       \
     (X)                                         \
     (Y)                                         \
     (Yellow)
-
-#define DECLARE_TOKEN(r, _, elem) extern const char* BOOST_PP_CAT(elem, _token);
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_1)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_2)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_3)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_4)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_5)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_6)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_7)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_8)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_9)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_10)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_11)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_12)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_13)
-BOOST_PP_SEQ_FOR_EACH(DECLARE_TOKEN, _, TOKEN_SEQ_14)
-
-#undef DECLARE_TOKEN
-
 
 #endif

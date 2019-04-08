@@ -1,6 +1,8 @@
-// -*- C++ -*-
 #ifndef _SitRepEntry_h_
 #define _SitRepEntry_h_
+
+//! @file
+//!     Declares the SitRepEntry calls and related factory functions.
 
 #include "VarText.h"
 
@@ -9,24 +11,19 @@
 
 #include "Export.h"
 
-/** Situation report entry, to be displayed in the SitRep screen. */
+//! Represents a situation report entry for a significant game event.
 class FO_COMMON_API SitRepEntry : public VarText {
 public:
-    /** \name Structors */ //@{
-    SitRepEntry();  ///< default ctor
-    explicit SitRepEntry(const std::string& template_string, const std::string& icon = "");
-    SitRepEntry(const std::string& template_string, int turn, const std::string& icon = "");
-    SitRepEntry(const std::string& template_string, int turn, const std::string& icon, const std::string label, bool stringtable_lookup);
-    //@}
+    SitRepEntry();
 
-    /** Accessors */ //@{
+    SitRepEntry(const std::string& template_string, int turn, const std::string& icon, const std::string label, bool stringtable_lookup);
+
     int                 GetDataIDNumber(const std::string& tag) const;
     const std::string&  GetDataString(const std::string& tag) const;
     int                 GetTurn() const         { return m_turn; }
     const std::string&  GetIcon() const         { return m_icon; }
     const std::string&  GetLabelString() const  { return m_label; }
     std::string         Dump() const;
-    //@}
 
 private:
     int         m_turn;
@@ -38,7 +35,12 @@ private:
     void serialize(Archive& ar, const unsigned int version);
 };
 
-/** Sitrep constructors for each SitRep type */
+//! @name SitRepEntry factories
+//!
+//! Factory functions to create SitRepEntry(s) for specific situation report
+//! events.
+//!
+//! @{
 SitRepEntry CreateTechResearchedSitRep(const std::string& tech_name);
 SitRepEntry CreateShipBuiltSitRep(int ship_id, int system_id, int shipdesign_id);
 SitRepEntry CreateShipBlockBuiltSitRep(int system_id, int shipdesign_id, int number);
@@ -54,15 +56,17 @@ FO_COMMON_API SitRepEntry CreateGroundCombatSitRep(int planet_id, int empire_id)
 FO_COMMON_API SitRepEntry CreatePlanetCapturedSitRep(int planet_id, int empire_id);
 FO_COMMON_API SitRepEntry CreateCombatDamagedObjectSitRep(int object_id, int combat_system_id, int empire_id);
 FO_COMMON_API SitRepEntry CreateCombatDestroyedObjectSitRep(int object_id, int combat_system_id, int empire_id);
-SitRepEntry               CreatePlanetStarvedToDeathSitRep(int planet_id);
-FO_COMMON_API SitRepEntry CreatePlanetColonizedSitRep(int planet_id);
+SitRepEntry               CreatePlanetDepopulatedSitRep(int planet_id);
+FO_COMMON_API SitRepEntry CreatePlanetColonizedSitRep(int planet_id, const std::string& species);
+FO_COMMON_API SitRepEntry CreatePlanetOutpostedSitRep(int planet_id);
+
 FO_COMMON_API SitRepEntry CreateFleetArrivedAtDestinationSitRep(int system_id, int fleet_id, int recipient_empire_id);
 SitRepEntry               CreateEmpireEliminatedSitRep(int empire_id);
 SitRepEntry               CreateVictorySitRep(const std::string& reason_string, int empire_id);
 FO_COMMON_API SitRepEntry CreateSitRep(const std::string& template_string, int turn, const std::string& icon,
-                                       const std::vector<std::pair<std::string, std::string> >& parameters, const std::string label = "", bool stringtable_lookup = true);
+                                       const std::vector<std::pair<std::string, std::string>>& parameters, const std::string label = "", bool stringtable_lookup = true);
+//! @}
 
-// template implementations
 template <class Archive>
 void SitRepEntry::serialize(Archive& ar, const unsigned int version)
 {

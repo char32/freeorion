@@ -31,6 +31,7 @@
 
 #include <GG/Control.h>
 #include <GG/Texture.h>
+#include <GG/VectorTexture.h>
 
 
 namespace GG {
@@ -59,11 +60,19 @@ class GG_API StaticGraphic : public Control
 public:
     /** \name Structors */ ///@{
      ///< creates a StaticGraphic from a pre-existing Texture.
-    StaticGraphic(const boost::shared_ptr<Texture>& texture,
-                  Flags<GraphicStyle> style = GRAPHIC_NONE, Flags<WndFlag> flags = NO_WND_FLAGS);
+    explicit StaticGraphic(const std::shared_ptr<Texture>& texture,
+                           Flags<GraphicStyle> style = GRAPHIC_NONE,
+                           Flags<WndFlag> flags = NO_WND_FLAGS);
+
     ///< creates a StaticGraphic from a pre-existing SubTexture.
-    StaticGraphic(const SubTexture& subtexture,
-                  Flags<GraphicStyle> style = GRAPHIC_NONE, Flags<WndFlag> flags = NO_WND_FLAGS);
+    explicit StaticGraphic(const SubTexture& subtexture,
+                           Flags<GraphicStyle> style = GRAPHIC_NONE,
+                           Flags<WndFlag> flags = NO_WND_FLAGS);
+
+    ///< creates a StaticGraphic from a pre-existing VectorTexture
+    explicit StaticGraphic(const std::shared_ptr<VectorTexture>& vector_texture,
+                           Flags<GraphicStyle> style = GRAPHIC_NONE,
+                           Flags<WndFlag> flags = NO_WND_FLAGS);
     //@}
 
     /** \name Accessors */ ///@{
@@ -74,22 +83,32 @@ public:
         UpperLeft()-relative coordinates.  This may not be the entire area of
         the StaticGraphic, based on the style being used. */
     Rect RenderedArea() const;
+
+    const SubTexture& GetTexture() const;
+    const std::shared_ptr<VectorTexture>& GetVectorTexture() const;
+
+    const boost::filesystem::path& GetTexturePath() const;
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void Render();
+    void Render() override;
 
     /** Sets the style flags, and perfroms sanity checking \see
         GraphicStyle */
     void SetStyle(Flags<GraphicStyle> style);
+
+    /** Sets the texture */
+    void SetTexture(const std::shared_ptr<Texture>& texture);
+    void SetTexture(const SubTexture& subtexture);
+    void SetTexture(const std::shared_ptr<VectorTexture>& vector_texture);
     //@}
 
 private:
-    void     Init(const SubTexture& subtexture); ///< initializes a StaticGraphic from a SubTexture
-    void     ValidateStyle();   ///< ensures that the style flags are consistent
+    void ValidateStyle();   ///< ensures that the style flags are consistent
 
-    SubTexture          m_graphic;
-    Flags<GraphicStyle> m_style;        ///< position of texture wrt the window area
+    SubTexture                      m_graphic;
+    std::shared_ptr<VectorTexture>  m_vector_texture;
+    Flags<GraphicStyle>             m_style;        ///< position of texture wrt the window area
 };
 
 } // namespace GG

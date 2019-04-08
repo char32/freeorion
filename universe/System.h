@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _System_h_
 #define _System_h_
 
@@ -9,6 +8,11 @@
 
 #include <map>
 
+
+FO_COMMON_API extern const int INVALID_OBJECT_ID;
+namespace {
+    const int SYSTEM_ORBITS = 7;
+}
 struct UniverseObjectVisitor;
 
 /** contains UniverseObjects and connections to other systems (starlanes and
@@ -24,9 +28,26 @@ struct UniverseObjectVisitor;
    orbit), and all objects in a paricular orbit.*/
 class FO_COMMON_API System : public UniverseObject {
 public:
+    /** Systems are unowned unless at least one planet is owned by an empire and
+        no other empire owns any planets in the system.*/
+    int Owner() const override;
+
+    int SystemID() const override
+    { return this->ID(); }
+
     /** \name Accessors */ //@{
-    virtual UniverseObjectType  ObjectType() const;
-    virtual std::string         Dump() const;
+    UniverseObjectType ObjectType() const override;
+
+    std::string Dump(unsigned short ntabs = 0) const override;
+
+    const std::set<int>& ContainedObjectIDs() const override;
+
+    bool Contains(int object_id) const override;
+
+    bool ContainedBy(int object_id) const override
+    { return false; }
+
+    std::shared_ptr<UniverseObject> Accept(const UniverseObjectVisitor& visitor) const override;
 
     /** returns the name to display for players for this system.  While all
       * systems may have a proper name assigned, if they contain no planets or
@@ -47,19 +68,13 @@ public:
     bool                    HasStarlaneTo(int id) const;                ///< returns true if there is a starlane from this system to the system with ID number \a id
     bool                    HasWormholeTo(int id) const;                ///< returns true if there is a wormhole from this system to the system with ID number \a id
 
-    virtual int             SystemID() const                { return this->ID(); }
-
-    virtual const std::set<int>&    ContainedObjectIDs() const;                     ///< returns ids of objects in this system
-
     const std::set<int>&    ObjectIDs() const               { return m_objects; }
     const std::set<int>&    PlanetIDs() const               { return m_planets; }
     const std::set<int>&    BuildingIDs() const             { return m_buildings; }
     const std::set<int>&    FleetIDs() const                { return m_fleets; }
     const std::set<int>&    ShipIDs() const                 { return m_ships; }
     const std::set<int>&    FieldIDs() const                { return m_fields; }
-
-    virtual bool            Contains(int object_id) const;                                  ///< returns true if object with id \a object_id is in this System
-    virtual bool            ContainedBy(int object_id) const{ return false; }               ///< returns true if there is an object with id \a object_id that contains this UniverseObject
+    const std::vector<int>& PlanetIDsByOrbit() const        { return m_orbits; }
 
     int                     PlanetInOrbit(int orbit) const;             ///< returns the ID of the planet in the specified \a orbit, or INVALID_OBJECT_ID if there is no planet in that orbit or it is an invalid orbit
     int                     OrbitOfPlanet(int object_id) const;         ///< returns the orbit ID in which the planet with \a object_id is located, or -1 the specified ID is not a planet in an orbit of this system
@@ -76,23 +91,26 @@ public:
 
     int                     LastTurnBattleHere() const  { return m_last_turn_battle_here; }
 
-    virtual TemporaryPtr<UniverseObject>
-                            Accept(const UniverseObjectVisitor& visitor) const;
-
     const std::string&      OverlayTexture() const      { return m_overlay_texture; }
     double                  OverlaySize() const         { return m_overlay_size; }  ///< size in universe units
 
     /** fleets are inserted into system */
-    mutable boost::signals2::signal<void (const std::vector<TemporaryPtr<Fleet> >& fleets)> FleetsInsertedSignal;
+    mutable boost::signals2::signal<void (const std::vector<std::shared_ptr<Fleet>>&)> FleetsInsertedSignal;
     /** fleets are removed from system */
-    mutable boost::signals2::signal<void (const std::vector<TemporaryPtr<Fleet> >& fleets)> FleetsRemovedSignal;
+    mutable boost::signals2::signal<void (const std::vector<std::shared_ptr<Fleet>>&)> FleetsRemovedSignal;
     //@}
 
     /** \name Mutators */ //@{
-    virtual void            Copy(TemporaryPtr<const UniverseObject> copied_object, int empire_id = ALL_EMPIRES);
+    void Copy(std::shared_ptr<const UniverseObject> copied_object, int empire_id = ALL_EMPIRES) override;
+
+    /** Adding owner to system objects is a no-op. */
+    void SetOwner(int id) override
+    {}
+
+    void ResetTargetMaxUnpairedMeters() override;
 
     /** adds an object to this system. */
-    void                    Insert(TemporaryPtr<UniverseObject> obj, int orbit = -1);
+    void Insert(std::shared_ptr<UniverseObject> obj, int orbit = -1);
 
     /** removes the object with ID number \a id from this system. */
     void                    Remove(int id);
@@ -103,12 +121,9 @@ public:
     bool                    RemoveStarlane(int id);         ///< removes a starlane between this system and the system with ID number \a id.  Returns false if there was no starlane from this system to system \a id.
     bool                    RemoveWormhole(int id);         ///< removes a wormhole between this system and the system with ID number \a id.  Returns false if there was no wormhole from this system to system \a id.
 
-    virtual void            SetOwner(int id) {};            ///< adding owner to system objects is a no-op
     void                    SetLastTurnBattleHere(int turn);///< Sets the last turn there was a battle at this system
 
     void                    SetOverlayTexture(const std::string& texture, double size);
-
-    virtual void            ResetTargetMaxUnpairedMeters();
     //@}
 
 protected:
@@ -116,14 +131,16 @@ protected:
     friend class ObjectMap;
 
     /** \name Structors */ //@{
-    System();   ///< default ctor
+    System();
 
+public:
     /** general ctor.  \throw std::invalid_arugment May throw
       * std::invalid_arugment if \a star is out of the range of StarType,
       * \a orbits is negative, or either x or y coordinate is outside the map
       * area.*/
     System(StarType star, const std::string& name, double x, double y);
 
+protected:
     /** general ctor.  \throw std::invalid_arugment May throw
       * std::invalid_arugment if \a star is out of the range of StarType,
       * \a orbits is negative, or either x or y coordinate is outside the map
@@ -132,15 +149,18 @@ protected:
            const std::string& name, double x, double y);
 
     template <class T> friend void boost::python::detail::value_destroyer<false>::execute(T const volatile* p);
-    template <class T> friend void boost::checked_delete(T* x);
+
+public:
     ~System() {}
 
-    virtual System*         Clone(int empire_id = ALL_EMPIRES) const;   ///< returns new copy of this System
+protected:
+    /** Returns new copy of this System. */
+    System* Clone(int empire_id = ALL_EMPIRES) const override;
     //@}
 
 private:
     StarType            m_star;
-    std::vector<int>    m_orbits;                   ///< indexed by orbit number, indicates the id of the planet in that orbit
+    std::vector<int>    m_orbits = std::vector<int>(SYSTEM_ORBITS, INVALID_OBJECT_ID);  ///< indexed by orbit number, indicates the id of the planet in that orbit
     std::set<int>       m_objects;
     std::set<int>       m_planets;
     std::set<int>       m_buildings;
@@ -148,49 +168,15 @@ private:
     std::set<int>       m_ships;
     std::set<int>       m_fields;
     std::map<int, bool> m_starlanes_wormholes;      ///< the ints represent the IDs of other connected systems; the bools indicate whether the connection is a wormhole (true) or a starlane (false)
-    int                 m_last_turn_battle_here;    ///< the turn on which there was last a battle in this system
+    int                 m_last_turn_battle_here = INVALID_GAME_TURN;  ///< the turn on which there was last a battle in this system
 
     std::string         m_overlay_texture;          // intentionally not serialized; set by local effects
-    double              m_overlay_size;
+    double              m_overlay_size = 1.0;
 
     friend class boost::serialization::access;
     template <class Archive>
     void serialize(Archive& ar, const unsigned int version);
 };
 
-
-// Tactical combat system geometry free functions:
-
-/** Returns the radius, in tactical combat units, of a system.  Note that the
-    tactical combat map is square. */
-FO_COMMON_API double SystemRadius();
-
-/** Returns the radius, in tactical combat units, of the star at the center of
-    a system. */
-FO_COMMON_API double StarRadius();
-
-/** Returns the radius, in tactical combat units, of orbit \a orbit of a
-    system.  \a orbit must be < 10. */
-FO_COMMON_API double OrbitalRadius(unsigned int orbit);
-
-/** Returns the orbital radius, in tactical combat units, of starlane entrance
-    ellipses out of a system. */
-double StarlaneEntranceOrbitalRadius();
-
-/** Returns the angular position, in radians, of a starlane entrance ellipses
-    out of the system with id \a from_system. */
-FO_COMMON_API double StarlaneEntranceOrbitalPosition(int from_system, int to_system);
-
-/** Returns the radius, in tactical combat units, of the star-aligned axes of
-    starlane entrance ellipses out of a system. */
-double StarlaneEntranceRadialAxis();
-
-/** Returns the radius, in tactical combat units, of the non-star-aligned axes
-    starlane entrance ellipses out of a system. */
-double StarlaneEntranceTangentAxis();
-
-/** Returns true iff tactical combat point <i>(x, y)</i> falls inside the
-    indicated starlane ellipse. */
-bool PointInStarlaneEllipse(double x, double y, int from_system, int to_system);
 
 #endif // _System_h_

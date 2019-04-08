@@ -1,151 +1,162 @@
-#include "ConditionParserImpl.h"
-#include "Double.h"
-#include "Int.h"
-#include "Label.h"
-#include "ValueRefParser.h"
 #include "Parse.h"
-#include "ParseImpl.h"
+
+#include "EffectParser.h"
+
+#include "../universe/ValueRef.h"
+#include "../universe/Condition.h"
+#include "../universe/Effect.h"
 #include "../universe/Special.h"
 
 #include <boost/spirit/include/phoenix.hpp>
+//TODO: replace with std::make_unique when transitioning to C++14
+#include <boost/smart_ptr/make_unique.hpp>
 
 #define DEBUG_PARSERS 0
 
 #if DEBUG_PARSERS
 namespace std {
-    inline ostream& operator<<(ostream& os, const std::vector<boost::shared_ptr<Effect::EffectsGroup> >&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::map<std::string, Special*>&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::pair<const std::string, Special*>&) { return os; }
+    inline ostream& operator<<(ostream& os, const parse::effects_group_payload&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::map<std::string, std::unique_ptr<Special>&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::pair<const std::string, std::unique_ptr<Special>&) { return os; }
 }
 #endif
 
 namespace {
-    struct insert_ {
-#if BOOST_VERSION < 105600
-        template <typename Arg1, typename Arg2> // Phoenix v2
-        struct result
-        { typedef void type; };
-#else
-        typedef void result_type;
-#endif
+    const boost::phoenix::function<parse::detail::is_unique> is_unique_;
 
-        void operator()(std::map<std::string, Special*>& specials, Special* special) const {
-            if (!specials.insert(std::make_pair(special->Name(), special)).second) {
-                std::string error_str = "ERROR: More than one special in specials.txt has the name " + special->Name();
-                throw std::runtime_error(error_str.c_str());
-            }
-        }
+    struct special_pod {
+        special_pod(std::string name_,
+                    std::string description_,
+                    const boost::optional<parse::detail::value_ref_payload<double>>& stealth_,
+                    const boost::optional<parse::effects_group_payload>& effects_,
+                    boost::optional<double> spawn_rate_,
+                    boost::optional<int> spawn_limit_,
+                    const boost::optional<parse::detail::value_ref_payload<double>>& initial_capacity_,
+                    const boost::optional<parse::detail::condition_payload>& location_,
+                    const std::string& graphic_) :
+            name(name_),
+            description(description_),
+            stealth(stealth_),
+            effects(effects_),
+            spawn_rate(spawn_rate_),
+            spawn_limit(spawn_limit_),
+            initial_capacity(initial_capacity_),
+            location(location_),
+            graphic(graphic_)
+        {}
+
+        std::string name;
+        std::string description;
+        const boost::optional<parse::detail::value_ref_payload<double>> stealth;
+        const boost::optional<parse::effects_group_payload>& effects;
+        boost::optional<double> spawn_rate;
+        boost::optional<int> spawn_limit;
+        boost::optional<const parse::detail::value_ref_payload<double>> initial_capacity;
+        boost::optional<parse::detail::condition_payload> location;
+        const std::string& graphic;
     };
-    const boost::phoenix::function<insert_> insert;
 
-    struct rules {
-        rules() {
-            const parse::lexer& tok =                                               parse::lexer::instance();
-            const parse::value_ref_parser_rule<double>::type& double_value_ref =    parse::value_ref_parser<double>();
+    void insert_special(std::map<std::string, std::unique_ptr<Special>>& specials, special_pod special_, bool& pass) {
+        auto special_ptr = boost::make_unique<Special>(
+            special_.name, special_.description,
+            (special_.stealth ? special_.stealth->OpenEnvelope(pass) : nullptr),
+            (special_.effects ? OpenEnvelopes(*special_.effects, pass) : std::vector<std::unique_ptr<Effect::EffectsGroup>>()),
+            (special_.spawn_rate ? *special_.spawn_rate : 1.0),
+            (special_.spawn_limit ? *special_.spawn_limit : 9999),
+            (special_.initial_capacity ? special_.initial_capacity->OpenEnvelope(pass) : nullptr),
+            (special_.location ? special_.location->OpenEnvelope(pass) : nullptr),
+            special_.graphic);
+
+        specials.insert(std::make_pair(special_ptr->Name(), std::move(special_ptr)));
+    }
+
+    BOOST_PHOENIX_ADAPT_FUNCTION(void, insert_special_, insert_special, 3)
+
+    using start_rule_payload = SpecialsManager::SpecialsTypeMap;
+    using start_rule_signature = void(start_rule_payload&);
+
+    struct grammar : public parse::detail::grammar<start_rule_signature> {
+        grammar(const parse::lexer& tok,
+                const std::string& filename,
+                const parse::text_iterator& first, const parse::text_iterator& last) :
+            grammar::base_type(start),
+            condition_parser(tok, label),
+            string_grammar(tok, label, condition_parser),
+            double_rules(tok, label, condition_parser, string_grammar),
+            effects_group_grammar(tok, label, condition_parser, string_grammar),
+            double_rule(tok),
+            int_rule(tok)
+        {
+            namespace phoenix = boost::phoenix;
+            namespace qi = boost::spirit::qi;
 
             qi::_1_type _1;
             qi::_2_type _2;
             qi::_3_type _3;
             qi::_4_type _4;
-            qi::_a_type _a;
-            qi::_b_type _b;
-            qi::_c_type _c;
-            qi::_d_type _d;
-            qi::_e_type _e;
-            qi::_f_type _f;
-            qi::_g_type _g;
-            qi::_h_type _h;
+            qi::_5_type _5;
+            qi::_6_type _6;
+            qi::_7_type _7;
+            qi::_8_type _8;
+            qi::_9_type _9;
+            phoenix::actor<boost::spirit::argument<9>> _10; // qi::_10_type is not predefined
+            qi::_pass_type _pass;
             qi::_r1_type _r1;
-            qi::_r2_type _r2;
             qi::eps_type eps;
-            using phoenix::new_;
-
-            special_prefix
-                =    tok.Special_
-                >    parse::label(Name_token)               > tok.string [ _r1 = _1 ]
-                >    parse::label(Description_token)        > tok.string [ _r2 = _1 ]
-                ;
-
-            spawn
-                =    (      parse::label(SpawnRate_token)   > parse::double_ [ _r1 = _1 ]
-                        |   eps [ _r1 = 1.0 ]
-                     )
-                >    (      parse::label(SpawnLimit_token)  > parse::int_ [ _r2 = _1 ]
-                        |   eps [ _r2 = 9999 ]
-                     )
-                ;
+            const boost::phoenix::function<parse::detail::deconstruct_movable> deconstruct_movable_;
 
             special
-                =    special_prefix(_a, _b)
-                >  -(parse::label(Stealth_token)            > double_value_ref [ _g = _1 ])
-                >    spawn(_c, _d)
-                >  -(parse::label(Capacity_token)           > double_value_ref [ _h = _1 ])
-                >  -(parse::label(Location_token)           > parse::detail::condition_parser [ _e = _1 ])
-                >  -(parse::label(EffectsGroups_token)      > parse::detail::effects_group_parser() [ _f = _1 ])
-                >    parse::label(Graphic_token)            > tok.string
-                [ insert(_r1, new_<Special>(_a, _b, _g, _f, _c, _d, _h, _e, _1)) ]
+                = (  tok.Special_
+                >    label(tok.Name_)           > tok.string
+                >    label(tok.Description_)    > tok.string
+                >  -(label(tok.Stealth_)        > double_rules.expr)
+                >  -(label(tok.SpawnRate_)      > double_rule)
+                >  -(label(tok.SpawnLimit_)     > int_rule)
+                >  -(label(tok.Capacity_)       > double_rules.expr)
+                >  -(label(tok.Location_)       > condition_parser)
+                >  -(label(tok.EffectsGroups_)  > effects_group_grammar)
+                >    label(tok.Graphic_)        > tok.string)
+                [  _pass = is_unique_(_r1, _1, _2),
+                   insert_special_(_r1, phoenix::construct<special_pod>(_2, _3, _4, _9, _5, _6, _7, _8, _10), _pass) ]
                 ;
 
             start
                 =   +special(_r1)
                 ;
 
-            special_prefix.name("Special");
             special.name("Special");
-            spawn.name("SpawnRate and SpawnLimit");
 
 #if DEBUG_PARSERS
-            debug(special_prefix);
-            debug(spawn);
             debug(special);
 #endif
 
-            qi::on_error<qi::fail>(start, parse::report_error(_1, _2, _3, _4));
+            qi::on_error<qi::fail>(start, parse::report_error(filename, first, last, _1, _2, _3, _4));
         }
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::string&, std::string&),
-            parse::skipper_type
-        > special_prefix_rule;
+        using special_rule = parse::detail::rule<void (start_rule_payload&)>;
+        using start_rule = parse::detail::rule<start_rule_signature>;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (double&, int&),
-            parse::skipper_type
-        > spawn_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::map<std::string, Special*>&),
-            qi::locals<
-                std::string,
-                std::string,
-                double,
-                int,
-                Condition::ConditionBase*,
-                std::vector<boost::shared_ptr<Effect::EffectsGroup> >,
-                ValueRef::ValueRefBase<double>*,
-                ValueRef::ValueRefBase<double>*
-            >,
-            parse::skipper_type
-        > special_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::map<std::string, Special*>&),
-            parse::skipper_type
-        > start_rule;
-
-
-        special_prefix_rule special_prefix;
-        spawn_rule          spawn;
-        special_rule        special;
-        start_rule          start;
+        parse::detail::Labeller             label;
+        parse::conditions_parser_grammar    condition_parser;
+        const parse::string_parser_grammar  string_grammar;
+        parse::double_parser_rules          double_rules;
+        parse::effects_group_grammar        effects_group_grammar;
+        parse::detail::double_grammar       double_rule;
+        parse::detail::int_grammar          int_rule;
+        special_rule                        special;
+        start_rule                          start;
     };
 }
 
 namespace parse {
-    bool specials(const boost::filesystem::path& path, std::map<std::string, Special*>& specials_)
-    { return detail::parse_file<rules, std::map<std::string, Special*> >(path, specials_); }
+    start_rule_payload specials(const boost::filesystem::path& path) {
+        const lexer lexer;
+        start_rule_payload specials_;
+
+        for (const boost::filesystem::path& file : ListScripts(path)) {
+            /*auto success =*/ detail::parse_file<grammar, start_rule_payload>(lexer, file, specials_);
+        }
+
+        return specials_;
+    }
 }

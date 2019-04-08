@@ -85,7 +85,7 @@ namespace GG {
     }
 
 /** An enum macro for use inside classes.
-  * Enables <<, >>, and EnumToString for your enum,
+  * Enables << and >> for your enum,
   * all of which will exist in whatever namespace this
   * macro is used. */
 #define GG_CLASS_ENUM(EnumName, ...)                                                    \
@@ -112,23 +112,15 @@ namespace GG {
         const std::string& name = map[value];                                           \
         return os << name;                                                              \
     }                                                                                   \
-                                                                                        \
-    friend inline const std::string& EnumToString(EnumName value) {              \
-        ::GG::EnumMap<EnumName>& map = ::GG::GetEnumMap<EnumName>();                    \
-        if (map.size() == 0)                                                            \
-            ::GG::BuildEnumMap(map, #EnumName, #__VA_ARGS__);                           \
-                                                                                        \
-        return map[value];                                                              \
-    }
 
 /** An enum macro for use outside of classes.
-  * Enables <<, >>, and EnumToString for your enum,
+  * Enables << and >> for your enum,
   * all of which will exist in whatever namespace this
   * macro is used. */
 #define GG_ENUM(EnumName, ...)                                                          \
-    enum EnumName {                                                                     \
+    enum EnumName : int {                                                               \
         __VA_ARGS__                                                                     \
-     };                                                                                 \
+    };                                                                                  \
                                                                                         \
     inline std::istream& operator>>(std::istream& is, EnumName& value) {         \
         ::GG::EnumMap<EnumName>& map = ::GG::GetEnumMap<EnumName>();                    \
@@ -149,21 +141,13 @@ namespace GG {
         const std::string& name = map[value];                                           \
         return os << name;                                                              \
     }                                                                                   \
-                                                                                        \
-    inline const std::string& EnumToString(EnumName value) {                     \
-        ::GG::EnumMap<EnumName>& map = ::GG::GetEnumMap<EnumName>();                    \
-        if (map.size() == 0)                                                            \
-            ::GG::BuildEnumMap(map, #EnumName, #__VA_ARGS__);                           \
-                                                                                        \
-        return map[value];                                                              \
-    }
 
       /////////////
      // EnumMap //
     /////////////
     template <class EnumType>
     const std::string& EnumMap<EnumType>::operator[](EnumType value) const {
-        typename std::map<EnumType, std::string>::const_iterator it = m_value_to_name_map.find(value);
+        auto it = m_value_to_name_map.find(value);
         if (it != m_value_to_name_map.end()) {
             return it->second;
         } else {
@@ -174,7 +158,7 @@ namespace GG {
 
     template <class EnumType>
     EnumType EnumMap<EnumType>::operator[](const std::string& name) const {
-        typename std::map<std::string, EnumType>::const_iterator it = m_name_to_value_map.find(name);
+        auto it = m_name_to_value_map.find(name);
         if (it != m_name_to_value_map.end()) {
             return it->second;
         } else {
@@ -197,7 +181,7 @@ namespace GG {
         std::string value_str;
         EnumType value;
         if (std::getline(name_and_value, value_str)) {
-            value = (EnumType)strtol(value_str.c_str(), 0, 0);
+            value = (EnumType)strtol(value_str.c_str(), nullptr, 0);
         }
         else {
             value = (EnumType)default_value;

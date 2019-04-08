@@ -1,75 +1,55 @@
-#include "EffectParserImpl.h"
-#include "ConditionParserImpl.h"
+#include "EffectParser5.h"
 
-#include "Label.h"
+#include "ConditionParserImpl.h"
 #include "../universe/Effect.h"
+#include "../universe/Condition.h"
 
 #include <boost/spirit/include/phoenix.hpp>
 
 namespace qi = boost::spirit::qi;
 namespace phoenix = boost::phoenix;
 
-namespace {
-    struct effect_parser_rules_5 {
-        effect_parser_rules_5() {
-            qi::_1_type _1;
-            qi::_a_type _a;
-            qi::_b_type _b;
-            qi::_c_type _c;
-            qi::_val_type _val;
-            qi::eps_type eps;
-            using phoenix::new_;
-            using phoenix::push_back;
+namespace parse { namespace detail {
+    effect_parser_rules_5::effect_parser_rules_5(const parse::lexer& tok,
+                                                 const effect_parser_grammar& effect_parser,
+                                                 Labeller& label,
+                                                 const condition_parser_grammar& condition_parser) :
+        effect_parser_rules_5::base_type(start, "effect_parser_rules_5"),
+        one_or_more_effects(effect_parser)
+    {
+        qi::_1_type _1;
+        qi::_2_type _2;
+        qi::_3_type _3;
+        qi::_val_type _val;
+        qi::eps_type eps;
+        qi::_pass_type _pass;
+        qi::omit_type omit_;
+        const boost::phoenix::function<construct_movable> construct_movable_;
+        const boost::phoenix::function<deconstruct_movable> deconstruct_movable_;
+        const boost::phoenix::function<deconstruct_movable_vector> deconstruct_movable_vector_;
 
-            const parse::lexer& tok =   parse::lexer::instance();
+        using phoenix::new_;
+        using phoenix::construct;
 
-            conditional
-                =   (       tok.If_
-                        >   parse::label(Condition_token)   >   parse::detail::condition_parser [ _a = _1 ]
-                        >   parse::label(Effects_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_b, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_b, _1) ]
-                            )
-                        > -(parse::label(Else_token)
-                        >   (
-                                '[' > +parse::effect_parser() [ push_back(_c, _1) ] > ']'
-                            |   parse::effect_parser() [ push_back(_c, _1) ]
-                            )
-                           )
-                    ) [ _val = new_<Effect::Conditional>(_a, _b, _c) ]
-                ;
+        conditional
+            =   ( omit_[tok.If_]
+                  >   label(tok.Condition_)   >   condition_parser
+                  >   label(tok.Effects_) > one_or_more_effects
+                  >   -(label(tok.Else_)  > one_or_more_effects)
+                ) [ _val = construct_movable_(new_<Effect::Conditional>(
+                    deconstruct_movable_(_1, _pass),
+                    deconstruct_movable_vector_(_2, _pass),
+                    deconstruct_movable_vector_(_3, _pass))) ]
+            ;
 
-            start
-                =   conditional
-                ;
+        start
+            =   conditional
+            ;
 
-            conditional.name("Conditional");
+        conditional.name("Conditional");
 
 #if DEBUG_EFFECT_PARSERS
-            debug(conditional);
+        debug(conditional);
 #endif
-        }
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Effect::EffectBase* (),
-            qi::locals<
-                Condition::ConditionBase*,
-                std::vector<Effect::EffectBase*>,
-                std::vector<Effect::EffectBase*>
-            >,
-            parse::skipper_type
-        > conditional_rule;
-
-        conditional_rule            conditional;
-        parse::effect_parser_rule   start;
-    };
-}
-
-namespace parse { namespace detail {
-    const effect_parser_rule& effect_parser_5() {
-        static effect_parser_rules_5 retval;
-        return retval.start;
     }
 } }

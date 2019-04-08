@@ -1,0 +1,33 @@
+Tech
+    name = "GRO_CYBORG"
+    description = "GRO_CYBORG_DESC"
+    short_description = "POPULATION_SHORT_DESC"
+    category = "GROWTH_CATEGORY"
+    researchcost = 250 * [[TECH_COST_MULTIPLIER]]
+    researchturns = 10
+    tags = [ "PEDIA_GROWTH_CATEGORY" ]
+    prerequisites = "GRO_NANO_CYBERNET"
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                Planet
+                OwnedBy empire = Source.Owner
+                Planet environment = [ Hostile ]
+            ]
+            priority = [[TARGET_POPULATION_BEFORE_SCALING_PRIORITY]]
+            effects = SetTargetPopulation value = Value + 2 * Target.HabitableSize  accountinglabel = "GRO_CYBORG"
+
+        EffectsGroup
+            scope = And [
+                Planet
+                OwnedBy empire = Source.Owner
+            ]
+            stackinggroup = "CYBORG_TROOPS_STACK"
+            priority = [[VERY_EARLY_PRIORITY]]
+            effects = SetMaxTroops value = Value + Target.Population * [[TROOPS_PER_POP]] accountinglabel = "GRO_CYBORG"
+    ]
+    graphic = "icons/tech/cyborgs.png"
+
+#include "/scripting/common/base_prod.macros"
+
+#include "/scripting/common/priorities.macros"

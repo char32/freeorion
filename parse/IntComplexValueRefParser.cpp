@@ -1,349 +1,227 @@
-#include "ValueRefParserImpl.h"
+#include "ValueRefParser.h"
+
+#include "MovableEnvelope.h"
+#include "../universe/ValueRef.h"
+#include <boost/spirit/include/phoenix.hpp>
+#include <boost/spirit/include/qi_as.hpp>
 
 namespace parse {
-    struct int_complex_parser_rules {
-        int_complex_parser_rules() {
-            qi::_1_type _1;
-            qi::_a_type _a;
-            qi::_b_type _b;
-            qi::_c_type _c;
-            qi::_d_type _d;
-            qi::_e_type _e;
-            qi::_f_type _f;
-            qi::_val_type _val;
-            using phoenix::construct;
-            using phoenix::new_;
+    int_complex_parser_grammar::int_complex_parser_grammar(
+        const parse::lexer& tok,
+        detail::Labeller& label,
+        const int_arithmetic_rules& _int_arith_rules,
+        const detail::value_ref_grammar<std::string>& string_grammar
+    ) :
+        int_complex_parser_grammar::base_type(start, "int_complex_parser_grammar"),
+        int_rules(_int_arith_rules),
+        ship_part_class_enum(tok)
+    {
+        namespace phoenix = boost::phoenix;
+        namespace qi = boost::spirit::qi;
 
-            const parse::lexer& tok =                                                   parse::lexer::instance();
-            const int_rule& int_value_ref =                                             int_simple();
-            const parse::value_ref_parser_rule<std::string>::type& string_value_ref =   parse::value_ref_parser<std::string>();
+        using phoenix::construct;
+        using phoenix::new_;
 
-            building_types_owned
-                =   (
-                            tok.BuildingTypesOwned_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token) >     string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        qi::_1_type _1;
+        qi::_2_type _2;
+        qi::_3_type _3;
+        qi::_4_type _4;
+        qi::_val_type _val;
+        qi::eps_type eps;
+        qi::_pass_type _pass;
+        const boost::phoenix::function<detail::construct_movable> construct_movable_;
+        const boost::phoenix::function<detail::deconstruct_movable> deconstruct_movable_;
 
-            building_types_produced
-                =   (
-                            tok.BuildingTypesProduced_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token) >     string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        game_rule
+            = (   tok.GameRule_
+                > label(tok.Name_) > string_grammar
+              ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, nullptr, nullptr, nullptr, deconstruct_movable_(_2, _pass), nullptr)) ]
+            ;
+         empire_name_ref
+            =   (
+                    (   tok.BuildingTypesOwned_
+                    |   tok.BuildingTypesProduced_
+                    |   tok.BuildingTypesScrapped_
+                    |   tok.SpeciesColoniesOwned_
+                    |   tok.SpeciesPlanetsBombed_
+                    |   tok.SpeciesPlanetsDepoped_
+                    |   tok.SpeciesPlanetsInvaded_
+                    |   tok.SpeciesShipsDestroyed_
+                    |   tok.SpeciesShipsLost_
+                    |   tok.SpeciesShipsOwned_
+                    |   tok.SpeciesShipsProduced_
+                    |   tok.SpeciesShipsScrapped_
+                    |   tok.TurnTechResearched_
+                    )
+                >  -(   label(tok.Empire_) > int_rules.expr)
+                >  -(   label(tok.Name_) >   string_grammar)
+                ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, deconstruct_movable_(_2, _pass), nullptr, nullptr, deconstruct_movable_(_3, _pass), nullptr)) ]
+            ;
 
-            building_types_scrapped
-                =   (
-                            tok.BuildingTypesScrapped_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        empire_ships_destroyed
+            =   (
+                    tok.EmpireShipsDestroyed_
+                >-( label(tok.Empire_) > int_rules.expr )
+                >-( label(tok.Empire_) > int_rules.expr )
+                ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, deconstruct_movable_(_2, _pass), deconstruct_movable_(_3, _pass), nullptr, nullptr, nullptr)) ]
+            ;
 
-            empire_ships_destroyed
-                =   (
-                            tok.EmpireShipsDestroyed_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Empire_token) >   int_value_ref [ _c = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        jumps_between
+            = (  tok.JumpsBetween_
+               > label(tok.Object_)
+               > ( int_rules.expr
+                   // "cast" the ValueRef::Statistic<int> into
+                   // ValueRef::ValueRefBase<int> so the alternative contains a
+                   // single type
+                   | qi::as<parse::detail::MovableEnvelope<ValueRef::ValueRefBase<int>>>()[int_rules.statistic_expr])
+               > label(tok.Object_)
+               > (int_rules.expr
+                  | qi::as<parse::detail::MovableEnvelope<ValueRef::ValueRefBase<int>>>()[int_rules.statistic_expr])
+              ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, deconstruct_movable_(_2, _pass), deconstruct_movable_(_3, _pass), nullptr, nullptr, nullptr)) ]
+            ;
 
-            jumps_between
-                =   (
-                            tok.JumpsBetween_ [ _a = construct<std::string>(_1) ]
-                        >   parse::label(Object_token) >   (int_value_ref [ _b = _1 ] | int_var_statistic() [ _b = _1 ])
-                        >   parse::label(Object_token) >   (int_value_ref [ _c = _1 ] | int_var_statistic() [ _c = _1 ])
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        //jumps_between_by_empire_supply
+        //    =   (
+        //                tok.JumpsBetweenByEmpireSupplyConnections_ [ _a = construct<std::string>(_1) ]
+        //            >   label(tok.Object_) >>   int_rules.expr [ _b = _1 ]
+        //            >   label(tok.Object_) >>   int_rules.expr [ _c = _1 ]
+        //            >   label(tok.Empire_) >>   int_rules.expr [ _f = _1 ]
+        //        ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_a, deconstruct_movable_(_b, _pass), deconstruct_movable_(_c, _pass), deconstruct_movable_(_f, _pass), deconstruct_movable_(_d, _pass), deconstruct_movable_(_e, _pass))) ]
+        //    ;
 
-            //jumps_between_by_empire_supply
-            //    =   (
-            //                tok.JumpsBetweenByEmpireSupplyConnections_ [ _a = construct<std::string>(_1) ]
-            //            >   parse::label(Object_token) >>   int_value_ref [ _b = _1 ]
-            //            >   parse::label(Object_token) >>   int_value_ref [ _c = _1 ]
-            //            >   parse::label(Empire_token) >>   int_value_ref [ _f = _1 ]
-            //        ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-            //    ;
+        outposts_owned
+            =   (
+                    tok.OutpostsOwned_
+                >-( label(tok.Empire_) > int_rules.expr )
+                ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, deconstruct_movable_(_2, _pass), nullptr, nullptr, nullptr, nullptr)) ]
+            ;
 
-            outposts_owned
-                =   (
-                            tok.OutpostsOwned_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        parts_in_ship_design
+            =   (
+                    tok.PartsInShipDesign_
+                >-( label(tok.Name_)   > string_grammar )
+                > ( label(tok.Design_) > int_rules.expr )
+            ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, deconstruct_movable_(_3, _pass), nullptr, nullptr, deconstruct_movable_(_2, _pass), nullptr)) ]
+            ;
 
-            parts_in_ship_design
-                =   (
-                            tok.PartsInShipDesign_[ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                        > ( parse::label(Design_token) >   int_value_ref [ _b = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        part_class_in_ship_design
+            =   (
+                tok.PartOfClassInShipDesign_
+                //> ( label(tok.Class_) >>
+                //    as_string [ ship_part_class_enum ]
+                //    [ _d = construct_movable_(new_<ValueRef::Constant<std::string>>(_1)) ]
+                //  )
+                > ( label(tok.Class_) >
+                    (   tok.ShortRange_       | tok.FighterBay_   | tok.FighterWeapon_
+                      | tok.Shield_           | tok.Armour_
+                      | tok.Troops_           | tok.Detection_    | tok.Stealth_
+                      | tok.Fuel_             | tok.Colony_       | tok.Speed_
+                      | tok.General_          | tok.Bombard_      | tok.Research_
+                      | tok.Industry_         | tok.Trade_        | tok.ProductionLocation_
+                    )
+                  )
+                > ( label(tok.Design_) > int_rules.expr)
+            ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, deconstruct_movable_(_3, _pass), nullptr, nullptr, deconstruct_movable_(construct_movable_(new_<ValueRef::Constant<std::string>>(_2)), _pass), nullptr)) ]
+            ;
 
-            part_class_in_ship_design
-                =   (
-                            tok.PartClassInShipDesign_  [ _a = construct<std::string>(_1) ]
-                        //> ( parse::label(Class_token) >>
-                        //    as_string [ parse::enum_parser<ShipPartClass>() ]
-                        //    [ _d = new_<ValueRef::Constant<std::string> >(_1) ]
-                        //  )
-                        > ( parse::label(Class_token) >
-                            ( tok.ShortRange_       | tok.Missiles_     | tok.Fighters_
-                            | tok.PointDefense_     | tok.Shield_       | tok.Armour_
-                            | tok.Troops_           | tok.Detection_    | tok.Stealth_
-                            | tok.Fuel_             | tok.Colony_       | tok.Speed_
-                            | tok.General_          | tok.Bombard_      | tok.Research_
-                            | tok.Industry_         | tok.Trade_        | tok.ProductionLocation_
-                            ) [ _d = new_<ValueRef::Constant<std::string> >(_1) ]
-                          )
-                        > ( parse::label(Design_token) >   int_value_ref [ _b = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        part_class_as_int
+            = ( label(tok.Class_) > ship_part_class_enum )
+              [ _val = construct_movable_(new_<ValueRef::Constant<int>>(_1)) ]
+        ;
 
-            ship_designs_destroyed
-                =   (
-                            tok.ShipDesignsDestroyed_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Design_token) >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        ship_parts_owned
+            =   (
+                     tok.ShipPartsOwned_
+                > -( label(tok.Empire_) > int_rules.expr )
+                > -( label(tok.Name_)   > string_grammar )
+                > -part_class_as_int
+                ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(
+                    _1,
+                    deconstruct_movable_(_2, _pass), deconstruct_movable_(_4, _pass), nullptr,
+                    deconstruct_movable_(_3, _pass), nullptr)) ]
+            ;
 
-            ship_designs_lost
-                =   (
-                            tok.ShipDesignsLost_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Design_token) >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        empire_design_ref
+            =   (
+                    (   tok.ShipDesignsDestroyed_
+                    |   tok.ShipDesignsLost_
+                    |   tok.ShipDesignsOwned_
+                    |   tok.ShipDesignsProduced_
+                    |   tok.ShipDesignsScrapped_
+                    )
+                >  -(   label(tok.Empire_) > int_rules.expr )
+                >  -(   label(tok.Design_) > string_grammar )
+                ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, deconstruct_movable_(_2, _pass), nullptr, nullptr, deconstruct_movable_(_3, _pass), nullptr)) ]
+            ;
 
-            ship_designs_owned
-                =   (
-                            tok.ShipDesignsOwned_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Design_token) >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        slots_in_hull
+            =   (
+                    tok.SlotsInHull_
+                >   label(tok.Name_) > string_grammar
+            ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, nullptr, nullptr, nullptr, deconstruct_movable_(_2, _pass), nullptr)) ]
+            ;
 
-            ship_designs_produced
-                =   (
-                            tok.ShipDesignsProduced_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Design_token) >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        slots_in_ship_design
+            =   (
+                    tok.SlotsInShipDesign_
+                >   label(tok.Design_) > int_rules.expr
+                ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, deconstruct_movable_(_2, _pass), nullptr, nullptr, nullptr, nullptr)) ]
+            ;
 
-            ship_designs_scrapped
-                =   (
-                            tok.ShipDesignsScrapped_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >    int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Design_token) >    string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        special_added_on_turn
+            =   (
+                    tok.SpecialAddedOnTurn_
+                >-( label(tok.Name_)   > string_grammar )
+                >-( label(tok.Object_) > int_rules.expr )
+            ) [ _val = construct_movable_(new_<ValueRef::ComplexVariable<int>>(_1, deconstruct_movable_(_3, _pass), nullptr, nullptr, deconstruct_movable_(_2, _pass), nullptr)) ]
+            ;
 
-            slots_in_hull
-                =   (
-                            tok.SlotsInHull_ [ _a = construct<std::string>(_1) ]
-                        >   parse::label(Name_token) >      string_value_ref [ _d = _1 ]
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
+        start
+            %=  game_rule
+            |   empire_name_ref
+            |   empire_ships_destroyed
+            |   jumps_between
+            //|   jumps_between_by_empire_supply
+            |   outposts_owned
+            |   parts_in_ship_design
+            |   part_class_in_ship_design
+            |   ship_parts_owned
+            |   empire_design_ref
+            |   slots_in_hull
+            |   slots_in_ship_design
+            |   special_added_on_turn
+            ;
 
-            slots_in_ship_design
-                =   (
-                            tok.SlotsInShipDesign_ [ _a = construct<std::string>(_1) ]
-                        >   parse::label(Design_token) >    int_value_ref [ _b = _1 ]
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            species_colonies_owned
-                =  (
-                            tok.SpeciesColoniesOwned_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            species_planets_bombed
-                =  (
-                            tok.SpeciesPlanetsBombed_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            species_planets_depoped
-                =   (
-                            tok.SpeciesPlanetsDepoped_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            species_planets_invaded
-                =   (
-                            tok.SpeciesPlanetsInvaded_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            species_ships_destroyed
-                =   (
-                            tok.SpeciesShipsDestroyed_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            species_ships_lost
-                =   (
-                            tok.SpeciesShipsLost_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            species_ships_owned
-                =   (
-                            tok.SpeciesShipsOwned_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            species_ships_produced
-                =   (
-                            tok.SpeciesShipsProduced_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            species_ships_scrapped
-                =   (
-                            tok.SpeciesShipsScrapped_ [ _a = construct<std::string>(_1) ]
-                        >-( parse::label(Empire_token) >   int_value_ref [ _b = _1 ] )
-                        >-( parse::label(Name_token)   >   string_value_ref [ _d = _1 ] )
-                    ) [ _val = new_<ValueRef::ComplexVariable<int> >(_a, _b, _c, _f, _d, _e) ]
-                ;
-
-            start
-                %=  building_types_owned
-                |   building_types_produced
-                |   building_types_scrapped
-                |   empire_ships_destroyed
-                |   jumps_between
-                //|   jumps_between_by_empire_supply
-                |   outposts_owned
-                |   parts_in_ship_design
-                |   part_class_in_ship_design
-                |   ship_designs_destroyed
-                |   ship_designs_lost
-                |   ship_designs_owned
-                |   ship_designs_produced
-                |   ship_designs_scrapped
-                |   slots_in_hull
-                |   slots_in_ship_design
-                |   species_colonies_owned
-                |   species_planets_bombed
-                |   species_planets_depoped
-                |   species_planets_invaded
-                |   species_ships_destroyed
-                |   species_ships_lost
-                |   species_ships_owned
-                |   species_ships_produced
-                |   species_ships_scrapped
-                ;
-
-            building_types_owned.name("BuildingTypesOwned");
-            building_types_produced.name("BuildingTypesProduced");
-            building_types_scrapped.name("BuildingTypesScrapped");
-            empire_ships_destroyed.name("EmpireShipsDestroyed");
-            jumps_between.name("JumpsBetween");
-            //jumps_between_by_empire_supply.name("JumpsBetweenByEmpireSupplyConnections");
-            outposts_owned.name("OutpostsOwned");
-            parts_in_ship_design.name("PartsInShipDesign");
-            part_class_in_ship_design.name("PartClassInShipDesign");
-            ship_designs_destroyed.name("ShipDesignsDestroyed");
-            ship_designs_lost.name("ShipDesignsLost");
-            ship_designs_owned.name("ShipDesignsOwned");
-            ship_designs_produced.name("ShipDesignsProduced");
-            ship_designs_scrapped.name("ShipDesignsScrapped");
-            slots_in_hull.name("SlotsInHull");
-            slots_in_ship_design.name("SlotsInShipDesign");
-            species_colonies_owned.name("SpeciesColoniesOwned");
-            species_planets_bombed.name("SpeciesPlanetsBombed");
-            species_planets_depoped.name("SpeciesPlanetsDepoped");
-            species_planets_invaded.name("SpeciesPlanetsInvaded");
-            species_ships_destroyed.name("SpeciesShipsDestroyed");
-            species_ships_lost.name("SpeciesShipsLost");
-            species_ships_owned.name("SpeciesShipsOwned");
-            species_ships_produced.name("SpeciesShipsProduced");
-            species_ships_scrapped.name("SpeciesShipsScrapped");
+        game_rule.name("GameRule");
+        empire_name_ref.name("...");
+        empire_ships_destroyed.name("EmpireShipsDestroyed");
+        jumps_between.name("JumpsBetween");
+        //jumps_between_by_empire_supply.name("JumpsBetweenByEmpireSupplyConnections");
+        outposts_owned.name("OutpostsOwned");
+        parts_in_ship_design.name("PartsInShipDesign");
+        part_class_in_ship_design.name("PartOfClassInShipDesign");
+        part_class_as_int.name("PartClass");
+        ship_parts_owned.name("ShipPartsOwned");
+        empire_design_ref.name("ShipDesignsDestroyed, ShipDesignsLost, ShipDesignsOwned, ShipDesignsProduced, or ShipDesignsScrapped");
+        slots_in_hull.name("SlotsInHull");
+        slots_in_ship_design.name("SlotsInShipDesign");
+        special_added_on_turn.name("SpecialAddedOnTurn");
 
 #if DEBUG_INT_COMPLEX_PARSERS
-            debug(building_types_owned);
-            debug(building_types_produced);
-            debug(building_types_scrapped);
-            debug(empire_ships_destroyed);
-            debug(jumps_between);
-            //debug(jumps_between_by_empire_supply);
-            debug(outposts_owned);
-            debug(parts_in_ship_design);
-            debug(part_class_in_ship_design);
-            debug(ship_designs_destroyed);
-            debug(ship_designs_lost);
-            debug(ship_designs_owned);
-            debug(ship_designs_produced);
-            debug(ship_designs_scrapped);
-            debug(slots_in_hull);
-            debug(slots_in_ship_design);
-            debug(species_colonies_owned);
-            debug(species_planets_bombed);
-            debug(species_planets_depoped);
-            debug(species_planets_invaded);
-            debug(species_ships_destroyed);
-            debug(species_ships_lost);
-            debug(species_ships_owned);
-            debug(species_ships_produced);
-            debug(species_ships_scrapped);
-
+        debug(game_rule);
+        debug(empire_name_ref);
+        debug(empire_ships_destroyed);
+        debug(jumps_between);
+        //debug(jumps_between_by_empire_supply);
+        debug(outposts_owned);
+        debug(parts_in_ship_design);
+        debug(part_class_in_ship_design);
+        debug(ship_parts_owned_by_name);
+        debug(ship_parts_owned_by_class);
+        debug(empire_design_ref);
+        debug(slots_in_hull);
+        debug(slots_in_ship_design);
+        debug(special_added_on_turn);
 #endif
-        }
-
-        complex_variable_rule<int>::type    building_types_owned;
-        complex_variable_rule<int>::type    building_types_produced;
-        complex_variable_rule<int>::type    building_types_scrapped;
-        complex_variable_rule<int>::type    empire_ships_destroyed;
-        complex_variable_rule<int>::type    jumps_between;
-        //complex_variable_rule<int>::type    jumps_between_by_empire_supply;
-        complex_variable_rule<int>::type    outposts_owned;
-        complex_variable_rule<int>::type    parts_in_ship_design;
-        complex_variable_rule<int>::type    part_class_in_ship_design;
-        complex_variable_rule<int>::type    ship_designs_destroyed;
-        complex_variable_rule<int>::type    ship_designs_lost;
-        complex_variable_rule<int>::type    ship_designs_owned;
-        complex_variable_rule<int>::type    ship_designs_produced;
-        complex_variable_rule<int>::type    ship_designs_scrapped;
-        complex_variable_rule<int>::type    slots_in_hull;
-        complex_variable_rule<int>::type    slots_in_ship_design;
-        complex_variable_rule<int>::type    species_colonies_owned;
-        complex_variable_rule<int>::type    species_planets_bombed;
-        complex_variable_rule<int>::type    species_planets_depoped;
-        complex_variable_rule<int>::type    species_planets_invaded;
-        complex_variable_rule<int>::type    species_ships_destroyed;
-        complex_variable_rule<int>::type    species_ships_lost;
-        complex_variable_rule<int>::type    species_ships_owned;
-        complex_variable_rule<int>::type    species_ships_produced;
-        complex_variable_rule<int>::type    species_ships_scrapped;
-        complex_variable_rule<int>::type    start;
-    };
-
-    namespace detail {
-        int_complex_parser_rules int_complex_parser;
     }
 }
-
-const complex_variable_rule<int>::type& int_var_complex()
-{ return parse::detail::int_complex_parser.start; }

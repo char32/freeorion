@@ -40,7 +40,7 @@ Cursor::Cursor()
 Cursor::~Cursor()
 {}
 
-TextureCursor::TextureCursor(const boost::shared_ptr<Texture>& texture,
+TextureCursor::TextureCursor(const std::shared_ptr<Texture>& texture,
                              const Pt& hotspot/* = Pt()*/) :
     m_texture(texture),
     m_hotspot(hotspot)
@@ -49,7 +49,7 @@ TextureCursor::TextureCursor(const boost::shared_ptr<Texture>& texture,
     m_hotspot.y = std::max(Y0, std::min(m_hotspot.y, m_texture->DefaultHeight() - 1));
 }
 
-const boost::shared_ptr<Texture>& TextureCursor::GetTexture() const
+const std::shared_ptr<Texture>& TextureCursor::GetTexture() const
 { return m_texture; }
 
 const Pt& TextureCursor::Hotspot() const
@@ -61,16 +61,28 @@ void TextureCursor::Render(const Pt& pt)
     Pt ul = pt - m_hotspot;
     if (OUTLINE_CURSOR) {
         Pt lr = ul + Pt(m_texture->DefaultWidth(), m_texture->DefaultHeight());
+        int verts[8] = {
+            Value(lr.x), Value(ul.y),
+            Value(ul.x), Value(ul.y),
+            Value(ul.x), Value(lr.y),
+            Value(lr.x), Value(lr.y)
+        };
+        glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glDisableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+        glVertexPointer(2, GL_INT, 0, verts);
+
         glDisable(GL_TEXTURE_2D);
-        glBegin(GL_LINE_LOOP);
         glColor3ub(255, 0, 0);
-        glVertex(lr.x, ul.y);
-        glVertex(ul.x, ul.y);
-        glVertex(ul.x, lr.y);
-        glVertex(lr.x, lr.y);
-        glEnd();
+
+        glDrawArrays(GL_LINE_LOOP, 0, 4);
+
         glEnable(GL_TEXTURE_2D);
+
+        glPopClientAttrib();
     }
-    glColor3ub(255, 255, 255);
+    glColor4ub(255, 255, 255, 255);
     m_texture->OrthoBlit(ul);
 }

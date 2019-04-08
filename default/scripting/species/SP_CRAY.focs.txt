@@ -1,0 +1,44 @@
+Species
+    name = "SP_CRAY"
+    description = "SP_CRAY_DESC"
+    gameplay_description = "SP_CRAY_GAMEPLAY_DESC"
+    Playable
+    CanProduceShips
+    CanColonize
+
+    tags = [ "ROBOTIC" "BAD_INDUSTRY" "GOOD_RESEARCH" "AVERAGE_SUPPLY" "PEDIA_ROBOTIC_SPECIES_CLASS" ]
+
+    foci = [
+        [[HAS_INDUSTRY_FOCUS]]
+        [[HAS_RESEARCH_FOCUS]]
+        [[HAS_GROWTH_FOCUS]]
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    preferredfocus = "FOCUS_RESEARCH"
+
+    effectsgroups = [
+        [[BAD_INDUSTRY]]
+        [[GOOD_RESEARCH]]
+        [[AVERAGE_STOCKPILE]]
+
+        [[AVERAGE_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[AVERAGE_SUPPLY]]
+        [[GOOD_DEFENSE_TROOPS]]
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[LARGE_PLANET]]
+        [[BROAD_EP]]
+        [[STANDARD_SHIP_SHIELDS]]
+    ]
+
+    [[BARREN_BROAD_EP]]
+
+    graphic = "icons/species/cray.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

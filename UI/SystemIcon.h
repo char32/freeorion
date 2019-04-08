@@ -1,13 +1,22 @@
-// -*- C++ -*-
-//SystemIcon.h
 #ifndef _SystemIcon_h_
 #define _SystemIcon_h_
 
 #include <GG/GGFwd.h>
 #include <GG/Control.h>
 
-class FleetButton;
+#include <boost/signals2/signal.hpp>
 
+
+/** @content_tag{CTRL_SHIPYARD} Building is to be treated as a shipyard when formatting containing objects
+ * 
+ * For objects containing a building with this tag:
+ * * Planets have an underlined name in the sidepanel
+ * * Systems have their name underlined on the map and sidepanel
+ */
+const std::string TAG_SHIPYARD = "CTRL_SHIPYARD";
+
+class FleetButton;
+class RotatingGraphic;
 
 /** A label like GG::Control that displays the name of a system in the
   * color(s) of the owning empire(s).  This class is derived from GG::Control
@@ -17,7 +26,12 @@ class FleetButton;
 class OwnerColoredSystemName : public GG::Control {
 public:
     OwnerColoredSystemName(int system_id, int font_size, bool blank_unexplored_and_none);
-    virtual void Render();
+
+    void CompleteConstruction() override;
+    void Render() override;
+    void SizeMove(const GG::Pt& ul, const GG::Pt& lr) override;
+private:
+    std::shared_ptr<GG::TextControl> m_text;
 };
 
 /** A control that allows interaction with a star system.  This class allows
@@ -27,37 +41,55 @@ public:
 class SystemIcon : public GG::Control {
 public:
     //! \name Structors //!@{
-    SystemIcon(GG::X x, GG::Y y, GG::X w, int system_id);       //!< construct from a universe ID at specified size and position
-    ~SystemIcon();                                              //!< dtor
+    /** Construct from a universe ID at specified size and position. */
+    SystemIcon(GG::X x, GG::Y y, GG::X w, int system_id);
+
+    ~SystemIcon();
     //!@}
+    void CompleteConstruction() override;
 
     //! \name Accessors //!@{
+    /** Checks to see if point lies inside in-system fleet buttons before
+        checking parent InWindow method. */
+    bool InWindow(const GG::Pt& pt) const override;
+
     int             SystemID() const;                           //!< returns ID of system this icon represents
 
-    const boost::shared_ptr<GG::Texture>& DiscTexture() const;      //!< returns the solid star disc texture
-    const boost::shared_ptr<GG::Texture>& HaloTexture() const;      //!< returns the transparent star halo texture
-    const boost::shared_ptr<GG::Texture>& TinyTexture() const;      //!< returns the alternate texture shown when icon very small
+    /** Returns the solid star disc texture. */
+    const std::shared_ptr<GG::Texture>& DiscTexture() const;
 
-    virtual bool    InWindow(const GG::Pt& pt) const;       //!< Overrides GG::Wnd::InWindow. Checks to see if point lies inside in-system fleet buttons before checking main InWindow method.
+    /** Returns the transparent star halo texture. */
+    const std::shared_ptr<GG::Texture>& HaloTexture() const;
+
+    /** Returns the alternate texture shown when icon very small. */
+    const std::shared_ptr<GG::Texture>& TinyTexture() const;
+
     GG::Pt          NthFleetButtonUpperLeft(unsigned int button_number, bool moving) const; //!< returns upper left point of moving or stationary fleetbutton number \a button_number
     int             EnclosingCircleDiameter() const;        //!< returns diameter of circle enclosing icon around which other icons can be placed and within which the mouse is over the icon
     //!@}
 
     //! \name Mutators //!@{
-    virtual void    SizeMove(const GG::Pt& ul, const GG::Pt& lr);
+    void SizeMove(const GG::Pt& ul, const GG::Pt& lr) override;
 
-    virtual void    Render();
+    void Render() override;
+
+    void LClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void RClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void LDoubleClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void RDoubleClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void MouseEnter(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys) override;
+
+    void MouseLeave() override;
+
+    void MouseWheel(const GG::Pt& pt, int move, GG::Flags<GG::ModKey> mod_keys) override;
+
     void            RenderDisc();
     void            RenderHalo(double scale_factor);
     void            RenderOverlay(double zoom_factor);
-
-    virtual void    LClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    RClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    LDoubleClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    RDoubleClick(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    MouseEnter(const GG::Pt& pt, GG::Flags<GG::ModKey> mod_keys);
-    virtual void    MouseLeave();
-    virtual void    MouseWheel(const GG::Pt& pt, int move, GG::Flags<GG::ModKey> mod_keys);
 
     void            SetSelected(bool selected = true);   //!< shows/hides the system selection indicator over this system
 
@@ -78,19 +110,28 @@ private:
     void            PositionSystemName();
 
     int                             m_system_id;                //!< the System associated with this SystemIcon
-    boost::shared_ptr<GG::Texture>  m_disc_texture;             //!< solid star disc texture
-    boost::shared_ptr<GG::Texture>  m_halo_texture;             //!< transparent star halo texture
-    boost::shared_ptr<GG::Texture>  m_tiny_texture;             //!< alternate texture shown when icon very small
-    boost::shared_ptr<GG::Texture>  m_overlay_texture;          //!< extra texture drawn over / behind system
+
+    /** Solid star disc texture. */
+    std::shared_ptr<GG::Texture> m_disc_texture;
+
+    /** Transparent star halo texture. */
+    std::shared_ptr<GG::Texture> m_halo_texture;
+
+    /** Alternate texture shown when icon very small. */
+    std::shared_ptr<GG::Texture> m_tiny_texture;
+
+    /** Extra texture drawn over / behind system. */
+    std::shared_ptr<GG::Texture> m_overlay_texture;
+
     double                          m_overlay_size;             //!< size of extra texture in universe units
-    GG::StaticGraphic*              m_tiny_graphic;             //!< non-scaled texture shown when zoomed far enough out
-    GG::DynamicGraphic*             m_selection_indicator;      //!< shown to indicate system is selected in sidepanel
-    GG::DynamicGraphic*             m_tiny_selection_indicator; //!< non-scaled indicator shown when showing tiny graphic
-    GG::StaticGraphic*              m_mouseover_indicator;      //!< shown when the mouse cursor is over the system and the system has been explored by the client empire
-    GG::StaticGraphic*              m_mouseover_unexplored_indicator; //!< shown when the mouse cursor is over the system and teh system is unexplored by the client empire
-    GG::StaticGraphic*              m_tiny_mouseover_indicator; //!< non-scaled indicator shown when showing tiny graphic
+    std::shared_ptr<GG::StaticGraphic>              m_tiny_graphic;             //!< non-scaled texture shown when zoomed far enough out;
+    std::shared_ptr<RotatingGraphic>                m_selection_indicator;      //!< shown to indicate system is selected in sidepanel
+    std::shared_ptr<RotatingGraphic>                m_tiny_selection_indicator; //!< non-scaled indicator shown when showing tiny graphic
+    std::shared_ptr<GG::StaticGraphic>              m_mouseover_indicator;      //!< shown when the mouse cursor is over the system and the system has been explored by the client empire;
+    std::shared_ptr<GG::StaticGraphic>              m_mouseover_unexplored_indicator; //!< shown when the mouse cursor is over the system and teh system is unexplored by the client empire;
+    std::shared_ptr<GG::StaticGraphic>              m_tiny_mouseover_indicator; //!< non-scaled indicator shown when showing tiny graphic;
     bool                            m_selected;                 //!< is this icon presently selected / should it show m_selected_indicator
-    OwnerColoredSystemName*         m_colored_name;             //!< the control that holds the name of the system
+    std::shared_ptr<OwnerColoredSystemName>         m_colored_name;             //!< the control that holds the name of the system
     bool                            m_showing_name;             //!< is the icon supposed to show its name?
 
     boost::signals2::connection     m_system_connection;

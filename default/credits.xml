@@ -4,9 +4,9 @@
     <GROUP name="LEAD">
       <PERSON name="Geoff Topping"            nick="Geoff the Medio"  task="Programming, Design"/>
       <PERSON name=""                         nick="Dilvish"          task="Programming, Design"/>
-      <PERSON name=""                         nick="Vezzra"           task="Programming, Release Management"/>
+      <PERSON name=""                         nick="Vezzra"           task="Release Management, Design"/>
     </GROUP>
-    <GROUP name="LEAD EMPERITUS">
+    <GROUP name="LEAD EMERITUS">
       <PERSON name="Mark Saward"              nick="Tyreth"           task="Programming, Game Design, Graphics"/>
       <PERSON name="Zach Laine"               nick="Tzlaine"          task="Programming, Game Design"/>
       <PERSON name="Samuel Knowlton"          nick="Aquitaine"        task="Game Design"/>
@@ -59,7 +59,17 @@
       <PERSON name="Vincent Legoll"           nick="vincele"          task="Programming"/>
       <PERSON name="Fabian Wendt"             nick="Morlic"           task="Programming"/>
       <PERSON name=""                         nick="mel-odious"       task="Programming"/>
-      <PERSON name="Mark Shmuale"             nick="wheals"           task="Programming"/>
+      <PERSON name="S.M."                     nick="wheals"           task="Programming"/>
+      <PERSON name="Andrey Solomatin"         nick="Cjkjvfnby"        task="Programming"/>
+      <PERSON name=""                         nick="LGM-Doyle"        task="Programming"/>
+      <PERSON name="D. Benage"                nick="dbenage-cx"       task="Programming"/>
+      <PERSON name=""                         nick="matthoppe"        task="Programming"/>
+      <PERSON name=""                         nick="o01eg"            task="Programming"/>
+      <PERSON name="Sergey Alirzaev"          nick="L29Ah"            task="Programming"/>
+      <PERSON name=""                         nick="VPeruS"           task="Programming"/>
+      <PERSON name="Ingo Schwarze"            nick="ischwarze"        task="Programming"/>
+      <PERSON name=""                         nick="agrrr3"           task="Programming"/>
+      <PERSON name=""                         nick="OlafPettersson"   task="Programming"/>
     </GROUP>
     <GROUP name="GAMEDESIGN and CONTENT">
       <PERSON name="Krum Stanoev"             nick=""                 task="Game Design"/>
@@ -78,6 +88,11 @@
       <PERSON name="Colin Ng"                 nick="unjashfan"        task="Game Design"/>
       <PERSON name=""                         nick="Sloth"            task="Game Design"/>
       <PERSON name="Mat Bowles"               nick="MatGB"            task="Game Design"/>
+      <PERSON name=""                         nick="matt474"          task="Content"/>
+      <PERSON name="Mark Mattson"             nick="mem359"           task="Content"/>
+      <PERSON name=""                         nick="Tualha"           task="Content"/>
+      <PERSON name="Timothy Jaeger"           nick="alleryn"          task="Content"/>
+      <PERSON name="Dmitriy Parev"            nick="DmStrelok"        task="Content"/>
     </GROUP>
     <GROUP name="GRAPHICS">
       <PERSON name="Josh Combs"               nick="Josh"             task="Graphics"/>
@@ -98,6 +113,9 @@
       <PERSON name="Shane McLafferty"         nick="Dart_Tech"        task="Graphics"/>
       <PERSON name="Kevin RJ Berry"           nick="BraveSirKevin"    task="Graphics"/>
       <PERSON name=""                         nick="Ta'Lon"           task="Graphics"/>
+      <PERSON name="Viktor Hahn"              nick="Unnamed"          task="Graphics"/>
+      <PERSON name="Fabian Hernandez"         nick="coCoKNIght"       task="Graphics"/>
+      <PERSON name="Holger Motz"              nick="Captain M"        task="Graphics"/>
     </GROUP>
     <GROUP name="AUDIO">
       <PERSON name="Scott R. Looney"          nick="metaphysician"    task="Audio"/>
@@ -122,6 +140,15 @@
       <PERSON name=""                         nick="Nilstilar"        task="French Translation"/>
       <PERSON name="Jean-Charles Schmidt"     nick="Ouaz"             task="French Translation"/>
       <PERSON name=""                         nick="evzorge"          task="Russian Translation"/>
+      <PERSON name="Claudio Giordano"         nick="Shining"          task="Italian Translation"/>
+      <PERSON name="Stefano Peris"            nick="LordStephen77"    task="Italian Translation"/>
+      <PERSON name=""                         nick="nikqz"            task="Russian Translation"/>
+      <PERSON name="Iaroslav Gridin"          nick="Voker57"          task="Russian Translation"/>
+      <PERSON name="Daria Sharonova"          nick="Bestary"          task="Russian Translation"/>
+    </GROUP>
+    <GROUP name="EXTERNAL RESOURCES">
+      <RESOURCE author="Adam Evans"  license="CC-BY 2.0"  title="Andromeda Galaxy (with h-alpha).jpg"
+                source="http://www.flickr.com/photos/8269775@N05"  notes="used for galaxy picture background"/>
     </GROUP>
   </CREDITS>
 </XMLDoc>

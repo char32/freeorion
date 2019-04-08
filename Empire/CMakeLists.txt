@@ -1,0 +1,20 @@
+target_sources(freeorioncommon
+    PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}/Diplomacy.h
+        ${CMAKE_CURRENT_LIST_DIR}/Empire.h
+        ${CMAKE_CURRENT_LIST_DIR}/EmpireManager.h
+        ${CMAKE_CURRENT_LIST_DIR}/PopulationPool.h
+        ${CMAKE_CURRENT_LIST_DIR}/ProductionQueue.h
+        ${CMAKE_CURRENT_LIST_DIR}/ResearchQueue.h
+        ${CMAKE_CURRENT_LIST_DIR}/ResourcePool.h
+        ${CMAKE_CURRENT_LIST_DIR}/Supply.h
+    PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/Diplomacy.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Empire.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/EmpireManager.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/PopulationPool.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ProductionQueue.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ResearchQueue.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ResourcePool.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Supply.cpp
+)

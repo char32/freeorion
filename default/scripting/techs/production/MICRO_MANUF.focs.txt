@@ -1,0 +1,32 @@
+Tech
+    name = "PRO_MICROGRAV_MAN"
+    description = "PRO_MICROGRAV_MAN_DESC"
+    short_description = "INDUSTRY_SHORT_DESC"
+    category = "PRODUCTION_CATEGORY"
+    researchcost = 50 * [[TECH_COST_MULTIPLIER]]
+    researchturns = 5
+    tags = [ "PEDIA_PRODUCTION_CATEGORY" ]
+    prerequisites = "CON_ORBITAL_CON"
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                ProductionCenter
+                OwnedBy empire = Source.Owner
+                NOT Population high = 0
+                ContainedBy And [
+                    System 
+                    Contains And [
+                        Planet
+                        Planet type = Asteroids
+                        OwnedBy empire = Source.Owner
+                    ]
+                ]
+                Focus type = "FOCUS_INDUSTRY"
+            ]
+            priority = [[VERY_LATE_PRIORITY]]
+            effects = SetTargetIndustry value = Value + 5
+    ]
+    graphic = "icons/tech/microgravity_manufacturing.png"
+
+#include "/scripting/common/base_prod.macros"
+#include "/scripting/common/priorities.macros"

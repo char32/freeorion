@@ -1,33 +1,32 @@
 Czech
 
-#This is the Czech String Table file for FreeOrion
-#Autor: MartyCV - Czech Republic,Chomutovak.88@seznam.cz
-#Czech is not COMPLETE!!!Still I working on it!!
-#Please report bugs to my email ;-)
-#Česky: Není to přeložené celé,mělo by být přeložené: všechna menu,názvy budov,názvy v technologickém stromě.Chybí popisy budov a #technologií,to bude trošku oříšek :)
-#Uploaded/Nahráno 9.9.2010
-#I release this czech translations under Creative Commons Attribution - Attribution-ShareAlike 3.0 licence
+# This is the Czech String Table file for FreeOrion
+#
+# Translators:
+# * MartyCV <Chomutovak.88(at)seznam.cz>
+#
+# Notes: to avoid potential conflict with functional keys in other files, do not
+# make any stringtable keys beginning with "FUNCTIONAL_".
+# New Sitreps priorities should be added to
+# `default/customizations/common_user_customizations.txt`.
 
-#################
-# Common        #
-#################
+# semi-randomly collected characters to force font code page loading
+# 肛門オーガズム
+# åřžßąłżęЗыдШит
+# 를와ẵừổ
+# جامعة
+# یای مجهو
 
-#Anyone can use these for basic buttons
 
-BROWSE_BTN
-Procházet...
+##
+## Common phrases
+##
 
 CANCEL
 Zpět
 
 DONE
 Hotovo
-
-CLOSE
-Zavřít
-
-LOAD
-Nahrát
 
 SAVE
 Uložit
@@ -37,9 +36,6 @@ Otevřít
 
 OR
 nebo
-
-AND
-a
 
 YES
 Ano
@@ -62,20 +58,15 @@ Vlož nové jméno
 ERROR
 CHYBA
 
-TURN
-Tah
-
-CHAT_WHISPER
-šeptat
-
-# used to generate names for new fleets when they are created
+# Name for a newly created general purpose fleet.
+# %1% represents a unique number.
 NEW_FLEET_NAME
 Nové loďstvo %1%
 
+# Name for a newly created general purpose fleet when no uniqe number could be
+# created.
 NEW_FLEET_NAME_NO_NUMBER
 Nové loďstvo
-
-# used to generate name for effect-created planets. %1% is the system name.
 
 BOMBER
 Bombardér
@@ -89,46 +80,50 @@ Naše Impérium
 DEFAULT_PLAYER_NAME
 Lidský_Hráč
 
-###########################
-# Predefined Ship Designs #
-###########################
-# in premade_ship_designs.txt
+
+##
+## Major errors
+##
+
+
+##
+## Predefined Ship Designs (located in default/scripting/ship_designs/)
+##
 
 SD_SCOUT
 Průzkumník
+
 SD_SCOUT_DESC
 Malé a levné neozbrojené plavidlo určené pro průzkum.
 
-SD_MARK1_DESC
-Cenově dostupná ozbrojená hlídka.
-
-SD_MARK2_DESC
-Křižník se silnou obrannou a útočnou schopností.
-
-SD_MARK3_DESC
-Rozšířené křižník s těžkými zbraněmi a obrněním na dělaní špinavé práce.
-
-SD_MARK4_DESC
-Masivní válečná loď ozbrojená a chráněná nejnovějšími technologiemi. Cena se od toho odvíjí.
-
 SD_COLONY_SHIP
 Kolonizační loď
+
 SD_COLONY_SHIP_DESC
 Obrovské neozbrojené plavidlo schopné bezpečně dovážet milionů občanů na nové kolonie.
 
-##############################
-# Predefined Starting Fleets #
-##############################
 
-FN_HOME_FLEET
-Domácí loďstvo
+##
+## Monsters
+##
+
+
+##
+## Fields
+##
+
+
+##
+## Predefined starting fleets
+##
 
 FN_BATTLE_FLEET
 Bitevní loďstvo
 
-##########################
-# Status Update Messages #
-##########################
+
+##
+## Status update messages
+##
 
 SERVER_WONT_START
 Server nebyl spuštěn.
@@ -139,30 +134,16 @@ Server neodpovídá...
 SERVER_LOST
 Spojeni se serverem ztraceno.
 
-SERVER_GAME_END
-Server ukončil hru...
-
 PLAYER_DISCONNECTED
 Hráč č. %1% se odpojil.
-
-PLAYER_DEFEATED
-Byl si poražen.
-
-EMPIRE_DEFEATED
-Impérium rasy %1%  přestalo existovat.
-
-UNKNOWN_EMPIRE
-Neznámá říše
-
-LAST_OPPONENT_DEFEATED_VICTORY
-Tvůj poslední protivník byl poražen a tak se stáváš VÍTĚZEM !
 
 UNABLE_TO_WRITE_CONFIG_XML
 Nemohu zapisovat do souboru config.xml
 
-######################################
-# Command Line and OptionsDB Options #
-######################################
+
+##
+## Command-line and options database entries
+##
 
 COMMAND_LINE_USAGE
 '''Využití: '''
@@ -179,9 +160,6 @@ Využívá všech nastavení z jakékoli stávající config.xml souboru a ty, u
 OPTIONS_DB_BG_MUSIC
 Nastaví skladbu přehrávanou na pozadí.
 
-OPTIONS_DB_UI_CHAT_HIDE_INTERVAL
-Časový interval, v sekundách, po kterém multiplayer chat okno zmizí. Hodnota 0 znamená, že okno nikdy nezmizí.
-
 OPTIONS_DB_GALAXY_MAP_GAS
 Vykreslování plynových substancí kolem galaxie,aby galxie dostala kýžený tvar.  Na starších systémech může způsobit zpomalení.
 
@@ -193,9 +171,6 @@ Zobrazení měřítka mapy galaxie.
 
 OPTIONS_DB_GALAXY_MAP_ZOOM_SLIDER
 Zobrazení přibližovací posuvník na mapě galaxie.
-
-OPTIONS_DB_OPTIMIZED_SYSTEM_RENDERING
-Použít luxusně optimalizovaný OpenGL 1.5 pro vykreslování systému galktické mapy.  Může být nefunkční na starších kartách .
 
 OPTIONS_DB_STARLANE_THICKNESS
 Nastavuje šířku mezihvězdných drah pro vykreslení (pixely).
@@ -242,17 +217,11 @@ Nastaví šířku okna v módu hry "v okně".
 OPTIONS_DB_APP_HEIGHT_WINDOWED
 Nastaví výšku okna v módu hry "v okně".
 
-OPTIONS_DB_COLOR_DEPTH
-Nastavení barevné hloubky.
-
 OPTIONS_DB_SHOW_FPS
 Přepíná FPS zobrazení zapnout nebo vypnout.
 
 OPTIONS_DB_MAX_FPS
 Přepíná FPS limit, pokud je povolena. Omezení se přepíná s fps limit-.
-
-OPTIONS_DB_UI_SOUND_ENABLED
-Přepíná UI zvukové efekty zapnout nebo vypnout.
 
 OPTIONS_DB_UI_SOUND_VOLUME
 Hlasitost (0 až 255), UI zvukových efektů.
@@ -302,12 +271,6 @@ Nastaví zdrojový soubor UI fontu.
 OPTIONS_DB_UI_FONT_BOLD
 Nastaví zdrojový soubor UI bold fontu.
 
-OPTIONS_DB_UI_FONT_ITALIC
-Nastaví zdrojový soubor UI bold fontu.
-
-OPTIONS_DB_UI_FONT_BOLD_ITALIC
-Nastaví zdrojový soubor UI bold fontu.
-
 OPTIONS_DB_UI_FONT_SIZE
 Nastaví velikost UI fontu.
 
@@ -332,12 +295,10 @@ Nastaví UI control barvu okraje.
 OPTIONS_DB_UI_SYSTEM_ICON_SIZE
 Nastaví velikost systémových ikon.
 
-OPTIONS_DB_TEST_3D_COMBAT
-Testovat 3D bojovou mezihru.
 
-#################
-# File Dialog   #
-#################
+##
+## File dialog
+##
 
 FILE_DLG_FILES
 Složka(y):
@@ -345,16 +306,9 @@ Složka(y):
 FILE_DLG_FILE_TYPES
 Typ(y):
 
-FILE_DLG_MALFORMED_FILENAME
-Špatný název souboru!
-
 FILE_DLG_OVERWRITE_PROMPT
 '''%1% existuje.
 Mám je přepsat?'''
-
-FILE_DLG_INVALID_FILENAME
-'''"%1%"
-špatný název souboru.'''
 
 FILE_DLG_FILENAME_IS_A_DIRECTORY
 '''"%1%"
@@ -367,9 +321,10 @@ neexistuje.'''
 FILE_DLG_DEVICE_IS_NOT_READY
 Cíl je nedostupný!
 
-#################
-# Color Dialog  #
-#################
+
+##
+## Color selection dialog
+##
 
 COLOR_DLG_NEW
 Nový
@@ -386,16 +341,13 @@ Z:
 COLOR_DLG_BLUE
 M:
 
-#################
-# Intro Screen  #
-#################
 
-#Window title####
+##
+## Intro screen
+##
 
 INTRO_WINDOW_TITLE
 FreeOrion Hlavní menu
-
-#Button names####
 
 INTRO_BTN_SINGLE_PLAYER
 Jeden hráč
@@ -421,24 +373,16 @@ Tvůrci
 INTRO_BTN_EXIT
 Odejít
 
-#Error Messages####
-
 ERR_CONNECT_TIMED_OUT
 Vypršel čas pro připojení se k serveru!
 
-ERR_VERSION_MISMATCH
-Nemůžu se připojit,server používá jinou verzi hry!:
 
-########################
-# Server Setup Screen  #
-########################
-
-#Window title####
+##
+## Server Setup Screen
+##
 
 SCONNECT_WINDOW_TITLE
 Připojuji se k serveru
-
-#Static labels####
 
 LAN_GAME_LABEL
 Hra po síti LAN:
@@ -449,8 +393,6 @@ Internetová hra:
 PLAYER_NAME_LABEL
 Jméno hráče
 
-#Button names####
-
 HOST_GAME_BN
 Vytvořit novou hru
 
@@ -460,15 +402,13 @@ Připojit se ke hře
 REFRESH_LIST_BN
 Obnovit
 
-########################
-# Multiplayer Lobby    #
-########################
+
+##
+## Multiplayer lobby
+##
 
 MPLOBBY_WINDOW_TITLE
 Nastavení hry více hráčů
-
-MPLOBBY_HOST_ABORTED_GAME
-Zakládající hráč zakázal toto nastavení.
 
 MULTIPLAYER_GAME_START_CONDITIONS
 Název a barva říše musí být unikátní
@@ -494,18 +434,13 @@ Nahrát hru
 START_GAME_BN
 Začít hru
 
-########################
-# Galaxy Setup Screen  #
-########################
 
-#Window title####
+##
+## Galaxy Setup Screen
+##
 
 GSETUP_WINDOW_TITLE
 Nastavení galaxie
-
-#Strings
-GSETUP_GRAPHICS_FILES
-Grafické soubory
 
 GSETUP_PLAYER_NAME
 Jméno hráče
@@ -519,66 +454,83 @@ Barva říše
 GSETUP_NUMBER_AIS
 Počet počítačových hráčů
 
-#Drop-down list labels and choices####
-
 GSETUP_STARS
 Počet hvězd
+
 GSETUP_SHAPE
 Tvar galaxie
+
 GSETUP_AGE
 Stáří galaxie
+
 GSETUP_STARLANE_FREQ
 Frekvence hvězd. tras
+
 GSETUP_PLANET_DENSITY
 Hustota planet
+
 GSETUP_SPECIALS_FREQ
 Speciální frekvence
 
+# A galaxy shape to select when generating a universe.
 GSETUP_2ARM
 Spirála, 2-ramená
+
+# A galaxy shape to select when generating a universe.
 GSETUP_3ARM
 Spirála, 3-ramená
+
+# A galaxy shape to select when generating a universe.
 GSETUP_4ARM
 Spirála, 4-ramená
+
+# A galaxy shape to select when generating a universe.
 GSETUP_CLUSTER
 Shluk
+
+# A galaxy shape to select when generating a universe.
 GSETUP_ELLIPTICAL
 Elipsa
+
+# A galaxy shape to select when generating a universe.
 GSETUP_RING
 Kruh
 
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_NONE
 Žádný
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_LOW
 Malý
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_MEDIUM
 Střední
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_HIGH
 Velký
 
+# A galaxy age to select when generating a universe.
 GSETUP_YOUNG
 Mladý
+
+# A galaxy age to select when generating a universe.
 GSETUP_MATURE
 Zralý
+
+# A galaxy age to select when generating a universe.
 GSETUP_ANCIENT
 Starověký
 
-#Error messages####
 
-GSETUP_ERR_NOEXIST
-Neexistuje!
-
-###########################
-# About Dialog            #
-###########################
-
-#License button text####
+##
+## About dialog
+##
 
 ABOUT_WINDOW_TITLE
 O FreeOrion
-
-CREDITS
-Tvůrci
 
 VISION
 Vize
@@ -586,9 +538,10 @@ Vize
 FREEORION_VISION
 FreeOrion, open-source hra založená na hře Master of Orion, je tahová strategie v obrovském vesmírném prostoru, který navazuje na model klasických "4X" her (eXplore-eXpand-eXploit-eXterminate),začleněním stavebních prvků z her jako je Europa Universalis 2 a univerzálním taktickém bojovém systému. Zatímco jeho modulární, open-source design umožňuje významný stupeň přizpůsobení herního enginu a příběh prvky Společenství, je tým FreeOrion věnované na výstavbu bydlení, dýchání vesmír 'Grand kampaň' model.
 
-###########################
-# Game Menu               #
-###########################
+
+##
+## In-game menu
+##
 
 GAME_MENU_SAVE
 Uložit hru
@@ -599,9 +552,15 @@ Nahrát hru
 GAME_MENU_RESIGN
 Vzdát to!
 
-###########################
-# Game Options            #
-###########################
+
+##
+## Save game dialog
+##
+
+
+##
+## Game options
+##
 
 OPTIONS_TITLE
 Nastavení
@@ -611,9 +570,6 @@ Rychle-zavřít okna
 
 OPTIONS_MISC_UI
 Různé UI Nastavení
-
-OPTIONS_SINGLEPLAYER
-Jeden hráč
 
 OPTIONS_AUTOSAVE_TURNS_BETWEEN
 Tahy mezi autouložením
@@ -630,10 +586,10 @@ Velikost fontu
 OPTIONS_FONT_TITLE
 Titulek oken
 
-OPTIONS_HORIZONTAL
+OPTIONS_TECH_SPACING_HORIZONTAL
 Horizontální
 
-OPTIONS_VERTICAL
+OPTIONS_TECH_SPACING_VERTICAL
 Vertikální
 
 OPTIONS_TOOLTIP_DELAY
@@ -651,9 +607,6 @@ Hra v okně  (restartuj pro potvrzení)
 OPTIONS_VIDEO_MODE_WINDOWED_SPINNERS_DESCRIPTION
 Nastav výšku a šířku okna v modu "hra v okně".
 
-OPTIONS_VIDEO_SETTINGS
-Video nastavení
-
 OPTIONS_APP_WIDTH_WINDOWED
 Šířka hry v okně
 
@@ -668,12 +621,6 @@ Zobraz FPS
 
 OPTIONS_LIMIT_FPS
 Limitování FPS
-
-OPTIONS_CHAT_HISTORY
-Historie chatu
-
-OPTIONS_CHAT_HIDE
-Mizení chatu
 
 OPTIONS_GALAXY_MAP
 Mapa galaxie
@@ -726,9 +673,6 @@ Barvy
 OPTIONS_PROGRESS_BACKGROUND_COLOR
 Pozadí
 
-OPTIONS_ANY_FILE
-Všechny soubory
-
 OPTIONS_FOLDER_SETTINGS
 Zdrojové soubory
 
@@ -747,10 +691,12 @@ Hudební soubory
 OPTIONS_SOUND_FILE
 Zvukové soubory
 
-#################
-# Main Map      #
-#################
 
+##
+## Main map window
+##
+
+# %1% current turn number.
 MAP_BTN_TURN_UPDATE
 Tah č. %1%
 
@@ -763,53 +709,74 @@ Výzkum
 MAP_BTN_PRODUCTION
 Produkce
 
-#################
-# SidePanel     #
-#################
 
-SIDE_PANEL
-Postraní panel
+##
+## Side panel/System information
+##
 
-SP_SYSTEM_PRODUCTION
-Produkce systému
-
+# %1% resource type currently produced by the system.
+# %2% amount of the resource currently produced by the system.
 RESOURCE_PRODUCTION_TOOLTIP
 Systém %1%: %2%
+
+# %1% resource type currently consumed by the system.
+# %2% amount of the resource currently consumed by the system.
 RESOURCE_ALLOCATION_TOOLTIP
 Systém %1%: %2%
 
 INDUSTRY_CONSUMPTION
 Spotřeba průmyslu
+
 RESEARCH_CONSUMPTION
 Spotřeba výzkumu
+
 TRADE_CONSUMPTION
 Spotřeba obchodu
 
-INTERSYSTEM_EXCHANGE_TOOLTIP
-Výměna interního systému
 IMPORT_EXPORT_TOOLTIP
 Dovoz / Vývoz
+
 RESOURCE_IMPORT
 Dovoz
+
 RESOURCE_EXPORT
 Dostupné pro vývoz
+
 RESOURCE_SELF_SUFFICIENT
 6ádný dovoz či vývoz
 
-##Planet Panel#############
+
+##
+## Side panel/Planet panel
+##
 
 PLANET_PANEL
 Panel planety
-PL_ASTEROID_BELT
-Pás asteroidů
-PL_UNINHABITED
-Neobydlená
-PL_SIZE
-Velikost
+
+# %1% size of the population this planet is colonized with.
+# %2% maximum population this planet can support.
 PL_COLONIZE
 Kolonizovat (%1%)
 
-## General Tooltips#########
+
+##
+## Side panel/Resources panel
+##
+
+
+##
+## Side panel/Specials panel
+##
+
+
+##
+## Side panel/Buildings panel
+##
+
+
+##
+## General tooltips
+##
 
 TT_UNKNOWN
 Neznámý
@@ -820,13 +787,16 @@ Přejmenuj planetu
 SP_ENTER_NEW_PLANET_NAME
 Vlož nové jméno
 
-#################
-# Fleet Window  #
-#################
 
+##
+## Fleet window
+##
+
+# %1% system name where this fleet is holding.
 FW_FLEET_HOLDING_AT
 Čeká na %1%
 
+# %1% system name where this fleet is moving to.
 FW_FLEET_MOVING_TO
 Letí na %1%
 
@@ -836,61 +806,33 @@ Nikdy
 FW_FLEET_ETA_UNKNOWN
 Neznámý
 
-FW_SHIP_CLASS
-Třída lodi
-
 FW_UNKNOWN_DESIGN_NAME
 Neznámý Desing
 
-# the name of the new fleet icon in the fleet listbox
 
-# the name that is used for fleets the player does not control
+##
+## Moderator
+##
 
-# the name that is used for fleets that no player controls
 
-# the name that is used for ships the player does not control
+##
+## Diplomacy
+##
 
-# the name that is used for ships that no player controls
 
-SHIP_SPEED_STAT_TITLE
-Rychlost
-
-###############
-# TechTreeWnd #
-###############
+##
+## TechTreeWnd
+##
 
 TECH_DISPLAY
 Displej
 
-TECH_NAVIGATION
-Navigace
-
-TECH_TOTAL_COST_STR
-%2% Tahů @ %1% RP / Tah
-
+# %1% number of remaining turns to complete the technology research.
 TECH_TURNS_LEFT_STR
 %1% tahů
 
 TECH_TURNS_LEFT_NEVER
 Nikdy
-
-TECH_WND_TECH_COMPLETED
-HOTOVO
-
-TECH_WND_TECH_QUEUED
-Ve frontě
-
-TECH_WND_TECH_INCOMPLETE
-Nekompletní
-
-TECH_WND_TYPE_THEORIES
-Teorie
-
-TECH_WND_TYPE_APPLICATIONS
-Aplikace
-
-TECH_WND_TYPE_REFINEMENTS
-Upřesnění
 
 TECH_WND_STATUS_COMPLETED
 Kompletní
@@ -898,21 +840,13 @@ Kompletní
 TECH_WND_STATUS_RESEARCHABLE
 Vyzkoumatelné
 
-TECH_WND_LIST_VIEW
-Zobrazení seznamu
+TECH_WND_VIEW_TYPE
+Stromu / Seznamu
 
-TECH_WND_TREE_VIEW
-Zobrazení stromu
 
-TECH_WND_REQUIRES
-Potřebuje
-
-TECH_WND_UNLOCKS
-Odemkne
-
-#######################
-# ProductionInfoPanel #
-#######################
+##
+## Production info panel
+##
 
 PRODUCTION_INFO_TOTAL_PS_LABEL
 Všechny dostupné body
@@ -920,28 +854,18 @@ Všechny dostupné body
 PRODUCTION_INFO_WASTED_PS_LABEL
 Využité body
 
-PRODUCTION_INFO_PROJECTS_IN_PROGRESS_LABEL
-Rozpracované projekty
 
-PRODUCTION_INFO_PS_TO_UNDERFUNDED_PROJECTS_LABEL
-Zafinancované projekty
-
-PRODUCTION_INFO_PROJECTS_IN_QUEUE_LABEL
-Projekty ve frontě
-
-###############
-# ResearchWnd #
-###############
+##
+## Research window
+##
 
 RESEARCH_WND_TITLE
 Výzkum
 
-RESEARCH_INFO_PANEL_TITLE
-Výzkum
 
-####################
-# BuildSelectorWnd #
-####################
+##
+## Build selector window
+##
 
 PRODUCTION_WND_BUILD_ITEMS_TITLE
 Postavitelné položky
@@ -958,9 +882,7 @@ Dostupné
 PRODUCTION_WND_AVAILABILITY_UNAVAILABLE
 Nedostupné
 
-PRODUCTION_TOTAL_COST_STR
-%1% PP / Turn @ %2% Turns
-
+# %1% number of turns left to finish the production of an item.
 PRODUCTION_TURNS_LEFT_STR
 %1% tahů zbývá
 
@@ -970,64 +892,53 @@ Nikdy
 PRODUCTION_DETAIL_ADD_TO_QUEUE
 Přidat do řady
 
-#################
-# ProductionWnd #
-#################
+
+##
+## Production window
+##
 
 PRODUCTION_WND_TITLE
 Produkce
 
-PRODUCTION_INFO_PANEL_TITLE
-Produkce
 
-###########################################
-# ARTICLES #
-###########################################
+##
+## Design window
+##
 
-#The Mining Focus is only available on planets with certain rare specials. Focusing on Mining provides a production bonus.
 
-# Functional list; do not translate. Used for logging during universe creation and for an ObjectListWnd condition
+##
+## Statistics
+##
 
-####################
-# Combat Messages  #
-####################
 
-COMBAT_WINDOW_TITLE
-Bitevní okno
+##
+## Encyclopedia
+##
 
-COMBAT_BATTLE
-'''Bitva : '''
 
-COMBAT_SYSTEM
-Systém "%1%"
+##
+## Combat report
+##
 
-COMBAT_MILITARY_SHIPS
-Vojenská loď
 
-COMBAT_CIVILIAN_SHIPS
-Civilní loď
+##
+## Encyclopedia article categories and short descriptions
+##
 
-COMBAT_PLANETS
-Planeta
 
-COMBAT_REMAINING
-''' Zbývající'''
+##
+## Encyclopedia articles
+##
 
-COMBAT_RETREATED
-''' Ustoupil'''
 
-COMBAT_DESTROYED
-''' Zničen'''
+##
+## Guides
+##
 
-COMBAT_DEFENSELESS
-''' Bezbranný'''
 
-COMBAT_LOST
-''' Prohra!'''
-
-####################
-# TurnProgress     #
-####################
+##
+## Turn progress
+##
 
 TURN_PROGRESS_PHASE_FLEET_MOVEMENT
 Pohyb loďstev
@@ -1047,21 +958,39 @@ Provádění příkazů
 TURN_PROGRESS_PHASE_DOWNLOADING
 Stahuji nový herní stav
 
-#############################################################
-####                    S I T   R E P                    ####
-#############################################################
 
-#Window title####
+##
+## Messages panel
+##
+
+
+##
+## Players list
+##
+
+
+##
+## Objects window
+##
+
+
+##
+## Objects columns
+##
+
+
+##
+## Filters dialog
+##
+
+
+##
+## Situation report
+##
+## Format: Ideally always start with Location: with ship/fleet names near the end.
 
 SITREP_PANEL_TITLE
 Zprávy z říše
-
-## SITREP_PRIORITY_ORDER is an ordered, whitespace separated list, prioritizing
-## these sitreps to be presented in the SitrepPanel in the order set below.
-## Sitreps not specified below will appear in the SitrepPanel following those below.
-
-## ** DO NOT TRANSLATE the contents of SITREP_PRIORITY_ORDER  -- this is a functional entry
-## END OF SITREP_PRIORITY_ORDER
 
 SITREP_SHIP_BUILT
 Loď "%ship%" byla vyrobena v sestému "%system%"".
@@ -1078,7 +1007,7 @@ Došlo k bitvě v systému "%system%"".
 SITREP_PLANET_CAPTURED
 Planeta "%planet%" byla zabrána říší "%empire%"".
 
-SITREP_PLANET_LOST_STARVED_TO_DEATH
+SITREP_PLANET_DEPOPULATED
 Popualce na planetě "%planet%" byla zahubena hladomorem.
 
 SITREP_PLANET_COLONIZED
@@ -1087,22 +1016,34 @@ Planeta "%planet%" byla kolonizována.
 SITREP_FLEET_ARRIVED_AT_DESTINATION
 Loďstvo "%fleet%" odletělo do systému "%system%".
 
+
+##
+## Victory/defeat
+##
+
+VICTORY_TECH
+Říše %empire% dosáhla technologického vítězství.
+
+VICTORY_ALL_ENEMIES_ELIMINATED
+Říše %empire% jako jediná přežila a vítězí.
+
 SITREP_EMPIRE_ELIMINATED
 Říše "%empire%" byla zničena.
 
-#############################################################
-####           V I C T O R Y   /   D E F E A T           ####
-#############################################################
 
-TECH_VICTORY
-Říše %1% dosáhla technologického vítězství.
+##
+## Random beginner hints
+##
 
-ALL_ENEMIES_ELIMINATED_VICTORY
-Říše %1% jako jediná přežila a vítězí.
 
-#############################################################
-####                   S P E C I A L S                   ####
-#############################################################
+##
+## Species
+##
+
+
+##
+## Specials
+##
 
 ANCIENT_RUINS_SPECIAL
 Starobylé ruiny
@@ -1119,237 +1060,298 @@ Dráha této planety je velmi výstřední. Má velký rozdíl mezi jeho nejbli�
 MINERALS_SPECIAL
 Bohatá na minerály
 
-#############################################################
-####        E N U M E R A T I O N   V A L U E S          ####
-#############################################################
 
-# UniverseObjectTypes
+##
+## Enumeration values
+##
 
+# Universe object types
 OBJ_BUILDING
 Budova
+
+# Universe object types
 OBJ_SHIP
 Loď
+
+# Universe object types
 OBJ_FLEET
 Loďstvo
+
+# Universe object types
 OBJ_PLANET
 Planeta
+
+# Universe object types
 OBJ_POP_CENTER
 Populační centrum
+
+# Universe object types
 OBJ_PROD_CENTER
 Produkční centrum
+
+# Universe object types
 OBJ_SYSTEM
 Systém
 
-# StarTypes
-
+# Star types
 STAR_BLUE
 modrý
+
+# Star types
 STAR_WHITE
 bílý
+
+# Star types
 STAR_YELLOW
 žlutý
+
+# Star types
 STAR_ORANGE
 oranžový
+
+# Star types
 STAR_RED
 červený
+
+# Star types
 STAR_NEUTRON
 neutronový
+
+# Star types
 STAR_BLACK
 černá díra
 
-# PlanetTypes
-
+# Planet types
 PT_SWAMP
 bažinatá
+
+# Planet types
 PT_TOXIC
 toxická
+
+# Planet types
 PT_INFERNO
 pekelná
+
+# Planet types
 PT_RADIATED
 radioaktivní
+
+# Planet types
 PT_BARREN
 neúrodná
+
+# Planet types
 PT_TUNDRA
 lesnatá
+
+# Planet types
 PT_DESERT
 pouštní
+
+# Planet types
 PT_TERRAN
 terranská
+
+# Planet types
 PT_OCEAN
 oceánská
+
+# Planet types
 PT_ASTEROIDS
 asteroidy
+
+# Planet types
 PT_GASGIANT
 Plynný obr
 
-# Planet Sizes
-
+# Planet sizes
 SZ_NOWORLD
 Zde není nic k vidění; odleť!
+
+# Planet sizes
 SZ_TINY
 Mrňavá
+
+# Planet sizes
 SZ_SMALL
 Malá
+
+# Planet sizes
 SZ_MEDIUM
 Střední
+
+# Planet sizes
 SZ_LARGE
 Velká
+
+# Planet sizes
 SZ_HUGE
 Obrovská
+
+# Planet sizes
 SZ_ASTEROIDS
 Asteroidy
+
+# Planet sizes
 SZ_GASGIANT
 Plynný obr
 
-# PlanetEnvironments
-
+# Planet environments
 PE_UNINHABITABLE
 Neobyvatelná
+
+# Planet environments
 PE_HOSTILE
 Nepřátelská
+
+# Planet environments
 PE_POOR
 Špatná
+
+# Planet environments
 PE_ADEQUATE
 Vhodná
+
+# Planet environments
 PE_GOOD
 Dobrá
 
-# FocusTypes
-
+# Focus types
 FOCUS_INDUSTRY
 Průmysl
-FOCUS_MINING
-Těžba
+
+# Focus types
 FOCUS_RESEARCH
 Výzkum
+
+# Focus types
 FOCUS_TRADE
 Obchod
 
-# MeterTypes
-
+# Meter types
 METER_POPULATION
 populace
+
+# Meter types
 METER_HEALTH
 zdraví
+
+# Meter types
 METER_INDUSTRY
 průmysl
+
+# Meter types
 METER_RESEARCH
 výzkum
+
+# Meter types
 METER_TRADE
 obchod
-METER_MINING
-těžba
+
+# Meter types
 METER_CONSTRUCTION
 konstrukce
+
+# Meter types
 METER_FUEL
 palivo
+
+# Meter types
 METER_SHIELD
 štít
+
+# Meter types
 METER_DEFENSE
 obrana
+
+# Meter types
 METER_SUPPLY
 zásobování
+
+# Meter types
 METER_STEALTH
 tajnost
+
+# Meter types
 METER_DETECTION
 detekce
 
-# EmpireAffiliationTypes
-
+# Empire affiliation types
 AFFIL_SELF
 My
+
+# Empire affiliation types
 AFFIL_ENEMY
 nepřítel
+
+# Empire affiliation types
 AFFIL_ALLY
 spojenec
 
-# UnlockableItemTypes
-
+# Unlockable item types
 UIT_BUILDING
 Budovy
+
+# Unlockable item types
 UIT_SHIP_PART
 Lodní díly
+
+# Unlockable item types
 UIT_SHIP_HULL
 Lodní trupy
 
-# TechTypes
-
-TT_THEORY
-Teorie
-TT_APPLICATION
-Aplikace
-TT_REFINEMENT
-Vylepšení
-
-# BuildTypes
-
+# Build types
 BT_NOT_BUILDING
 Žádné stavby
+
+# Build types
 BT_BUILDING
 Stavby
+
+# Build types
 BT_SHIP
 Loď
 
-# StockpileTypes
-
-ST_FOOD
-jídlo
-ST_MINERAL
-minerály
-ST_TRADE
-obchod
-
-# Resource Types
-
-# Ship Slot Types
-
+# Ship slot types
 SL_EXTERNAL
 Vnější
+
+# Ship slot types
 SL_INTERNAL
 Vnitřní
 
-# Ship Part Classes
 
-#############################################################
-####      ValueRef, Effect, & Condition Descriptions     ####
-#############################################################
+##
+## FOCS value references, effects & condition descriptions
+##
 
-# ValueRef
 
-# this one is intentionally left empty
+##
+## FOCS condition descriptions
+##
 
-# six is probably more than will be needed, but just in case ...
 
-# Effects
-
-# SetMeter
-
-# others
-
-# Object Creation
-
-# Conditions
-
-#############################################################
-####            T E C H   C A T A G O R I E S            ####
-#############################################################
+##
+## Technology categories
+##
 
 LEARNING_CATEGORY
 Učení
+
 PRODUCTION_CATEGORY
 Produkce
+
 CONSTRUCTION_CATEGORY
 Kostrukce
+
 GROWTH_CATEGORY
 Vývoj
-ECONOMICS_CATEGORY
-Ekonomika
-SHIPS_CATEGORY
-Lodě
 
-#############################################################
-####               T E C H   T H E O R I E S             ####
-#############################################################
+
+##
+## Technology theories
+##
 
 THEORY_SHORT_DESC
 Teoretické předpoklady
@@ -1414,9 +1416,6 @@ Spojené vědomí
 LRN_TRANSCEND
 Dokonalost
 
-GRO_MEDICAL_PATH
-Lékařské patologie
-
 GRO_PLANET_ECOL
 Planetární ekologie
 
@@ -1453,9 +1452,6 @@ Transmetabolismus
 PRO_MICROGRAV_MAN
 Microgravitační výroba
 
-PRO_CORE_MINE
-Deep Core Mining
-
 PRO_ROBOTIC_PROD
 Produkce robotů
 
@@ -1470,9 +1466,6 @@ Orbitální energie
 
 PRO_SENTIENT_AUTOMATION
 AI - Automatizace
-
-PRO_INTSTEL_COPRO
-Mezihvězdná koprodukce
 
 PRO_NDIM_ASSMB
 N-rozměrná montáž
@@ -1510,12 +1503,10 @@ Transarchitektura
 CON_NDIM_STRC
 N-dimezionální struktury
 
-#############################################################
-####          T E C H   A P P L I C A T I O N S          ####
-#############################################################
 
-DOES_NOTHING_SHORT_DESC
-Zbytečný: Nedělá nic
+##
+## Technology application
+##
 
 SHIP_PART_UNLOCK_SHORT_DESC
 Odemkne lodní díly
@@ -1529,30 +1520,24 @@ Odemkne budovy
 RESEARCH_SHORT_DESC
 Zlepší výzkum
 
-MINING_SHORT_DESC
-Zlepší těžbu
-
 INDUSTRY_SHORT_DESC
 Zlepší průmysl
-
-TRADE_SHORT_DESC
-Zlepší obchod
-
-CONSTRUCTION_SHORT_DESC
-Zlepší infrastrukturu
 
 POPULATION_SHORT_DESC
 Zlepší populaci planety
 
-FLEET_RANGE_DESC
-Zlepší lodní zásobování
-
 CON_ORBITAL_CON
 Orbitální stavebnictví
 
-#############################################################
-####                  B U I L D I N G S                  ####
-#############################################################
+
+##
+## Technology refinement
+##
+
+
+##
+## Buildings
+##
 
 BLD_OBSERVATORY
 Observatoř
@@ -1572,9 +1557,6 @@ Základna bioteroristických projektů
 BLD_LIGHTHOUSE
 Mezihvězdný maják
 
-BLD_HEAVY_MINE_PROCESSOR
-Centrum těžké těžby
-
 BLD_SPACE_ELEVATOR
 Vesmírný výtah
 
@@ -1584,33 +1566,78 @@ Genobanka
 BLD_COLLECTIVE_NET
 Síť kolektivního myšlení
 
-#############################################################
-####           Hull/Part Description Templates           ####
-#############################################################
 
+##
+## Hull and ship part description templates
+##
+
+# %1% ship part capacity (fuel, troops, colonists, fighters).
 PART_DESC_CAPACITY
 Kapacita: %1%
 
+# %1% ship part strength (other).
 PART_DESC_STRENGTH
 Pevnost: %1%
 
-PART_DESC_LR_STATS
-'''Poškození: %1%
-Rychlost střelby: %2% missiles/turn
-Rozsah: %3%
-Protiraketová rychlost: %4%
-Protiraketové zdraví: %5%
-Protiraketové utajení: %6%
-Kapacita: %7% missiles'''
 
-PART_DESC_FIGHTER_STATS
-'''Fighter Type: %1%
-Fighter Anti-Fighter Damage: %2%
-Fighter Anti-Ship Damage: %3%
-Fighter Launch Rate: %4% fighters/turn
-Fighter Speed: %6%
-Fighter Health: %7%
-Fighter Stealth: %8%
-Fighter Detection: %9%
-Capacity: %10% fighters'''
+##
+## Ship parts
+##
 
+
+##
+## Ship hulls
+##
+
+
+##
+## Buildings macros
+##
+
+
+##
+## Tech macros
+##
+
+
+##
+## Growth macros
+##
+
+
+##
+## Species picks
+##
+
+
+##
+## Accounting labels
+##
+
+
+##
+## Tags
+##
+
+
+##
+## AI strings
+##
+
+
+##
+## AI diplomacy strings and lists
+##
+
+
+##
+## Hotkey names and descriptions
+##
+
+
+##
+## Name lists
+##
+
+#include "../content_specific_parameters.txt"
+#include "../customizations/common_user_customizations.txt"

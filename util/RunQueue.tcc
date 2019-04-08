@@ -58,8 +58,7 @@ RunQueue<WorkItem>::RunQueue(unsigned n_threads) :
     boost::unique_lock<boost::shared_mutex> schedule_lock(m_schedule_mutex);
 
     for (unsigned i = 0U; i < n_threads; ++i) {
-        boost::shared_ptr< ThreadQueue<WorkItem> > thread_queue(new ThreadQueue<WorkItem>(this));
-        m_thread_queues.push_back(thread_queue);
+        m_thread_queues.push_back(std::make_shared<ThreadQueue<WorkItem>>(this));
     }
 }
 
@@ -70,8 +69,8 @@ RunQueue<WorkItem>::~RunQueue() {
         m_terminate = true;
     }
     m_work_available.notify_all();
-    for (unsigned i = 0U; i < m_thread_queues.size(); ++i)
-        m_thread_queues[i]->thread.join();
+    for (std::shared_ptr<ThreadQueue<WorkItem>> thread_queue : m_thread_queues)
+        thread_queue->thread.join();
 }
 
 template <class WorkItem>
@@ -144,8 +143,7 @@ bool RunQueue<WorkItem>::Schedule(ThreadQueue<WorkItem>& requested_by) {
         for (unsigned balancing_threshold = total_workload; true; balancing_threshold += m_transfer_queue_size) {
             unsigned threads_to_be_scheduled = m_thread_queues.size();
 
-            for (typename std::vector< boost::shared_ptr< ThreadQueue<WorkItem> > >::iterator thread_queue_it = m_thread_queues.begin(), no_queue = m_thread_queues.end();  thread_queue_it != no_queue; ++thread_queue_it) {
-                boost::shared_ptr< ThreadQueue<WorkItem> > thread_queue(*thread_queue_it);
+            for (std::shared_ptr<ThreadQueue<WorkItem>> thread_queue : m_thread_queues) {
                 const unsigned         old_schedule_queue_size = thread_queue->schedule_queue_size;
                 const unsigned         running_queue_size      = thread_queue->running_queue_size; // running_queue_size might be accessed concurrently
                 const unsigned         old_transfer_queue_size = m_transfer_queue_size;
@@ -201,8 +199,7 @@ template <class WorkItem>
 void RunQueue<WorkItem>::GetTotalWorkload(unsigned& total_workload, unsigned& scheduleable_workload) {
     total_workload = scheduleable_workload = m_transfer_queue_size;
 
-    for (typename std::vector< boost::shared_ptr< ThreadQueue<WorkItem> > >::iterator thread_queue_it = m_thread_queues.begin(), no_queue = m_thread_queues.end();  thread_queue_it != no_queue; ++thread_queue_it) {
-        boost::shared_ptr< ThreadQueue<WorkItem> > thread_queue(*thread_queue_it);
+    for (std::shared_ptr<ThreadQueue<WorkItem>> thread_queue : m_thread_queues) {
         scheduleable_workload += thread_queue->schedule_queue_size;
         total_workload += thread_queue->schedule_queue_size + thread_queue->running_queue_size; // running_queue_size might be accessed concurrently
     }

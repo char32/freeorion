@@ -3,24 +3,27 @@
 
 #include "../CUIWnd.h"
 
-#include <boost/scoped_ptr.hpp>
+#include <memory>
+
 
 /// Shows a report on a combat
 class CombatReportWnd : public CUIWnd {
 public:
     CombatReportWnd(const std::string& config_name = "");
-    // Must have explicit destructor since CombatReportPrivate is incomplete here
+    void CompleteConstruction() override;
+    // Must have explicit destructor since Impl is incomplete here
     virtual ~CombatReportWnd();
+
+    void CloseClicked() override;
+
+    void SizeMove(const GG::Pt& ul, const GG::Pt& lr) override;
 
     /// Sets which combat to show.
     void            SetLog(int log_id);
-    virtual void    CloseClicked();
-    virtual void    SizeMove(const GG::Pt& ul, const GG::Pt& lr);
 
 private:
-    class CombatReportPrivate;
-
-    boost::scoped_ptr<CombatReportPrivate> m_impl;
+    class Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 #endif // COMBATREPORTDLG_H

@@ -8,7 +8,7 @@
 #include "../client/human/HumanClientApp.h"
 #include "../network/Networking.h"
 #include "../util/i18n.h"
-#include "../util/MultiplayerCommon.h"
+#include "../util/GameRules.h"
 #include "../util/OptionsDB.h"
 #include "../util/Directories.h"
 #include "../util/Logger.h"
@@ -16,47 +16,74 @@
 #include <GG/Button.h>
 #include <GG/Clr.h>
 #include <GG/DrawUtil.h>
-#include <GG/utf8/checked.h>
+#include <GG/dialogs/ThreeButtonDlg.h>
 
 #include <boost/filesystem/operations.hpp>
 
 namespace {
     const GG::X IN_GAME_OPTIONS_WIDTH(150);
-    const GG::Y IN_GAME_OPTIONS_HEIGHT(280);
+    const GG::Y IN_GAME_OPTIONS_HEIGHT(310);
 }
 
 InGameMenu::InGameMenu():
     CUIWnd(UserString("GAME_MENU_WINDOW_TITLE"),
            GG::INTERACTIVE | GG::MODAL)
-{
-    m_save_btn = new CUIButton(UserString("GAME_MENU_SAVE"));
-    m_load_btn = new CUIButton(UserString("GAME_MENU_LOAD"));
-    m_options_btn = new CUIButton(UserString("INTRO_BTN_OPTIONS"));
-    m_exit_btn = new CUIButton(UserString("GAME_MENU_RESIGN"));
-    m_done_btn = new CUIButton(UserString("DONE"));
+{}
+
+void InGameMenu::CompleteConstruction() {
+    CUIWnd::CompleteConstruction();
+
+    m_save_btn = Wnd::Create<CUIButton>(UserString("GAME_MENU_SAVE"));
+    if (HumanClientApp::GetApp()->SinglePlayerGame())
+        m_load_or_concede_btn = Wnd::Create<CUIButton>(UserString("GAME_MENU_LOAD"));
+    else
+        m_load_or_concede_btn = Wnd::Create<CUIButton>(UserString("GAME_MENU_CONCEDE"));
+    m_options_btn = Wnd::Create<CUIButton>(UserString("INTRO_BTN_OPTIONS"));
+    m_resign_btn = Wnd::Create<CUIButton>(UserString("GAME_MENU_RESIGN"));
+    m_done_btn = Wnd::Create<CUIButton>(UserString("DONE"));
 
     AttachChild(m_save_btn);
-    AttachChild(m_load_btn);
+    AttachChild(m_load_or_concede_btn);
     AttachChild(m_options_btn);
-    AttachChild(m_exit_btn);
+    AttachChild(m_resign_btn);
     AttachChild(m_done_btn);
 
-    GG::Connect(m_save_btn->LeftClickedSignal,      &InGameMenu::Save,      this);
-    GG::Connect(m_load_btn->LeftClickedSignal,      &InGameMenu::Load,      this);
-    GG::Connect(m_options_btn->LeftClickedSignal,   &InGameMenu::Options,   this);
-    GG::Connect(m_exit_btn->LeftClickedSignal,      &InGameMenu::Exit,      this);
-    GG::Connect(m_done_btn->LeftClickedSignal,      &InGameMenu::Done,      this);
-
-    if (!HumanClientApp::GetApp()->SinglePlayerGame()) {
-        // need lobby to load a multiplayer game; menu load of a file is insufficient
-        m_load_btn->Disable();
+    m_save_btn->LeftClickedSignal.connect(
+        boost::bind(&InGameMenu::Save, this));
+    if (HumanClientApp::GetApp()->SinglePlayerGame()) {
+        m_load_or_concede_btn->LeftClickedSignal.connect(
+            boost::bind(&InGameMenu::Load, this));
+    } else {
+        m_load_or_concede_btn->LeftClickedSignal.connect(
+            boost::bind(&InGameMenu::Concede, this));
     }
+    m_options_btn->LeftClickedSignal.connect(
+        boost::bind(&InGameMenu::Options, this));
+    m_resign_btn->LeftClickedSignal.connect(
+        boost::bind(&InGameMenu::Resign, this));
+    m_done_btn->LeftClickedSignal.connect(
+        boost::bind(&InGameMenu::Done, this));
 
     if (!HumanClientApp::GetApp()->CanSaveNow()) {
         m_save_btn->Disable();
-        m_save_btn->SetBrowseModeTime(GetOptionsDB().Get<int>("UI.tooltip-delay"));
-        m_save_btn->SetBrowseInfoWnd(boost::shared_ptr<GG::BrowseInfoWnd>(
-            new TextBrowseWnd(UserString("BUTTON_DISABLED"), UserString("SAVE_DISABLED_BROWSE_TEXT"), GG::X(400))));
+        m_save_btn->SetBrowseModeTime(GetOptionsDB().Get<int>("ui.tooltip.delay"));
+        m_save_btn->SetBrowseInfoWnd(GG::Wnd::Create<TextBrowseWnd>(
+            UserString("BUTTON_DISABLED"),
+            UserString("SAVE_DISABLED_BROWSE_TEXT"),
+            GG::X(400)
+        ));
+    }
+
+    if (!HumanClientApp::GetApp()->SinglePlayerGame() &&
+        !GetGameRules().Get<bool>("RULE_ALLOW_CONCEDE"))
+    {
+        m_load_or_concede_btn->Disable();
+        m_load_or_concede_btn->SetBrowseModeTime(GetOptionsDB().Get<int>("ui.tooltip.delay"));
+        m_load_or_concede_btn->SetBrowseInfoWnd(GG::Wnd::Create<TextBrowseWnd>(
+            UserString("BUTTON_DISABLED"),
+            UserString("ERROR_CONCEDE_DISABLED"),
+            GG::X(400)
+        ));
     }
 
     ResetDefaultPosition();
@@ -72,7 +99,7 @@ GG::Rect InGameMenu::CalculatePosition() const {
 
     // Calculate window width and height
     GG::Pt new_size(ButtonWidth() + H_MAINMENU_MARGIN,
-                    5.75 * ButtonCellHeight() + V_MAINMENU_MARGIN); // 8 rows + 0.75 before exit button
+                    5.75 * ButtonCellHeight() + V_MAINMENU_MARGIN); // 9 rows + 0.75 before exit button
 
     // This wnd determines its own position.
     GG::Pt new_ul((HumanClientApp::GetApp()->AppWidth()  - new_size.x) / 2,
@@ -86,9 +113,9 @@ GG::X InGameMenu::ButtonWidth() const {
     GG::X button_width(0);              //width of the buttons
 
     button_width = std::max(button_width, m_save_btn->MinUsableSize().x);
-    button_width = std::max(button_width, m_load_btn->MinUsableSize().x);
+    button_width = std::max(button_width, m_load_or_concede_btn->MinUsableSize().x);
     button_width = std::max(button_width, m_options_btn->MinUsableSize().x);
-    button_width = std::max(button_width, m_exit_btn->MinUsableSize().x);
+    button_width = std::max(button_width, m_resign_btn->MinUsableSize().x);
     button_width = std::max(button_width, m_done_btn->MinUsableSize().x);
     button_width = std::max(MIN_BUTTON_WIDTH, button_width);
 
@@ -112,20 +139,20 @@ void InGameMenu::DoLayout() {
     m_save_btn->SizeMove(button_ul, button_lr);
     button_ul.y += GG::Y(button_cell_height);
     button_lr.y += GG::Y(button_cell_height);
-    m_load_btn->SizeMove(button_ul, button_lr);
+    m_load_or_concede_btn->SizeMove(button_ul, button_lr);
+    button_ul.y += GG::Y(button_cell_height);
+    button_lr.y += GG::Y(button_cell_height);
+    m_resign_btn->SizeMove(button_ul, button_lr);
     button_ul.y += GG::Y(button_cell_height);
     button_lr.y += GG::Y(button_cell_height);
     m_options_btn->SizeMove(button_ul, button_lr);
-    button_ul.y += GG::Y(button_cell_height);
-    button_lr.y += GG::Y(button_cell_height);
-    m_exit_btn->SizeMove(button_ul, button_lr);
     button_ul.y += GG::Y(button_cell_height) * 1.75;
     button_lr.y += GG::Y(button_cell_height) * 1.75;
     m_done_btn->SizeMove(button_ul, button_lr);
 }
 
-void InGameMenu::KeyPress (GG::Key key, boost::uint32_t key_code_point,
-                           GG::Flags<GG::ModKey> mod_keys)
+void InGameMenu::KeyPress(GG::Key key, std::uint32_t key_code_point,
+                          GG::Flags<GG::ModKey> mod_keys)
 {
     // Same behaviour as if "done" was pressed
     if (key == GG::GGK_RETURN || key == GG::GGK_KP_ENTER || key == GG::GGK_ESCAPE )
@@ -143,24 +170,17 @@ void InGameMenu::Save() {
         return;
     }
 
-    const std::string SAVE_GAME_EXTENSION =
-        app->SinglePlayerGame() ?
-        SP_SAVE_FILE_EXTENSION : MP_SAVE_FILE_EXTENSION;
+    // send order changes could be made when player decide to save game
+    app->SendPartialOrders();
 
     try {
-        std::string filename;
-
         // When saving in multiplayer, you cannot see the old saves or
         // browse directories, only give a save file name.
-        if (app->SinglePlayerGame()) {
-            DebugLogger() << "... running save file dialog";
-            SaveFileDialog dlg(SAVE_GAME_EXTENSION);
-            dlg.Run();
-            filename = dlg.Result();
-        } else {
-            /// Multiplayer save. Talk to the server.
-            filename = app->SelectSaveFile();
-        }
+        DebugLogger() << "... running save file dialog";
+        auto filename = ClientUI::GetClientUI()->GetFilenameWithSaveFileDialog(
+            SaveFileDialog::Purpose::Save,
+            app->SinglePlayerGame() ? SaveFileDialog::SaveType::SinglePlayer : SaveFileDialog::SaveType::MultiPlayer);
+
         if (!filename.empty()) {
             if (!app->CanSaveNow()) {
                 ErrorLogger() << "InGameMenu::Save aborting; Client app can't save now";
@@ -169,9 +189,8 @@ void InGameMenu::Save() {
             DebugLogger() << "... initiating save to " << filename ;
             app->SaveGame(filename);
             CloseClicked();
-            DebugLogger() << "... save done";
         }
-    
+
     } catch (const std::exception& e) {
         ErrorLogger() << "Exception thrown attempting save: " << e.what();
         ClientUI::MessageBox(e.what(), true);
@@ -185,12 +204,30 @@ void InGameMenu::Load() {
 }
 
 void InGameMenu::Options() {
-    OptionsWnd options_wnd;
-    options_wnd.Run();
+    auto options_wnd = GG::Wnd::Create<OptionsWnd>(true);
+    options_wnd->Run();
 }
 
-void InGameMenu::Exit() {
-    HumanClientApp::GetApp()->EndGame();
+void InGameMenu::Concede() {
+    // show confirmation dialog
+    std::shared_ptr<GG::Font> font = ClientUI::GetFont();
+    auto prompt = GG::GUI::GetGUI()->GetStyleFactory()->NewThreeButtonDlg(
+        GG::X(200), GG::Y(75), UserString("GAME_MENU_REALLY_CONCEDE"), font,
+        ClientUI::CtrlColor(), ClientUI::CtrlBorderColor(), ClientUI::CtrlColor(), ClientUI::TextColor(),
+        2, UserString("YES"), UserString("CANCEL"));
+    prompt->Run();
+    if (prompt->Result() == 0) {
+       // send ELIMINATE_SELF message
+       HumanClientApp::GetApp()->EliminateSelf();
+       CloseClicked();
+    }
+}
+
+void InGameMenu::Resign() {
+    // send order changes could be made when player decides to disconnect
+    HumanClientApp::GetApp()->SendPartialOrders();
+
+    HumanClientApp::GetApp()->ResetToIntro(false);
     CloseClicked();
 }
 

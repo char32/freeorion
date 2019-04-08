@@ -1,0 +1,54 @@
+BuildingType
+    name = "BLD_GATEWAY_VOID"
+    description = "BLD_GATEWAY_VOID_DESC"
+    buildcost = 200 * [[BUILDING_COST_MULTIPLIER]]
+    buildtime = 10
+    location = AND [
+        Not Contains Building name = "BLD_GATEWAY_VOID"
+        OwnedBy empire = Source.Owner
+    ]
+    EnqueueLocation = [[ENQUEUE_BUILD_ONE_PER_PLANET]]
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                Fleet
+                InSystem id = Source.SystemID
+            ]
+            activation = Source
+            effects = [
+                Destroy
+                GenerateSitRepMessage
+                    message = "EFFECT_GATEWAY_VOID_DESTROY"
+                    label = "EFFECT_GATEWAY_VOID_DESTROY_LABEL"
+                    parameters = [
+                        tag = "buildingtype" data = "BLD_GATEWAY_VOID"
+                        tag = "planet" data = Source.PlanetID
+                        tag = "fleet" data = Target.ID
+                    ]
+                    empire = Source.Owner
+            ]
+            
+        EffectsGroup
+            scope = And [
+                PopulationCenter
+                InSystem id = Source.SystemID
+            ]
+            activation = Turn low = Source.CreationTurn + 1
+            priority = [[EARLY_POPULATION_OVERRIDE_PRIORITY]]  // Overrides both target and current population effects
+            effects = [
+                SetTargetPopulation value = min(Value, 0)
+                SetPopulation value = min(Value, 0)
+                SetMaxSupply value = 0
+                SetSupply value = 0
+            ]
+
+        EffectsGroup
+            scope = InSystem id = Source.SystemID
+            activation = Turn low = Source.CreationTurn + 1
+            effects = SetStealth value = Value + 1000
+    ]
+    icon = "icons/building/monument_to_exodus.png"
+
+#include "/scripting/common/enqueue.macros"
+#include "/scripting/common/priorities.macros"
+#include "/scripting/common/base_prod.macros"

@@ -9,7 +9,9 @@
 #include "Condition.h"
 #include "Universe.h"
 #include "ValueRef.h"
+#include "Enums.h"
 #include "../util/Logger.h"
+#include "../util/GameRules.h"
 #include "../util/OptionsDB.h"
 #include "../util/Random.h"
 #include "../util/Directories.h"
@@ -17,11 +19,10 @@
 #include "../Empire/Empire.h"
 #include "../Empire/EmpireManager.h"
 
-#include <boost/assign/list_of.hpp>
 
 namespace {
-    // high tilt is arbitrarily taken to mean 35 degrees or more
-    const float HIGH_TILT_THERSHOLD = 35.0f;
+    // high tilt is arbitrarily taken to mean 45 degrees or more
+    const float HIGH_TILT_THERESHOLD = 45.0f;
 
     float SizeRotationFactor(PlanetSize size) {
         switch (size) {
@@ -33,42 +34,22 @@ namespace {
         case SZ_GASGIANT: return 0.25f;
         default:          return 1.0f;
         }
-        return 1.0f;
     }
 
     static const std::string EMPTY_STRING;
+
+    /** @content_tag{CTRL_STAT_SKIP_DEPOP} Do not count PopCenter%s with this tag for SpeciesPlanetsDepoped stat */
+    const std::string TAG_STAT_SKIP_DEPOP = "CTRL_STAT_SKIP_DEPOP";
 }
-
-
-////////////////////////////////////////////////////////////
-// Year
-////////////////////////////////////////////////////////////
-Year::Year(Day d) :
-    TypesafeFloat(d / 360.0f)
-{}
 
 
 ////////////////////////////////////////////////////////////
 // Planet
 ////////////////////////////////////////////////////////////
 Planet::Planet() :
-    UniverseObject(),
-    PopCenter(),
-    ResourceCenter(),
     m_type(PT_TERRAN),
     m_original_type(PT_TERRAN),
-    m_size(SZ_MEDIUM),
-    m_orbital_period(1.0f),
-    m_initial_orbital_position(0.0f),
-    m_rotational_period(1.0f),
-    m_axial_tilt(23.0f),
-    m_just_conquered(false),
-    m_is_about_to_be_colonized(false),
-    m_is_about_to_be_invaded(false),
-    m_is_about_to_be_bombarded(false),
-    m_ordered_given_to_empire_id(ALL_EMPIRES),
-    m_last_turn_attacked_by_ship(-1),
-    m_surface_texture()
+    m_size(SZ_MEDIUM)
 {
     //DebugLogger() << "Planet::Planet()";
     // assumes PopCenter and ResourceCenter don't need to be initialized, due to having been re-created
@@ -76,23 +57,11 @@ Planet::Planet() :
 }
 
 Planet::Planet(PlanetType type, PlanetSize size) :
-    UniverseObject(),
-    PopCenter(),
-    ResourceCenter(),
     m_type(type),
     m_original_type(type),
     m_size(size),
-    m_orbital_period(1.0f),
     m_initial_orbital_position(RandZeroToOne() * 2 * 3.14159f),
-    m_rotational_period(1.0f),
-    m_axial_tilt(RandZeroToOne() * HIGH_TILT_THERSHOLD),
-    m_just_conquered(false),
-    m_is_about_to_be_colonized(false),
-    m_is_about_to_be_invaded(false),
-    m_is_about_to_be_bombarded(false),
-    m_ordered_given_to_empire_id(ALL_EMPIRES),
-    m_last_turn_attacked_by_ship(-1),
-    m_surface_texture()
+    m_axial_tilt(RandZeroToOne() * HIGH_TILT_THERESHOLD)
 {
     //DebugLogger() << "Planet::Planet(" << type << ", " << size <<")";
     UniverseObject::Init();
@@ -111,17 +80,17 @@ Planet* Planet::Clone(int empire_id) const {
     Visibility vis = GetUniverse().GetObjectVisibilityByEmpire(this->ID(), empire_id);
 
     if (!(vis >= VIS_BASIC_VISIBILITY && vis <= VIS_FULL_VISIBILITY))
-        return 0;
+        return nullptr;
 
     Planet* retval = new Planet();
-    retval->Copy(TemporaryFromThis(), empire_id);
+    retval->Copy(UniverseObject::shared_from_this(), empire_id);
     return retval;
 }
 
-void Planet::Copy(TemporaryPtr<const UniverseObject> copied_object, int empire_id) {
-    if (copied_object == this)
+void Planet::Copy(std::shared_ptr<const UniverseObject> copied_object, int empire_id) {
+    if (copied_object.get() == this)
         return;
-    TemporaryPtr<const Planet> copied_planet = boost::dynamic_pointer_cast<const Planet>(copied_object);
+    auto copied_planet = std::dynamic_pointer_cast<const Planet>(copied_object);
     if (!copied_planet) {
         ErrorLogger() << "Planet::Copy passed an object that wasn't a Planet";
         return;
@@ -129,7 +98,7 @@ void Planet::Copy(TemporaryPtr<const UniverseObject> copied_object, int empire_i
 
     int copied_object_id = copied_object->ID();
     Visibility vis = GetUniverse().GetObjectVisibilityByEmpire(copied_object_id, empire_id);
-    std::set<std::string> visible_specials = GetUniverse().GetObjectVisibleSpecialsByEmpire(copied_object_id, empire_id);
+    auto visible_specials = GetUniverse().GetObjectVisibleSpecialsByEmpire(copied_object_id, empire_id);
 
     UniverseObject::Copy(copied_object, vis, visible_specials);
     PopCenter::Copy(copied_planet, vis);
@@ -146,7 +115,7 @@ void Planet::Copy(TemporaryPtr<const UniverseObject> copied_object, int empire_i
         this->m_initial_orbital_position =  copied_planet->m_initial_orbital_position;
         this->m_rotational_period =         copied_planet->m_rotational_period;
         this->m_axial_tilt =                copied_planet->m_axial_tilt;
-        this->m_just_conquered =            copied_planet->m_just_conquered;
+        this->m_turn_last_conquered =       copied_planet->m_turn_last_conquered;
 
         if (vis >= VIS_PARTIAL_VISIBILITY) {
             if (vis >= VIS_FULL_VISIBILITY) {
@@ -167,6 +136,24 @@ void Planet::Copy(TemporaryPtr<const UniverseObject> copied_object, int empire_i
     }
 }
 
+bool Planet::HostileToEmpire(int empire_id) const
+{
+    if (OwnedBy(empire_id))
+        return false;
+
+    // Empire owned planets are hostile to ALL_EMPIRES
+    if (empire_id == ALL_EMPIRES)
+        return !Unowned();
+
+    // Unowned planets are only considered hostile if populated
+    auto pop_meter = GetMeter(METER_TARGET_POPULATION);
+    if (Unowned())
+        return pop_meter && (pop_meter->Current() != 0.0f);
+
+    // both empires are normal empires
+    return Empires().GetDiplomaticStatus(Owner(), empire_id) == DIPLO_WAR;
+}
+
 std::set<std::string> Planet::Tags() const {
     const Species* species = GetSpecies(SpeciesName());
     if (!species)
@@ -183,18 +170,18 @@ bool Planet::HasTag(const std::string& name) const {
 UniverseObjectType Planet::ObjectType() const
 { return OBJ_PLANET; }
 
-std::string Planet::Dump() const {
+std::string Planet::Dump(unsigned short ntabs) const {
     std::stringstream os;
-    os << UniverseObject::Dump();
-    os << PopCenter::Dump();
-    os << ResourceCenter::Dump();
-    os << " type: " << UserString(EnumToString(m_type))
-       << " original type: " << UserString(EnumToString(m_original_type))
-       << " size: " << UserString(EnumToString(m_size))
+    os << UniverseObject::Dump(ntabs);
+    os << PopCenter::Dump(ntabs);
+    os << ResourceCenter::Dump(ntabs);
+    os << " type: " << m_type
+       << " original type: " << m_original_type
+       << " size: " << m_size
        << " rot period: " << m_rotational_period
        << " axis tilt: " << m_axial_tilt
        << " buildings: ";
-    for (std::set<int>::const_iterator it = m_buildings.begin(); it != m_buildings.end();) {
+    for (auto it = m_buildings.begin(); it != m_buildings.end();) {
         int building_id = *it;
         ++it;
         os << building_id << (it == m_buildings.end() ? "" : ", ");
@@ -203,8 +190,8 @@ std::string Planet::Dump() const {
         os << " (About to be Colonize)";
     if (m_is_about_to_be_invaded)
         os << " (About to be Invaded)";
-    if (m_just_conquered)
-        os << " (Just Conquered)";
+
+    os << " conqured on turn: " << m_turn_last_conquered;
     if (m_is_about_to_be_bombarded)
         os << " (About to be Bombarded)";
     if (m_ordered_given_to_empire_id != ALL_EMPIRES)
@@ -214,15 +201,16 @@ std::string Planet::Dump() const {
     return os.str();
 }
 
-int Planet::SizeAsInt() const {
+int Planet::HabitableSize() const {
+    const auto& gr = GetGameRules();
     switch (m_size) {
-    case SZ_GASGIANT:   return 6;   break;
-    case SZ_HUGE:       return 5;   break;
-    case SZ_LARGE:      return 4;   break;
-    case SZ_MEDIUM:     return 3;   break;
-    case SZ_ASTEROIDS:  return 3;   break;
-    case SZ_SMALL:      return 2;   break;
-    case SZ_TINY:       return 1;   break;
+    case SZ_GASGIANT:   return gr.Get<int>("RULE_HABITABLE_SIZE_GASGIANT");   break;
+    case SZ_HUGE:       return gr.Get<int>("RULE_HABITABLE_SIZE_HUGE");   break;
+    case SZ_LARGE:      return gr.Get<int>("RULE_HABITABLE_SIZE_LARGE");   break;
+    case SZ_MEDIUM:     return gr.Get<int>("RULE_HABITABLE_SIZE_MEDIUM");   break;
+    case SZ_ASTEROIDS:  return gr.Get<int>("RULE_HABITABLE_SIZE_ASTEROIDS");   break;
+    case SZ_SMALL:      return gr.Get<int>("RULE_HABITABLE_SIZE_SMALL");   break;
+    case SZ_TINY:       return gr.Get<int>("RULE_HABITABLE_SIZE_TINY");   break;
     default:            return 0;   break;
     }
 }
@@ -230,6 +218,8 @@ int Planet::SizeAsInt() const {
 void Planet::Init() {
     AddMeter(METER_SUPPLY);
     AddMeter(METER_MAX_SUPPLY);
+    AddMeter(METER_STOCKPILE);
+    AddMeter(METER_MAX_STOCKPILE);
     AddMeter(METER_SHIELD);
     AddMeter(METER_MAX_SHIELD);
     AddMeter(METER_DEFENSE);
@@ -241,7 +231,7 @@ void Planet::Init() {
 }
 
 PlanetEnvironment Planet::EnvironmentForSpecies(const std::string& species_name/* = ""*/) const {
-    const Species* species = 0;
+    const Species* species = nullptr;
     if (species_name.empty()) {
         const std::string& this_planet_species_name = this->SpeciesName();
         if (this_planet_species_name.empty())
@@ -258,7 +248,7 @@ PlanetEnvironment Planet::EnvironmentForSpecies(const std::string& species_name/
 }
 
 PlanetType Planet::NextBetterPlanetTypeForSpecies(const std::string& species_name/* = ""*/) const {
-    const Species* species = 0;
+    const Species* species = nullptr;
     if (species_name.empty()) {
         const std::string& this_planet_species_name = this->SpeciesName();
         if (this_planet_species_name.empty())
@@ -407,23 +397,23 @@ PlanetSize Planet::NextLargerPlanetSize() const
 PlanetSize Planet::NextSmallerPlanetSize() const
 { return PlanetSizeIncrement(m_size, -1); }
 
-Year Planet::OrbitalPeriod() const
+float Planet::OrbitalPeriod() const
 { return m_orbital_period; }
 
-Radian Planet::InitialOrbitalPosition() const
+float Planet::InitialOrbitalPosition() const
 { return m_initial_orbital_position; }
 
-Radian Planet::OrbitalPositionOnTurn(int turn) const
+float Planet::OrbitalPositionOnTurn(int turn) const
 { return m_initial_orbital_position + OrbitalPeriod() * 2.0 * 3.1415926 / 4 * turn; }
 
-Day Planet::RotationalPeriod() const
+float Planet::RotationalPeriod() const
 { return m_rotational_period; }
 
-Degree Planet::AxialTilt() const
+float Planet::AxialTilt() const
 { return m_axial_tilt; }
 
-TemporaryPtr<UniverseObject> Planet::Accept(const UniverseObjectVisitor& visitor) const
-{ return visitor.Visit(boost::const_pointer_cast<Planet>(boost::static_pointer_cast<const Planet>(TemporaryFromThis()))); }
+std::shared_ptr<UniverseObject> Planet::Accept(const UniverseObjectVisitor& visitor) const
+{ return visitor.Visit(std::const_pointer_cast<Planet>(std::static_pointer_cast<const Planet>(UniverseObject::shared_from_this()))); }
 
 Meter* Planet::GetMeter(MeterType type)
 { return UniverseObject::GetMeter(type); }
@@ -437,52 +427,79 @@ float Planet::InitialMeterValue(MeterType type) const
 float Planet::CurrentMeterValue(MeterType type) const
 { return UniverseObject::CurrentMeterValue(type); }
 
-float Planet::NextTurnCurrentMeterValue(MeterType type) const {
-    MeterType max_meter_type = INVALID_METER_TYPE;
-    switch (type) {
-    case METER_TARGET_POPULATION:
-    case METER_POPULATION:
-    case METER_TARGET_HAPPINESS:
-    case METER_HAPPINESS:
-        return PopCenterNextTurnMeterValue(type);
-        break;
-    case METER_TARGET_INDUSTRY:
-    case METER_TARGET_RESEARCH:
-    case METER_TARGET_TRADE:
-    case METER_TARGET_CONSTRUCTION:
-    case METER_INDUSTRY:
-    case METER_RESEARCH:
-    case METER_TRADE:
-    case METER_CONSTRUCTION:
-        return ResourceCenterNextTurnMeterValue(type);
-        break;
-    case METER_SHIELD:      max_meter_type = METER_MAX_SHIELD;          break;
-    case METER_TROOPS:      max_meter_type = METER_MAX_TROOPS;          break;
-    case METER_DEFENSE:     max_meter_type = METER_MAX_DEFENSE;         break;
-    case METER_SUPPLY:      max_meter_type = METER_MAX_SUPPLY;          break;
-        break;
-    default:
-        return UniverseObject::NextTurnCurrentMeterValue(type);
+std::string Planet::CardinalSuffix() const {
+    std::string retval = "";
+    // Early return for invalid ID
+    if (ID() == INVALID_OBJECT_ID) {
+        WarnLogger() << "Planet " << Name() << " has invalid ID";
+        return retval;
     }
 
-    const Meter* meter = GetMeter(type);
-    if (!meter) {
-        throw std::invalid_argument("Planet::NextTurnCurrentMeterValue passed meter type that the Planet does not have, but should: " + boost::lexical_cast<std::string>(type));
+    auto cur_system = GetSystem(SystemID());
+    // Early return for no system
+    if (!cur_system) {
+        ErrorLogger() << "Planet " << Name() << "(" << ID()
+                      << ") not assigned to a system";
+        return retval;
     }
-    float current_meter_value = meter->Current();
 
-    const Meter* max_meter = GetMeter(max_meter_type);
-    if (!max_meter) {
-        throw std::runtime_error("Planet::NextTurnCurrentMeterValue dealing with invalid meter type: " + boost::lexical_cast<std::string>(type));
+    // Early return for unknown orbit
+    if (cur_system->OrbitOfPlanet(ID()) < 0) {
+        WarnLogger() << "Planet " << Name() << "(" << ID() << ") "
+                     << "has no current orbit";
+        retval.append(RomanNumber(1));
+        return retval;
     }
-    float max_meter_value = max_meter->Current();
 
-    // being attacked prevents meter growth
-    if (LastTurnAttackedByShip() >= CurrentTurn())
-        return std::min(current_meter_value, max_meter_value);
+    int num_planets_lteq = 0;  // number of planets at this orbit or smaller
+    int num_planets_total = 0;
+    bool prior_current_planet = true;
 
-    // currently meter growth is one per turn.
-    return std::min(current_meter_value + 1.0f, max_meter_value);
+    for (int sys_orbit : cur_system->PlanetIDsByOrbit()) {
+        if (sys_orbit == INVALID_OBJECT_ID)
+            continue;
+
+        // all other planets are in further orbits
+        if (sys_orbit == ID()) {
+            prior_current_planet = false;
+            ++num_planets_total;
+            ++num_planets_lteq;
+            continue;
+        }
+
+        PlanetType other_planet_type = GetPlanet(sys_orbit)->Type();
+        if (other_planet_type == INVALID_PLANET_TYPE)
+            continue;
+
+        // only increment suffix for non-asteroid planets
+        if (Type() != PT_ASTEROIDS) {
+            if (other_planet_type != PT_ASTEROIDS) {
+                ++num_planets_total;
+                if (prior_current_planet)
+                    ++num_planets_lteq;
+            }
+        } else {
+            // unless the planet being named is an asteroid
+            // then only increment suffix for asteroid planets
+            if (other_planet_type == PT_ASTEROIDS) {
+                ++num_planets_total;
+                if (prior_current_planet)
+                    ++num_planets_lteq;
+            }
+        }
+    }
+
+    // Planets are grouped into asteroids, and non-asteroids
+    if (Type() != PT_ASTEROIDS) {
+        retval.append(RomanNumber(num_planets_lteq));
+    } else {
+        // Asteroids receive a localized prefix
+        retval.append(UserString("NEW_ASTEROIDS_SUFFIX"));
+        // If no other asteroids in this system, do not append an ordinal
+        if (num_planets_total > 1)
+            retval.append(" " + RomanNumber(num_planets_lteq));
+    }
+    return retval;
 }
 
 int Planet::ContainerObjectID() const
@@ -492,22 +509,20 @@ const std::set<int>& Planet::ContainedObjectIDs() const
 { return m_buildings; }
 
 bool Planet::Contains(int object_id) const
-{ return object_id != INVALID_OBJECT_ID && m_buildings.find(object_id) != m_buildings.end(); }
+{ return object_id != INVALID_OBJECT_ID && m_buildings.count(object_id); }
 
 bool Planet::ContainedBy(int object_id) const
 { return object_id != INVALID_OBJECT_ID && this->SystemID() == object_id; }
 
 std::vector<std::string> Planet::AvailableFoci() const {
     std::vector<std::string> retval;
-    TemporaryPtr<const Planet> this_planet = boost::dynamic_pointer_cast<const Planet>(TemporaryFromThis());
+    auto this_planet = std::dynamic_pointer_cast<const Planet>(UniverseObject::shared_from_this());
     if (!this_planet)
         return retval;
     ScriptingContext context(this_planet);
-    if (const Species* species = GetSpecies(this_planet->SpeciesName())) {
-        const std::vector<FocusType>& foci = species->Foci();
-        for (std::vector<FocusType>::const_iterator it = foci.begin(); it != foci.end(); ++it) {
-            const FocusType& focus_type = *it;
-            if (const Condition::ConditionBase* location = focus_type.Location()) {
+    if (const auto* species = GetSpecies(this_planet->SpeciesName())) {
+        for (const auto& focus_type : species->Foci()) {
+            if (const auto* location = focus_type.Location()) {
                 if (location->Eval(context, this_planet))
                     retval.push_back(focus_type.Name());
             }
@@ -519,9 +534,7 @@ std::vector<std::string> Planet::AvailableFoci() const {
 
 const std::string& Planet::FocusIcon(const std::string& focus_name) const {
     if (const Species* species = GetSpecies(this->SpeciesName())) {
-        const std::vector<FocusType>& foci = species->Foci();
-        for (std::vector<FocusType>::const_iterator it = foci.begin(); it != foci.end(); ++it) {
-            const FocusType& focus_type = *it;
+        for (const FocusType& focus_type : species->Foci()) {
             if (focus_type.Name() == focus_name)
                 return focus_type.Graphic();
         }
@@ -538,6 +551,15 @@ void Planet::SetType(PlanetType type) {
     StateChangedSignal();
 }
 
+void Planet::SetOriginalType(PlanetType type) {
+    if (type <= INVALID_PLANET_TYPE)
+        type = PT_SWAMP;
+    if (NUM_PLANET_TYPES <= type)
+        type = PT_GASGIANT;
+    m_original_type = type;
+    StateChangedSignal();
+}
+
 void Planet::SetSize(PlanetSize size) {
     if (size <= SZ_NOWORLD)
         size = SZ_TINY;
@@ -547,24 +569,12 @@ void Planet::SetSize(PlanetSize size) {
     StateChangedSignal();
 }
 
-void Planet::SetOrbitalPeriod(unsigned int orbit) {
-    assert(orbit < 10);
-    const double THIRD_ORBIT_PERIOD = 4;
-    const double THIRD_ORBIT_RADIUS = OrbitalRadius(2);
-    const double ORBIT_RADIUS = OrbitalRadius(orbit);
-    // Kepler's third law.
-    m_orbital_period =
-        std::sqrt(std::pow(THIRD_ORBIT_PERIOD, 2.0) /
-                  std::pow(THIRD_ORBIT_RADIUS, 3.0) *
-                  std::pow(ORBIT_RADIUS, 3.0));
-}
-
-void Planet::SetRotationalPeriod(Day days)
+void Planet::SetRotationalPeriod(float days)
 { m_rotational_period = days; }
 
 void Planet::SetHighAxialTilt() {
     const double MAX_TILT = 90.0;
-    m_axial_tilt = HIGH_TILT_THERSHOLD + RandZeroToOne() * (MAX_TILT - HIGH_TILT_THERSHOLD);
+    m_axial_tilt = HIGH_TILT_THERESHOLD + RandZeroToOne() * (MAX_TILT - HIGH_TILT_THERESHOLD);
 }
 
 void Planet::AddBuilding(int building_id) {
@@ -576,7 +586,7 @@ void Planet::AddBuilding(int building_id) {
 }
 
 bool Planet::RemoveBuilding(int building_id) {
-    if (m_buildings.find(building_id) != m_buildings.end()) {
+    if (m_buildings.count(building_id)) {
         m_buildings.erase(building_id);
         StateChangedSignal();
         return true;
@@ -590,6 +600,8 @@ void Planet::Reset() {
 
     GetMeter(METER_SUPPLY)->Reset();
     GetMeter(METER_MAX_SUPPLY)->Reset();
+    GetMeter(METER_STOCKPILE)->Reset();
+    GetMeter(METER_MAX_STOCKPILE)->Reset();
     GetMeter(METER_SHIELD)->Reset();
     GetMeter(METER_MAX_SHIELD)->Reset();
     GetMeter(METER_DEFENSE)->Reset();
@@ -598,12 +610,12 @@ void Planet::Reset() {
     GetMeter(METER_REBEL_TROOPS)->Reset();
 
     if (m_is_about_to_be_colonized && !OwnedBy(ALL_EMPIRES)) {
-        for (std::set<int>::const_iterator it = m_buildings.begin(); it != m_buildings.end(); ++it)
-            if (TemporaryPtr<Building> building = GetBuilding(*it))
+        for (int building_id : m_buildings)
+            if (auto building = GetBuilding(building_id))
                 building->Reset();
     }
 
-    m_just_conquered = false;
+    //m_turn_last_conquered left unchanged
     m_is_about_to_be_colonized = false;
     m_is_about_to_be_invaded = false;
     m_is_about_to_be_bombarded = false;
@@ -622,17 +634,13 @@ void Planet::Depopulate() {
 }
 
 void Planet::Conquer(int conquerer) {
-    m_just_conquered = true;
+    m_turn_last_conquered = CurrentTurn();
 
     // deal with things on production queue located at this planet
     Empire::ConquerProductionQueueItemsAtLocation(ID(), conquerer);
 
     // deal with UniverseObjects (eg. buildings) located on this planet
-    std::vector<TemporaryPtr<Building> > buildings = Objects().FindObjects<Building>(m_buildings);
-    for (std::vector<TemporaryPtr<Building> >::iterator it = buildings.begin();
-         it != buildings.end(); ++it)
-    {
-        TemporaryPtr<Building> building = *it;
+    for (auto& building : Objects().FindObjects<Building>(m_buildings)) {
         const BuildingType* type = GetBuildingType(building->BuildingTypeName());
 
         // determine what to do with building of this type...
@@ -645,7 +653,7 @@ void Planet::Conquer(int conquerer) {
             // destroy object
             //DebugLogger() << "Planet::Conquer destroying object: " << building->Name();
             this->RemoveBuilding(building->ID());
-            if (TemporaryPtr<System> system = GetSystem(this->SystemID()))
+            if (auto system = GetSystem(this->SystemID()))
                 system->Remove(building->ID());
             GetUniverse().Destroy(building->ID());
         } else if (cap_result == CR_RETAIN) {
@@ -657,25 +665,29 @@ void Planet::Conquer(int conquerer) {
     SetOwner(conquerer);
 
     GetMeter(METER_SUPPLY)->SetCurrent(0.0f);
-    GetMeter(METER_SUPPLY)->BackPropegate();
+    GetMeter(METER_SUPPLY)->BackPropagate();
+    GetMeter(METER_STOCKPILE)->SetCurrent(0.0f);
+    GetMeter(METER_STOCKPILE)->BackPropagate();
     GetMeter(METER_INDUSTRY)->SetCurrent(0.0f);
-    GetMeter(METER_INDUSTRY)->BackPropegate();
+    GetMeter(METER_INDUSTRY)->BackPropagate();
     GetMeter(METER_RESEARCH)->SetCurrent(0.0f);
-    GetMeter(METER_RESEARCH)->BackPropegate();
+    GetMeter(METER_RESEARCH)->BackPropagate();
     GetMeter(METER_TRADE)->SetCurrent(0.0f);
-    GetMeter(METER_TRADE)->BackPropegate();
+    GetMeter(METER_TRADE)->BackPropagate();
     GetMeter(METER_CONSTRUCTION)->SetCurrent(0.0f);
-    GetMeter(METER_CONSTRUCTION)->BackPropegate();
+    GetMeter(METER_CONSTRUCTION)->BackPropagate();
     GetMeter(METER_DEFENSE)->SetCurrent(0.0f);
-    GetMeter(METER_DEFENSE)->BackPropegate();
+    GetMeter(METER_DEFENSE)->BackPropagate();
     GetMeter(METER_SHIELD)->SetCurrent(0.0f);
-    GetMeter(METER_SHIELD)->BackPropegate();
+    GetMeter(METER_SHIELD)->BackPropagate();
     GetMeter(METER_HAPPINESS)->SetCurrent(0.0f);
-    GetMeter(METER_HAPPINESS)->BackPropegate();
+    GetMeter(METER_HAPPINESS)->BackPropagate();
+    GetMeter(METER_DETECTION)->SetCurrent(0.0f);
+    GetMeter(METER_DETECTION)->BackPropagate();
 }
 
 bool Planet::Colonize(int empire_id, const std::string& species_name, double population) {
-    const Species* species = 0;
+    const Species* species = nullptr;
 
     // if desired pop > 0, we want a colony, not an outpost, so we need to do some checks
     if (population > 0.0) {
@@ -697,10 +709,9 @@ bool Planet::Colonize(int empire_id, const std::string& species_name, double pop
         Reset();
     } else {
         PopCenter::Reset();
-        for (std::set<int>::const_iterator it = m_buildings.begin(); it != m_buildings.end(); ++it)
-            if (TemporaryPtr<Building> building = GetBuilding(*it))
+        for (int building_id : m_buildings)
+            if (auto building = GetBuilding(building_id))
                 building->Reset();
-        m_just_conquered = false;
         m_is_about_to_be_colonized = false;
         m_is_about_to_be_invaded = false;
         m_is_about_to_be_bombarded = false;
@@ -714,14 +725,12 @@ bool Planet::Colonize(int empire_id, const std::string& species_name, double pop
     // find a default focus. use first defined available focus.
     // AvailableFoci function should return a vector of all names of
     // available foci.
-    std::vector<std::string> available_foci = AvailableFoci();
+    auto available_foci = AvailableFoci();
     if (species && !available_foci.empty()) {
         bool found_preference = false;
-        for (std::vector<std::string>::const_iterator it = available_foci.begin();
-             it != available_foci.end(); ++it)
-        {
-            if (!it->empty() && *it == species->PreferredFocus()) {
-                SetFocus(*it);
+        for (const auto& focus : available_foci) {
+            if (!focus.empty() && focus == species->PreferredFocus()) {
+                SetFocus(focus);
                 found_preference = true;
                 break;
             }
@@ -736,17 +745,15 @@ bool Planet::Colonize(int empire_id, const std::string& species_name, double pop
     // set colony population
     GetMeter(METER_POPULATION)->SetCurrent(population);
     GetMeter(METER_TARGET_POPULATION)->SetCurrent(population);
-    BackPropegateMeters();
+    BackPropagateMeters();
 
 
     // set specified empire as owner
     SetOwner(empire_id);
 
     // if there are buildings on the planet, set the specified empire as their owner too
-    std::vector<TemporaryPtr<Building> > buildings = Objects().FindObjects<Building>(BuildingIDs());
-    for (std::vector<TemporaryPtr<Building> >::iterator building_it = buildings.begin();
-         building_it != buildings.end(); ++building_it)
-    { (*building_it)->SetOwner(empire_id); }
+    for (auto& building : Objects().FindObjects<Building>(BuildingIDs()))
+    { building->SetOwner(empire_id); }
 
     return true;
 }
@@ -800,40 +807,26 @@ void Planet::SetSurfaceTexture(const std::string& texture) {
 
 void Planet::PopGrowthProductionResearchPhase() {
     UniverseObject::PopGrowthProductionResearchPhase();
-
-    bool just_conquered = m_just_conquered;
-    // do not do production if planet was just conquered
-    m_just_conquered = false;
-
-    if (!just_conquered)
-        ResourceCenterPopGrowthProductionResearchPhase();
-
     PopCenterPopGrowthProductionResearchPhase();
 
-    // check for planets with zero population.  If they have a species set, then
-    // they probably just starved
-    if (!SpeciesName().empty() && GetMeter(METER_POPULATION)->Current() <= 0.0f) {
-        if (Empire* empire = GetEmpire(this->Owner())) {
-            // generate starvation sitrep for empire that owns this depopulated planet
-            empire->AddSitRepEntry(CreatePlanetStarvedToDeathSitRep(this->ID()));
+    // should be run after a meter update, but before a backpropagation, so check current, not initial, meter values
 
-            // record depopulation of planet with species while owned by this empire
-            std::map<std::string, int>::iterator species_it = empire->SpeciesPlanetsDepoped().find(SpeciesName());
-            if (species_it == empire->SpeciesPlanetsDepoped().end())
-                empire->SpeciesPlanetsDepoped()[SpeciesName()] = 1;
-            else
-                species_it->second++;
+    // check for colonies without positive population, and change to outposts
+    if (!SpeciesName().empty() && CurrentMeterValue(METER_POPULATION) <= 0.0f) {
+        if (Empire* empire = GetEmpire(this->Owner())) {
+            empire->AddSitRepEntry(CreatePlanetDepopulatedSitRep(this->ID()));
+
+            if (!HasTag(TAG_STAT_SKIP_DEPOP)) {
+                // record depopulation of planet with species while owned by this empire
+                auto species_it = empire->SpeciesPlanetsDepoped().find(SpeciesName());
+                if (species_it == empire->SpeciesPlanetsDepoped().end())
+                    empire->SpeciesPlanetsDepoped()[SpeciesName()] = 1;
+                else
+                    species_it->second++;
+            }
         }
         // remove species
-        SetSpecies("");
-    }
-
-    if (!just_conquered) {
-        GetMeter(METER_SHIELD)->SetCurrent(Planet::NextTurnCurrentMeterValue(METER_SHIELD));
-        GetMeter(METER_DEFENSE)->SetCurrent(Planet::NextTurnCurrentMeterValue(METER_DEFENSE));
-        GetMeter(METER_TROOPS)->SetCurrent(Planet::NextTurnCurrentMeterValue(METER_TROOPS));
-        GetMeter(METER_REBEL_TROOPS)->SetCurrent(Planet::NextTurnCurrentMeterValue(METER_REBEL_TROOPS));
-        GetMeter(METER_SUPPLY)->SetCurrent(Planet::NextTurnCurrentMeterValue(METER_SUPPLY));
+        PopCenter::Reset();
     }
 
     StateChangedSignal();
@@ -844,14 +837,8 @@ void Planet::ResetTargetMaxUnpairedMeters() {
     ResourceCenterResetTargetMaxUnpairedMeters();
     PopCenterResetTargetMaxUnpairedMeters();
 
-    // give planets base stealth slightly above zero, so that they can't be
-    // seen from a distance without high detection ability
-    if (Meter* stealth = GetMeter(METER_STEALTH)) {
-        stealth->ResetCurrent();
-        //stealth->AddToCurrent(0.01f);
-    }
-
     GetMeter(METER_MAX_SUPPLY)->ResetCurrent();
+    GetMeter(METER_MAX_STOCKPILE)->ResetCurrent();
     GetMeter(METER_MAX_SHIELD)->ResetCurrent();
     GetMeter(METER_MAX_DEFENSE)->ResetCurrent();
     GetMeter(METER_MAX_TROOPS)->ResetCurrent();
@@ -872,30 +859,9 @@ void Planet::ClampMeters() {
     UniverseObject::GetMeter(METER_TROOPS)->ClampCurrentToRange(Meter::DEFAULT_VALUE, UniverseObject::GetMeter(METER_MAX_TROOPS)->Current());
     UniverseObject::GetMeter(METER_MAX_SUPPLY)->ClampCurrentToRange();
     UniverseObject::GetMeter(METER_SUPPLY)->ClampCurrentToRange(Meter::DEFAULT_VALUE, UniverseObject::GetMeter(METER_MAX_SUPPLY)->Current());
+    UniverseObject::GetMeter(METER_MAX_STOCKPILE)->ClampCurrentToRange();
+    UniverseObject::GetMeter(METER_STOCKPILE)->ClampCurrentToRange(Meter::DEFAULT_VALUE, UniverseObject::GetMeter(METER_MAX_STOCKPILE)->Current());
 
     UniverseObject::GetMeter(METER_REBEL_TROOPS)->ClampCurrentToRange();
     UniverseObject::GetMeter(METER_DETECTION)->ClampCurrentToRange();
 }
-
-// free functions
-
-float PlanetRadius(PlanetSize size) {
-    float retval = 0.0f;
-    switch (size) {
-    case INVALID_PLANET_SIZE: retval = 0.0f; break;
-    case SZ_NOWORLD:          retval = 0.0f; break;
-    case SZ_TINY:             retval = 2.0f; break;
-    case SZ_SMALL:            retval = 3.5f; break;
-    default:
-    case SZ_MEDIUM:           retval = 5.0f; break;
-    case SZ_LARGE:            retval = 7.0f; break;
-    case SZ_HUGE:             retval = 9.0f; break;
-    case SZ_ASTEROIDS:        retval = 0.0f; break;
-    case SZ_GASGIANT:         retval = 11.0f; break; // this one goes to eleven
-    case NUM_PLANET_SIZES:    retval = 0.0f; break;
-    };
-    return retval;
-}
-
-float AsteroidBeltRadius()
-{ return 12.5f; }

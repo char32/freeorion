@@ -1,0 +1,99 @@
+XENOPHOBIC_SELF
+'''
+        // Give the concentration camp tech at game start
+        EffectsGroup
+            scope = Source
+            activation = Turn high = 0
+            effects = GiveEmpireTech name = "CON_CONC_CAMP"
+
+        // Give malus to industry, research and happiness for other species nearby
+        EffectsGroup
+            scope = Source
+            activation = And [
+                PopulationCenter
+                Number low = 1 condition = And [
+                    PopulationCenter
+                    OwnedBy empire = Source.Owner
+                    Not OR [ 
+                        Species name = Source.Species
+                        Species name = "SP_EXOBOT"
+                    ]
+                    Not Population high = 0
+                    Not Contains Building name = "BLD_CONC_CAMP"
+                    WithinStarlaneJumps jumps = 5 condition = Source
+                ]
+            ]
+            stackinggroup = "XENOPHOBIC_LABEL_SELF"
+            accountinglabel = "XENOPHOBIC_LABEL_SELF"
+            priority = [[LATE_PRIORITY]]
+            effects = [ 
+                SetTargetIndustry value = Value * 0.9
+                SetTargetResearch value = Value * 0.9
+                SetTargetHappiness value = Value - (
+                    Statistic Count condition = And [
+                        PopulationCenter
+                        OwnedBy empire = Source.Owner
+                        Not OR [ 
+                            Species name = Source.Species
+                            Species name = "SP_EXOBOT"
+                        ]
+                        Not Population high = 0
+                        Not Contains Building name = "BLD_CONC_CAMP"
+                        WithinStarlaneJumps jumps = 5 condition = Source
+                    ]
+                )
+            ]
+
+        // Give a pop malus for self-sustaining xenophobic species based on the number of nearby planets with other species
+        EffectsGroup
+            scope = Source
+            activation = And [
+                PopulationCenter
+                HasTag name = "SELF_SUSTAINING"
+            ]
+            stackinggroup = "XENOPHOBIC_POP_SELF"
+            accountinglabel = "XENOPHOBIC_LABEL_SELF"
+            priority = [[TARGET_POPULATION_LAST_BEFORE_OVERRIDE_PRIORITY]]
+            effects = SetTargetPopulation value = Value - min(
+                    max(Value, 0) * 0.4 * (1 - 0.8^[[XENOPHOBIC_SELFSUSTAINING_QUALIFYING_PLANET_COUNT]]),
+                    3 * Target.HabitableSize  // Cap malus at the self-sustaining bonus
+                )
+'''
+
+XENOPHOBIC_SELFSUSTAINING_QUALIFYING_PLANET_COUNT
+'''
+Statistic Count condition = And [
+                    PopulationCenter
+                    Not OR [
+                        Species name = Source.Species
+                        Species name = "SP_EXOBOT"
+                    ]
+                    Not Population high = 0
+                    WithinStarlaneJumps jumps = 5 condition = Source
+                    WithinStarlaneJumps
+                                  jumps = 2
+                              condition = ExploredByEmpire
+                                          empire = Source.Owner
+                ]
+'''
+
+// single argument should be the name of the species capitalized
+XENOPHOBIC_OTHER
+'''     EffectsGroup 
+            scope = And [
+                PopulationCenter
+                OwnedBy empire = Source.Owner
+                Not OR [ 
+                    Species name = Source.Species
+                    Species name = "SP_EXOBOT"
+                ]
+                Not Population high = 0
+                Not Contains Building name = "BLD_CONC_CAMP"
+                WithinStarlaneJumps jumps = 5 condition = Source
+            ]
+            activation = PopulationCenter
+            stackinggroup = "XENOPHOBIC_LABEL_@1@_OTHER"
+            accountinglabel = "XENOPHOBIC_LABEL_@1@_OTHER"
+            priority = [[LATE_PRIORITY]]
+            effects = SetTargetIndustry value = Value - Target.Population * 0.1
+'''

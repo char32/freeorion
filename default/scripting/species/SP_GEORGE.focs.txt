@@ -1,0 +1,46 @@
+Species
+    name = "SP_GEORGE"
+    description = "SP_GEORGE_DESC"
+    gameplay_description = "SP_GEORGE_GAMEPLAY_DESC"
+    Playable
+    CanProduceShips
+    CanColonize
+
+    tags = [ "LITHIC" "TELEPATHIC" "GOOD_INDUSTRY" "BAD_RESEARCH" "GREAT_SUPPLY" "PEDIA_LITHIC_SPECIES_CLASS" ]
+
+    foci = [
+        [[HAS_INDUSTRY_FOCUS]]
+        [[HAS_RESEARCH_FOCUS]]
+        [[HAS_GROWTH_FOCUS]]
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    preferredfocus = "FOCUS_INDUSTRY"
+
+    effectsgroups = [
+        [[GOOD_INDUSTRY]]
+        [[BAD_RESEARCH]]
+        [[AVERAGE_STOCKPILE]]
+
+        [[AVERAGE_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[GREAT_SUPPLY]]
+        [[AVERAGE_DEFENSE_TROOPS]]
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[LARGE_PLANET]]
+        [[BROAD_EP]]
+        [[STANDARD_SHIP_SHIELDS]]
+
+        [[COMMUNAL_VISION(SP_GEORGE)]]
+    ]
+
+    [[TUNDRA_BROAD_EP]]
+
+    graphic = "icons/species/george.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

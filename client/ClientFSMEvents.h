@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _ClientFSMEvents_h_
 #define _ClientFSMEvents_h_
 
@@ -14,14 +13,14 @@ struct Disconnection : boost::statechart::event<Disconnection> {};
 
 //  Message events
 /** The base class for all state machine events that are based on Messages. */
-struct MessageEventBase
-{
-    MessageEventBase(Message& message); ///< Basic ctor.
+struct MessageEventBase {
+    MessageEventBase(Message& message);
     Message m_message;
 };
 
 // Define Boost.Preprocessor list of all Message events
 #define MESSAGE_EVENTS                         \
+    (DispatchCombatLogs)                       \
     (Error)                                    \
     (HostMPGame)                               \
     (HostSPGame)                               \
@@ -29,18 +28,20 @@ struct MessageEventBase
     (HostID)                                   \
     (LobbyUpdate)                              \
     (LobbyChat)                                \
-    (SaveGame)                                 \
+    (SaveGameComplete)                         \
     (GameStart)                                \
     (TurnUpdate)                               \
     (TurnPartialUpdate)                        \
     (TurnProgress)                             \
+    (TurnRevoked)                              \
     (PlayerStatus)                             \
     (PlayerChat)                               \
     (Diplomacy)                                \
     (DiplomaticStatusUpdate)                   \
-    (VictoryDefeat)                            \
-    (PlayerEliminated)                         \
-    (EndGame)
+    (EndGame)                                  \
+    (CheckSum)                                 \
+    (AuthRequest)                              \
+    (ChatHistory)
 
 
 #define DECLARE_MESSAGE_EVENT(r, data, name)                            \

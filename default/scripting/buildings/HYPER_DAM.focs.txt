@@ -1,0 +1,52 @@
+BuildingType
+    name = "BLD_HYPER_DAM"
+    description = "BLD_HYPER_DAM_DESC"
+    buildcost = 250 * [[BUILDING_COST_MULTIPLIER]]
+    buildtime = 8
+    tags = "ORBITAL"
+    location = And [
+        Planet
+        Not Contains Building name = "BLD_HYPER_DAM"
+        OwnedBy empire = Source.Owner
+        TargetPopulation low = 1
+    ]
+    EnqueueLocation = [[ENQUEUE_BUILD_ONE_PER_PLANET]]
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                PopulationCenter
+                Focus type = "FOCUS_INDUSTRY"
+                OwnedBy empire = Source.Owner
+                ResourceSupplyConnected empire = Source.Owner condition = Source
+                Not ResourceSupplyConnected empire = Source.Owner Condition = And [
+                    Building name = "BLD_BLACK_HOLE_POW_GEN" 
+                    OwnedBy empire = Source.Owner
+                    ]
+            ]
+            activation = Source
+            stackinggroup = "BLD_HYPER_DAM_BONUS"
+            priority = [[VERY_LATE_PRIORITY]]
+            effects = SetTargetIndustry value = Value + Target.Population * 5 * [[INDUSTRY_PER_POP]]
+
+        EffectsGroup
+            scope = And [
+                PopulationCenter
+                OwnedBy empire = Source.Owner
+                ResourceSupplyConnected empire = Source.Owner condition = Source
+                Not Star type = BlackHole
+                Focus type = "FOCUS_INDUSTRY"
+                Not ResourceSupplyConnected empire = Source.Owner Condition = And [
+                    Building name = "BLD_BLACK_HOLE_POW_GEN" 
+                    OwnedBy empire = Source.Owner
+                ]
+            ]
+            activation = Source
+            stackinggroup = "BLD_HYPER_DAM_MALUS"
+            priority = [[TARGET_POPULATION_AFTER_SCALING_PRIORITY]]
+            effects = SetTargetPopulation value = Value - Target.HabitableSize
+    ]
+    icon = "icons/building/blackhole.png"
+
+#include "/scripting/common/enqueue.macros"
+#include "/scripting/common/priorities.macros"
+#include "/scripting/common/base_prod.macros"

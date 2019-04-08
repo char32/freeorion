@@ -10,6 +10,7 @@
 #include "../Empire/Empire.h"
 #include "ValueRef.h"
 #include "Condition.h"
+#include "Pathfinder.h"
 #include "Universe.h"
 #include "UniverseObject.h"
 #include "Building.h"
@@ -18,74 +19,43 @@
 #include "Field.h"
 #include "Fleet.h"
 #include "Ship.h"
-#include "ShipDesign.h"
 #include "Tech.h"
 #include "Species.h"
+#include "Enums.h"
 
 #include <boost/filesystem/fstream.hpp>
+//TODO: replace with std::make_unique when transitioning to C++14
+#include <boost/smart_ptr/make_unique.hpp>
 
 #include <cctype>
-
-using namespace Effect;
-using boost::io::str;
-using boost::lexical_cast;
-
-extern int g_indent;
+#include <iterator>
 
 namespace {
-    boost::tuple<bool, ValueRef::OpType, double>
-    SimpleMeterModification(MeterType meter, ValueRef::ValueRefBase<double>* ref) {
-        boost::tuple<bool, ValueRef::OpType, double> retval(false, ValueRef::PLUS, 0.0);
-        if (const ValueRef::Operation<double>* op = dynamic_cast<const ValueRef::Operation<double>*>(ref)) {
-            if (!op->LHS() || !op->RHS())
-                return retval;
-            if (const ValueRef::Variable<double>* var = dynamic_cast<const ValueRef::Variable<double>*>(op->LHS())) {
-                if (const ValueRef::Constant<double>* constant = dynamic_cast<const ValueRef::Constant<double>*>(op->RHS())) {
-                    std::string meter_str = UserString(lexical_cast<std::string>(meter));
-                    if (!meter_str.empty())
-                        meter_str[0] = std::toupper(meter_str[0]);
-                    retval.get<0>() = var->PropertyName().size() == 1 &&
-                        ("Current" + meter_str) == var->PropertyName()[0];
-                    retval.get<1>() = op->GetOpType();
-                    retval.get<2>() = constant->Value();
-                    return retval;
-                }
-            } else if (const ValueRef::Variable<double>* var = dynamic_cast<const ValueRef::Variable<double>*>(op->RHS())) {
-                if (const ValueRef::Constant<double>* constant = dynamic_cast<const ValueRef::Constant<double>*>(op->LHS())) {
-                    std::string meter_str = UserString(lexical_cast<std::string>(meter));
-                    if (!meter_str.empty())
-                        meter_str[0] = std::toupper(meter_str[0]);
-                    retval.get<0>() = var->PropertyName().size() == 1 &&
-                        ("Current" + meter_str) == var->PropertyName()[0];
-                    retval.get<1>() = op->GetOpType();
-                    retval.get<2>() = constant->Value();
-                    return retval;
-                }
-            }
-        }
-        return retval;
-    }
+    DeclareThreadSafeLogger(effects);
+}
 
+using boost::io::str;
+
+FO_COMMON_API extern const int INVALID_DESIGN_ID;
+
+namespace {
     /** creates a new fleet at a specified \a x and \a y location within the
      * Universe, and and inserts \a ship into it.  Used when a ship has been
      * moved by the MoveTo effect separately from the fleet that previously
      * held it.  All ships need to be within fleets. */
-    TemporaryPtr<Fleet> CreateNewFleet(double x, double y, TemporaryPtr<Ship> ship) {
+    std::shared_ptr<Fleet> CreateNewFleet(double x, double y, std::shared_ptr<Ship> ship) {
         Universe& universe = GetUniverse();
         if (!ship)
-            return TemporaryPtr<Fleet>();
+            return nullptr;
 
-        TemporaryPtr<Fleet> fleet = universe.CreateFleet("", x, y, ship->Owner());
+        auto fleet = universe.InsertNew<Fleet>("", x, y, ship->Owner());
 
-        std::vector<int> ship_ids;
-        ship_ids.push_back(ship->ID());
-        std::string fleet_name = Fleet::GenerateFleetName(ship_ids, fleet->ID());
-        fleet->Rename(fleet_name);
+        fleet->Rename(fleet->GenerateFleetName());
         fleet->GetMeter(METER_STEALTH)->SetCurrent(Meter::LARGE_VALUE);
 
-        fleet->AddShip(ship->ID());
+        fleet->AddShips({ship->ID()});
         ship->SetFleetID(fleet->ID());
-        fleet->SetAggressive(fleet->HasArmedShips());
+        fleet->SetAggressive(fleet->HasArmedShips() || fleet->HasFighterShips());
 
         return fleet;
     }
@@ -94,13 +64,13 @@ namespace {
      * when a ship has been moved by the MoveTo effect separately from the
      * fleet that previously held it.  Also used by CreateShip effect to give
      * the new ship a fleet.  All ships need to be within fleets. */
-    TemporaryPtr<Fleet> CreateNewFleet(TemporaryPtr<System> system, TemporaryPtr<Ship> ship) {
+    std::shared_ptr<Fleet> CreateNewFleet(std::shared_ptr<System> system, std::shared_ptr<Ship> ship) {
         if (!system || !ship)
-            return TemporaryPtr<Fleet>();
+            return nullptr;
 
         // remove ship from old fleet / system, put into new system if necessary
         if (ship->SystemID() != system->ID()) {
-            if (TemporaryPtr<System> old_system = GetSystem(ship->SystemID())) {
+            if (auto old_system = GetSystem(ship->SystemID())) {
                 old_system->Remove(ship->ID());
                 ship->SetSystem(INVALID_OBJECT_ID);
             }
@@ -108,13 +78,13 @@ namespace {
         }
 
         if (ship->FleetID() != INVALID_OBJECT_ID) {
-            if (TemporaryPtr<Fleet> old_fleet = GetFleet(ship->FleetID())) {
-                old_fleet->RemoveShip(ship->ID());
+            if (auto old_fleet = GetFleet(ship->FleetID())) {
+                old_fleet->RemoveShips({ship->ID()});
             }
         }
 
         // create new fleet for ship, and put it in new system
-        TemporaryPtr<Fleet> fleet = CreateNewFleet(system->X(), system->Y(), ship);
+        auto fleet = CreateNewFleet(system->X(), system->Y(), ship);
         system->Insert(fleet);
 
         return fleet;
@@ -125,7 +95,7 @@ namespace {
       * with the MoveTo effect, as otherwise the system wouldn't get explored,
       * and objects being moved into unexplored systems might disappear for
       * players or confuse the AI. */
-    void ExploreSystem(int system_id, TemporaryPtr<const UniverseObject> target_object) {
+    void ExploreSystem(int system_id, std::shared_ptr<const UniverseObject> target_object) {
         if (!target_object)
             return;
         if (Empire* empire = GetEmpire(target_object->Owner()))
@@ -136,13 +106,13 @@ namespace {
      * resets the fleet's move route.  Used after a fleet has been moved with
      * the MoveTo effect, as its previous route was assigned based on its
      * previous location, and may not be valid for its new location. */
-    void UpdateFleetRoute(TemporaryPtr<Fleet> fleet, int new_next_system, int new_previous_system) {
+    void UpdateFleetRoute(std::shared_ptr<Fleet> fleet, int new_next_system, int new_previous_system) {
         if (!fleet) {
             ErrorLogger() << "UpdateFleetRoute passed a null fleet pointer";
             return;
         }
 
-        TemporaryPtr<const System> next_system = GetSystem(new_next_system);
+        auto next_system = GetSystem(new_next_system);
         if (!next_system) {
             ErrorLogger() << "UpdateFleetRoute couldn't get new next system with id: " << new_next_system;
             return;
@@ -162,7 +132,7 @@ namespace {
 
         int dest_system = fleet->FinalDestinationID();
 
-        std::pair<std::list<int>, double> route_pair = GetUniverse().ShortestPath(start_system, dest_system, fleet->Owner());
+        std::pair<std::list<int>, double> route_pair = GetPathfinder()->ShortestPath(start_system, dest_system, fleet->Owner());
 
         // if shortest path is empty, the route may be impossible or trivial, so just set route to move fleet
         // to the next system that it was just set to move to anyway.
@@ -175,188 +145,161 @@ namespace {
     }
 
     std::string GenerateSystemName() {
-        static std::list<std::string> star_names;
-        if (star_names.empty())
-            UserStringList("STAR_NAMES", star_names);
-
-        const ObjectMap& objects = Objects();
-        std::vector<TemporaryPtr<const System> > systems = objects.FindObjects<System>();
+        static std::vector<std::string> star_names = UserStringList("STAR_NAMES");
 
         // pick a name for the system
-        for (std::list<std::string>::const_iterator it = star_names.begin(); it != star_names.end(); ++it) {
+        for (const std::string& star_name : star_names) {
             // does an existing system have this name?
             bool dupe = false;
-            for (std::vector<TemporaryPtr<const System> >::const_iterator sys_it = systems.begin();
-                 sys_it != systems.end(); ++sys_it)
-            {
-                if ((*sys_it)->Name() == *it) {
+            for (auto& system : Objects().FindObjects<System>()) {
+                if (system->Name() == star_name) {
                     dupe = true;
                     break;  // another systme has this name. skip to next potential name.
                 }
             }
             if (!dupe)
-                return *it; // no systems have this name yet. use it.
+                return star_name; // no systems have this name yet. use it.
         }
         return "";  // fallback to empty name.
     }
 }
 
-
+namespace Effect {
 ///////////////////////////////////////////////////////////
 // EffectsGroup                                          //
 ///////////////////////////////////////////////////////////
-EffectsGroup::~EffectsGroup() {
-    delete m_scope;
-    delete m_activation;
-    for (unsigned int i = 0; i < m_effects.size(); ++i) {
-        delete m_effects[i];
-    }
-}
+EffectsGroup::EffectsGroup(std::unique_ptr<Condition::ConditionBase>&& scope,
+                           std::unique_ptr<Condition::ConditionBase>&& activation,
+                           std::vector<std::unique_ptr<EffectBase>>&& effects,
+                           const std::string& accounting_label,
+                           const std::string& stacking_group, int priority,
+                           const std::string& description,
+                           const std::string& content_name):
+    m_scope(std::move(scope)),
+    m_activation(std::move(activation)),
+    m_stacking_group(stacking_group),
+    m_effects(std::move(effects)),
+    m_accounting_label(accounting_label),
+    m_priority(priority),
+    m_description(description),
+    m_content_name(content_name)
+{}
 
-void EffectsGroup::GetTargetSet(int source_id, TargetSet& targets, const TargetSet& potential_targets) const {
-    TargetSet copy_of_potential_targets(potential_targets);
-    GetTargetSet(source_id, targets, copy_of_potential_targets);
-}
+EffectsGroup::~EffectsGroup()
+{}
 
-void EffectsGroup::GetTargetSet(int source_id, TargetSet& targets, TargetSet& potential_targets) const {
-    targets.clear();
-
-    TemporaryPtr<UniverseObject> source = GetUniverseObject(source_id);
-    if (!source && m_activation) {
-        ErrorLogger() << "EffectsGroup::GetTargetSet passed invalid source object with id " << source_id;
-        return;
-    }
-    if (!m_scope) {
-        ErrorLogger() << "EffectsGroup::GetTargetSet didn't find a valid scope condition to use...";
-    }
-
-    // if there is an activation condition, evaluate it on the source object,
-    // and abort with no targets if the source object doesn't match.
-    // if there is no activation condition, continue as if the source object
-    // had matched an activation condition.
-    if (m_activation && !m_activation->Eval(ScriptingContext(source), source))
-        return;
-
-    BOOST_MPL_ASSERT((boost::is_same<TargetSet,             std::vector<TemporaryPtr<UniverseObject> > >));
-    BOOST_MPL_ASSERT((boost::is_same<Condition::ObjectSet,  std::vector<TemporaryPtr<const UniverseObject> > >));
-
-    // HACK! We're doing some dirt here for efficiency's sake.  Since we can't
-    // const-cast std::set<TemporaryPtr<UniverseObject> > to std::set<const
-    // TemporaryPtr<UniverseObject> >, we're telling the compiler that one type is actually
-    // the other, rather than doing a copy.
-    m_scope->Eval(ScriptingContext(source),
-                  *static_cast<Condition::ObjectSet *>(static_cast<void *>(&targets)),
-                  *static_cast<Condition::ObjectSet *>(static_cast<void *>(&potential_targets)));
-}
-
-void EffectsGroup::GetTargetSet(int source_id, TargetSet& targets) const {
-    TemporaryPtr<UniverseObject> source = GetUniverseObject(source_id);
-    //ObjectMap& objects = GetUniverse().Objects();
-    TargetSet potential_targets;
-    //potential_targets.reserve(objects.NumObjects());
-    //for (ObjectMap::iterator<> it = objects.begin(); it != objects.end(); ++it)
-    //    potential_targets.push_back(*it);
-    m_scope->GetDefaultInitialCandidateObjects(ScriptingContext(source),
-            *static_cast<Condition::ObjectSet *>(static_cast<void *>(&potential_targets)));
-    GetTargetSet(source_id, targets, potential_targets);
-}
-
-void EffectsGroup::Execute(const Effect::TargetsCauses& targets_causes,
-                           AccountingMap* accounting_map/* = 0*/,
-                           bool only_meter_effects/* = false*/,
-                           bool only_appearance_effects/* = false*/,
-                           bool include_empire_meter_effects/* = false*/,
-                           bool only_generate_sitrep_effects/* = false*/) const
+void EffectsGroup::Execute(const TargetsCauses& targets_causes, AccountingMap* accounting_map,
+                           bool only_meter_effects, bool only_appearance_effects,
+                           bool include_empire_meter_effects,
+                           bool only_generate_sitrep_effects) const
 {
     // execute each effect of the group one by one, unless filtered by flags
-    for (std::vector<EffectBase*>::const_iterator effect_it = m_effects.begin();
-         effect_it != m_effects.end(); ++effect_it)
-    {
-        (*effect_it)->Execute(targets_causes,
-                              m_stacking_group.empty(), /* bool stacking */
-                              accounting_map,
-                              only_meter_effects,
-                              only_appearance_effects,
-                              include_empire_meter_effects,
-                              only_generate_sitrep_effects);
+    for (auto& effect : m_effects) {
+        effect->Execute(targets_causes, accounting_map,
+                        only_meter_effects, only_appearance_effects,
+                        include_empire_meter_effects,
+                        only_generate_sitrep_effects);
     }
+}
+
+const std::vector<EffectBase*>  EffectsGroup::EffectsList() const {
+    std::vector<EffectBase*> retval(m_effects.size());
+    std::transform(m_effects.begin(), m_effects.end(), retval.begin(),
+                   [](const std::unique_ptr<EffectBase>& xx) {return xx.get();});
+    return retval;
 }
 
 const std::string& EffectsGroup::GetDescription() const
 { return m_description; }
 
-std::string EffectsGroup::AutoGeneratedDescription() const {
-    std::stringstream retval;
-
-    if (dynamic_cast<const Condition::Source*>(m_scope))
-        retval << UserString("DESC_EFFECTS_GROUP_SELF_SCOPE") + "\n";
-    else
-        retval << str(FlexibleFormat(UserString("DESC_EFFECTS_GROUP_SCOPE")) % m_scope->Description()) + "\n";
-
-    if (m_activation && !dynamic_cast<const Condition::Source*>(m_activation) && !dynamic_cast<const Condition::All*>(m_activation))
-    { retval << str(FlexibleFormat(UserString("DESC_EFFECTS_GROUP_ACTIVATION")) % m_activation->Description()) + "\n"; }
-
-    for (unsigned int i = 0; i < m_effects.size(); ++i)
-    { retval << m_effects[i]->Description() + "\n"; }
-
-    return retval.str();
-}
-
-std::string EffectsGroup::Dump() const {
-    std::string retval = DumpIndent() + "EffectsGroup\n";
-    ++g_indent;
-    retval += DumpIndent() + "scope =\n";
-    ++g_indent;
-    retval += m_scope->Dump();
-    --g_indent;
+std::string EffectsGroup::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "EffectsGroup";
+    if (!m_content_name.empty())
+        retval += " // from " + m_content_name;
+    retval += "\n";
+    retval += DumpIndent(ntabs+1) + "scope =\n";
+    retval += m_scope->Dump(ntabs+2);
     if (m_activation) {
-        retval += DumpIndent() + "activation =\n";
-        ++g_indent;
-        retval += m_activation->Dump();
-        --g_indent;
+        retval += DumpIndent(ntabs+1) + "activation =\n";
+        retval += m_activation->Dump(ntabs+2);
     }
     if (!m_stacking_group.empty())
-        retval += DumpIndent() + "stackinggroup = \"" + m_stacking_group + "\"\n";
+        retval += DumpIndent(ntabs+1) + "stackinggroup = \"" + m_stacking_group + "\"\n";
     if (m_effects.size() == 1) {
-        retval += DumpIndent() + "effects =\n";
-        ++g_indent;
-        retval += m_effects[0]->Dump();
-        --g_indent;
+        retval += DumpIndent(ntabs+1) + "effects =\n";
+        retval += m_effects[0]->Dump(ntabs+2);
     } else {
-        retval += DumpIndent() + "effects = [\n";
-        ++g_indent;
-        for (unsigned int i = 0; i < m_effects.size(); ++i) {
-            retval += m_effects[i]->Dump();
+        retval += DumpIndent(ntabs+1) + "effects = [\n";
+        for (auto& effect : m_effects) {
+            retval += effect->Dump(ntabs+2);
         }
-        --g_indent;
-        retval += DumpIndent() + "]\n";
+        retval += DumpIndent(ntabs+1) + "]\n";
     }
-    --g_indent;
     return retval;
 }
 
+bool EffectsGroup::HasMeterEffects() const {
+    for (auto& effect : m_effects) {
+        if (effect->IsMeterEffect())
+            return true;
+    }
+    return false;
+}
+
+bool EffectsGroup::HasAppearanceEffects() const {
+    for (auto& effect : m_effects) {
+        if (effect->IsAppearanceEffect())
+            return true;
+    }
+    return false;
+}
+
+bool EffectsGroup::HasSitrepEffects() const {
+    for (auto& effect : m_effects) {
+        if (effect->IsSitrepEffect())
+            return true;
+    }
+    return false;
+}
+
 void EffectsGroup::SetTopLevelContent(const std::string& content_name) {
+    m_content_name = content_name;
     if (m_scope)
         m_scope->SetTopLevelContent(content_name);
     if (m_activation)
         m_activation->SetTopLevelContent(content_name);
-    for (std::vector<EffectBase*>::iterator it = m_effects.begin(); it != m_effects.end(); ++it)
-    { (*it)->SetTopLevelContent(content_name); }
+    for (auto& effect : m_effects) {
+        effect->SetTopLevelContent(content_name);
+    }
+}
+
+unsigned int EffectsGroup::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "EffectsGroup");
+    CheckSums::CheckSumCombine(retval, m_scope);
+    CheckSums::CheckSumCombine(retval, m_activation);
+    CheckSums::CheckSumCombine(retval, m_stacking_group);
+    CheckSums::CheckSumCombine(retval, m_effects);
+    CheckSums::CheckSumCombine(retval, m_accounting_label);
+    CheckSums::CheckSumCombine(retval, m_priority);
+    CheckSums::CheckSumCombine(retval, m_description);
+
+    TraceLogger() << "GetCheckSum(EffectsGroup): retval: " << retval;
+    return retval;
 }
 
 
 ///////////////////////////////////////////////////////////
-// AutoGeneratedDescription function                           //
+// Dump function                                         //
 ///////////////////////////////////////////////////////////
-std::string AutoGeneratedDescription(const std::vector<boost::shared_ptr<Effect::EffectsGroup> >& effects_groups) {
+std::string Dump(const std::vector<std::shared_ptr<EffectsGroup>>& effects_groups) {
     std::stringstream retval;
-    if (effects_groups.size() == 1) {
-        retval << str(FlexibleFormat(UserString("DESC_EFFECTS_GROUP_EFFECTS_GROUP_DESC")) % effects_groups[0]->AutoGeneratedDescription());
-    } else {
-        for (unsigned int i = 0; i < effects_groups.size(); ++i) {
-            retval << str(FlexibleFormat(UserString("DESC_EFFECTS_GROUP_NUMBERED_EFFECTS_GROUP_DESC")) % (i + 1) % effects_groups[i]->AutoGeneratedDescription());
-        }
+
+    for (auto& effects_group : effects_groups) {
+        retval << "\n" << effects_group->Dump();
     }
+
     return retval.str();
 }
 
@@ -367,153 +310,99 @@ std::string AutoGeneratedDescription(const std::vector<boost::shared_ptr<Effect:
 EffectBase::~EffectBase()
 {}
 
-void EffectBase::Execute(const Effect::TargetsCauses& targets_causes,
-                         bool stacking,
-                         AccountingMap* accounting_map/* = 0*/,
-                         bool only_meter_effects/* = false*/,
-                         bool only_appearance_effects/* = false*/,
-                         bool include_empire_meter_effects/* = false*/,
-                         bool only_generate_sitrep_effects/* = false*/) const
+void EffectBase::Execute(const TargetsCauses& targets_causes,
+                         AccountingMap* accounting_map,
+                         bool only_meter_effects, bool only_appearance_effects,
+                         bool include_empire_meter_effects,
+                         bool only_generate_sitrep_effects) const
 {
-    bool log_verbose = GetOptionsDB().Get<bool>("verbose-logging");
-
-    std::set<int> non_stacking_targets;
-    MeterType meter_type = INVALID_METER_TYPE;
-
-    // for meter effects, need to separately call effect's Execute for each
-    // target and do meter accounting before and after.
-    const SetMeter* set_meter_effect = 0;
-    const SetShipPartMeter* set_ship_part_meter_effect = 0;
-
-    if (set_meter_effect = dynamic_cast<const SetMeter*>(this)) {
-        meter_type = set_meter_effect->GetMeterType();
-
-    } else if (set_ship_part_meter_effect = dynamic_cast<const SetShipPartMeter*>(this)) {
-        meter_type = set_ship_part_meter_effect->GetMeterType();
+    if (   (only_appearance_effects      && !this->IsAppearanceEffect())
+        || (only_meter_effects           && !this->IsMeterEffect())
+        || (!include_empire_meter_effects && this->IsEmpireMeterEffect())
+        || (only_generate_sitrep_effects && !this->IsSitrepEffect()))
+    { return; }
+    // apply this effect for each source causing it
+    for (const auto& targets_entry : targets_causes) {
+        ScriptingContext source_context(GetUniverseObject(targets_entry.first.source_object_id));
+        Execute(source_context, targets_entry.second.target_set,
+                accounting_map, targets_entry.second.effect_cause,
+                only_meter_effects, only_appearance_effects,
+                include_empire_meter_effects, only_generate_sitrep_effects);
     }
+}
 
-    // filter executed effects according to flags
-    if (only_appearance_effects) {
-        if (!dynamic_cast<const SetTexture*>(this) && !dynamic_cast<const SetOverlayTexture*>(this))
-            return;
-    } else if (only_meter_effects) {
-        if (!set_meter_effect && !set_ship_part_meter_effect) {
-            if (!include_empire_meter_effects)
-                return;
-            if (!dynamic_cast<const SetEmpireMeter*>(this))
-                return;
-        }
-    } else if (only_generate_sitrep_effects) {
-        if (!dynamic_cast<const GenerateSitRepMessage*>(this))
-            return;
-    }
-
-    // apply this effect to each source causing it
-    for (Effect::TargetsCauses::const_iterator targets_it = targets_causes.begin();
-        targets_it != targets_causes.end(); ++targets_it)
-    {
-        const Effect::SourcedEffectsGroup& sourced_effects_group = targets_it->first;
-        int                                source_id             = sourced_effects_group.source_object_id;
-        TemporaryPtr<const UniverseObject> source                = GetUniverseObject(source_id);
-        ScriptingContext                   source_context(source);
-        const Effect::TargetsAndCause&     targets_and_cause     = targets_it->second;
-        Effect::TargetSet                  targets               = targets_and_cause.target_set;
-
-        if (log_verbose) {
-            DebugLogger() << "ExecuteEffects effectsgroup: \n" << Dump();
-            DebugLogger() << "ExecuteEffects Targets before: ";
-            for (Effect::TargetSet::const_iterator t_it = targets.begin(); t_it != targets.end(); ++t_it)
-                DebugLogger() << " ... " << (*t_it)->Dump();
-        }
-
-        if (log_verbose) {
-            DebugLogger() << "ExecuteEffects Targets after: ";
-            for (Effect::TargetSet::const_iterator t_it = targets.begin(); t_it != targets.end(); ++t_it)
-                DebugLogger() << " ... " << (*t_it)->Dump();
-        }
-
-        // for non-meter effects, can do default batch execute
-        if (!accounting_map || (!set_meter_effect && !set_ship_part_meter_effect)) {
-            Execute(source_context, targets);
-            continue;
-        }
-
-        // accounting info for this effect on this meter, starting with
-        // non-target-dependent info
-        Effect::AccountingInfo info;
-        info.cause_type =           targets_and_cause.effect_cause.cause_type;
-        info.specific_cause =       targets_and_cause.effect_cause.specific_cause;
-        info.custom_label =         targets_and_cause.effect_cause.custom_label;
-        info.source_id =            source_id;
-
-        // process each target separately to do effect accounting
-        for (TargetSet::const_iterator target_it = targets.begin();
-            target_it != targets.end(); ++target_it)
-        {
-            TemporaryPtr<UniverseObject> target = *target_it;
-
-            // get Meter for this effect and target
-            const Meter* meter = 0;
-
-            if (set_meter_effect) {
-                meter = target->GetMeter(meter_type);
-
-            } else if (set_ship_part_meter_effect) {
-                if (target->ObjectType() != OBJ_SHIP)
-                    continue;   // only ships have ship part meters
-                TemporaryPtr<const Ship> ship = boost::static_pointer_cast<const Ship>(target);
-
-                const ValueRef::ValueRefBase<std::string>* part_name_value_ref = set_ship_part_meter_effect->GetPartName();
-                std::string part_name = (part_name_value_ref ? part_name_value_ref->Eval(ScriptingContext(source, target)) : "");
-                meter = ship->GetPartMeter(meter_type, part_name);
-            }
-
-            if (!meter)
-                continue;   // some objects might match target conditions, but not actually have the relevant meter
-
-
-            // record pre-effect meter values...
-
-            // accounting info for this effect on this meter of this target
-            info.running_meter_total =  meter->Current();
-
-            // actually execute effect to modify meter
-            Execute(ScriptingContext(source, target));
-
-            // update for meter change and new total
-            info.meter_change = meter->Current() - info.running_meter_total;
-            info.running_meter_total = meter->Current();
-
-            // add accounting for this effect to end of vector
-            (*accounting_map)[target->ID()][meter_type].push_back(info);
-        }
-    }
+void EffectBase::Execute(const ScriptingContext& context,
+                         const TargetSet& targets,
+                         AccountingMap* accounting_map,
+                         const EffectCause& effect_cause,
+                         bool only_meter_effects, bool only_appearance_effects,
+                         bool include_empire_meter_effects,
+                         bool only_generate_sitrep_effects) const
+{
+    if (   (only_appearance_effects      && !this->IsAppearanceEffect())
+        || (only_meter_effects           && !this->IsMeterEffect())
+        || (!include_empire_meter_effects && this->IsEmpireMeterEffect())
+        || (only_generate_sitrep_effects && !this->IsSitrepEffect()))
+    { return; }
+    // generic / most effects don't do anything special for accounting, so just
+    // use standard Execute. overrides may implement something else.
+    Execute(context, targets);
 }
 
 void EffectBase::Execute(const ScriptingContext& context, const TargetSet& targets) const {
     if (targets.empty())
         return;
+
     // execute effects on targets
     ScriptingContext local_context = context;
-    for (TargetSet::const_iterator target_it = targets.begin();
-         target_it != targets.end(); ++target_it)
-    {
-        local_context.effect_target = *target_it;
-        this->Execute(local_context);
+    for (const auto& target : targets) {
+        local_context.effect_target = target;
+        Execute(local_context);
     }
+}
+
+unsigned int EffectBase::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "EffectBase");
+
+    TraceLogger() << "GetCheckSum(EffectsGroup): retval: " << retval;
+    return retval;
+}
+
+
+///////////////////////////////////////////////////////////
+// NoOp                                                  //
+///////////////////////////////////////////////////////////
+NoOp::NoOp()
+{}
+
+void NoOp::Execute(const ScriptingContext& context) const
+{}
+
+std::string NoOp::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "NoOp\n"; }
+
+unsigned int NoOp::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "NoOp");
+
+    TraceLogger() << "GetCheckSum(NoOp): retval: " << retval;
+    return retval;
 }
 
 
 ///////////////////////////////////////////////////////////
 // SetMeter                                              //
 ///////////////////////////////////////////////////////////
-SetMeter::SetMeter(MeterType meter, ValueRef::ValueRefBase<double>* value) :
+SetMeter::SetMeter(MeterType meter,
+                   std::unique_ptr<ValueRef::ValueRefBase<double>>&& value,
+                   const boost::optional<std::string>& accounting_label) :
     m_meter(meter),
-    m_value(value)
+    m_value(std::move(value)),
+    m_accounting_label(accounting_label ? *accounting_label : std::string())
 {}
-
-SetMeter::~SetMeter()
-{ delete m_value; }
 
 void SetMeter::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) return;
@@ -524,53 +413,114 @@ void SetMeter::Execute(const ScriptingContext& context) const {
     m->SetCurrent(val);
 }
 
+void SetMeter::Execute(const ScriptingContext& context,
+                       const TargetSet& targets,
+                       AccountingMap* accounting_map,
+                       const EffectCause& effect_cause,
+                       bool only_meter_effects,
+                       bool only_appearance_effects,
+                       bool include_empire_meter_effects,
+                       bool only_generate_sitrep_effects) const
+{
+    if (only_appearance_effects || only_generate_sitrep_effects)
+        return;
+
+    TraceLogger(effects) << "\n\nExecute SetMeter effect: \n" << Dump();
+    TraceLogger(effects) << "SetMeter execute targets before: ";
+    for (const auto& target : targets)
+        TraceLogger(effects) << " ... " << target->Dump(1);
+
+    if (!accounting_map) {
+        // without accounting, can do default batch execute
+        Execute(context, targets);
+
+    } else {
+        // accounting info for this effect on this meter, starting with non-target-dependent info
+        AccountingInfo info;
+        info.cause_type =     effect_cause.cause_type;
+        info.specific_cause = effect_cause.specific_cause;
+        info.custom_label =   (m_accounting_label.empty() ? effect_cause.custom_label : m_accounting_label);
+        info.source_id =      context.source->ID();
+
+        // process each target separately in order to do effect accounting for each
+        for (auto& target : targets) {
+            // get Meter for this effect and target
+            const Meter* meter = target->GetMeter(m_meter);
+            if (!meter)
+                continue;   // some objects might match target conditions, but not actually have the relevant meter. In that case, don't need to do accounting.
+
+            // record pre-effect meter values...
+
+            // accounting info for this effect on this meter of this target
+            info.running_meter_total =  meter->Current();
+
+            // actually execute effect to modify meter
+            Execute(ScriptingContext(context.source, target));
+
+            // update for meter change and new total
+            info.meter_change = meter->Current() - info.running_meter_total;
+            info.running_meter_total = meter->Current();
+
+            // add accounting for this effect to end of vector
+            (*accounting_map)[target->ID()][m_meter].push_back(info);
+        }
+    }
+
+    TraceLogger(effects) << "SetMeter execute targets after: ";
+    for (auto& target : targets)
+        TraceLogger(effects) << " ... " << target->Dump();
+}
+
 void SetMeter::Execute(const ScriptingContext& context, const TargetSet& targets) const {
     if (targets.empty())
         return;
-    // does meter value depend on target?
+
     if (m_value->TargetInvariant()) {
+        // meter value does not depend on target, so handle with single ValueRef evaluation
         float val = m_value->Eval(context);
-        for (TargetSet::const_iterator it = targets.begin(); it != targets.end(); ++it) {
-            Meter* m = (*it)->GetMeter(m_meter);
+        for (auto& target : targets) {
+            Meter* m = target->GetMeter(m_meter);
             if (!m) continue;
             m->SetCurrent(val);
         }
         return;
+
+    } else if (m_value->SimpleIncrement()) {
+        // meter value is a consistent constant increment for each target, so handle with
+        // deep inspection single ValueRef evaluation
+        auto op = dynamic_cast<ValueRef::Operation<double>*>(m_value.get());
+        if (!op) {
+            ErrorLogger() << "SetMeter::Execute couldn't cast simple increment ValueRef to an Operation. Reverting to standard execute.";
+            EffectBase::Execute(context, targets);
+            return;
+        }
+        // RHS should be a ConstantExpr
+        float increment = op->RHS()->Eval();
+        if (op->GetOpType() == ValueRef::PLUS) {
+            // do nothing to modify increment
+        } else if (op->GetOpType() == ValueRef::MINUS) {
+            increment = -increment;
+        } else {
+            ErrorLogger() << "SetMeter::Execute got invalid increment optype (not PLUS or MINUS). Reverting to standard execute.";
+            EffectBase::Execute(context, targets);
+            return;
+        }
+        //DebugLogger() << "simple increment: " << increment;
+        // increment all target meters...
+        for (auto& target : targets) {
+            Meter* m = target->GetMeter(m_meter);
+            if (!m) continue;
+            m->AddToCurrent(increment);
+        }
+        return;
     }
-    // meter value does depend on target, so handle with default case
+
+    // meter value depends on target non-trivially, so handle with default case of per-target ValueRef evaluation
     EffectBase::Execute(context, targets);
 }
 
-std::string SetMeter::Description() const {
-    bool simple;
-    ValueRef::OpType op;
-    double const_operand;
-    boost::tie(simple, op, const_operand) = SimpleMeterModification(m_meter, m_value);
-    //DebugLogger() << "SetMeter::Description " << simple << " / " << op << " / " << const_operand;
-    if (simple) {
-        char op_char = '+';
-        switch (op) {
-        case ValueRef::PLUS:            op_char = '+'; break;
-        case ValueRef::MINUS:           op_char = '-'; break;
-        case ValueRef::TIMES:           op_char = '*'; break;
-        case ValueRef::DIVIDE:          op_char = '/'; break;
-        case ValueRef::EXPONENTIATE:    op_char = '^'; break;
-        default: op_char = '?';
-        }
-        return str(FlexibleFormat(UserString("DESC_SIMPLE_SET_METER"))
-                   % UserString(lexical_cast<std::string>(m_meter))
-                   % op_char
-                   % lexical_cast<std::string>(const_operand));
-    } else {
-        //std::string temp = m_value->Description();
-        return str(FlexibleFormat(UserString("DESC_COMPLEX_SET_METER"))
-                   % UserString(lexical_cast<std::string>(m_meter))
-                   % m_value->Description());
-    }
-}
-
-std::string SetMeter::Dump() const {
-    std::string retval = DumpIndent() + "Set";
+std::string SetMeter::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "Set";
     switch (m_meter) {
     case METER_TARGET_POPULATION:   retval += "TargetPopulation"; break;
     case METER_TARGET_INDUSTRY:     retval += "TargetIndustry"; break;
@@ -579,10 +529,14 @@ std::string SetMeter::Dump() const {
     case METER_TARGET_CONSTRUCTION: retval += "TargetConstruction"; break;
     case METER_TARGET_HAPPINESS:    retval += "TargetHappiness"; break;
 
+    case METER_MAX_CAPACITY:        retval += "MaxCapacity"; break;
+
     case METER_MAX_FUEL:            retval += "MaxFuel"; break;
     case METER_MAX_SHIELD:          retval += "MaxShield"; break;
     case METER_MAX_STRUCTURE:       retval += "MaxStructure"; break;
     case METER_MAX_DEFENSE:         retval += "MaxDefense"; break;
+    case METER_MAX_SUPPLY:          retval += "MaxSupply"; break;
+    case METER_MAX_STOCKPILE:       retval += "MaxStockpile"; break;
     case METER_MAX_TROOPS:          retval += "MaxTroops"; break;
 
     case METER_POPULATION:          retval += "Population"; break;
@@ -592,21 +546,25 @@ std::string SetMeter::Dump() const {
     case METER_CONSTRUCTION:        retval += "Construction"; break;
     case METER_HAPPINESS:           retval += "Happiness"; break;
 
+    case METER_CAPACITY:            retval += "Capacity"; break;
+
     case METER_FUEL:                retval += "Fuel"; break;
     case METER_SHIELD:              retval += "Shield"; break;
     case METER_STRUCTURE:           retval += "Structure"; break;
     case METER_DEFENSE:             retval += "Defense"; break;
+    case METER_SUPPLY:              retval += "Supply"; break;
+    case METER_STOCKPILE:           retval += "Stockpile"; break;
     case METER_TROOPS:              retval += "Troops"; break;
 
     case METER_REBEL_TROOPS:        retval += "RebelTroops"; break;
-    case METER_SUPPLY:              retval += "Supply"; break;
+    case METER_SIZE:                retval += "Size"; break;
     case METER_STEALTH:             retval += "Stealth"; break;
     case METER_DETECTION:           retval += "Detection"; break;
     case METER_SPEED:               retval += "Speed"; break;
 
     default:                        retval += "?"; break;
     }
-    retval += " value = " + m_value->Dump() + "\n";
+    retval += " value = " + m_value->Dump(ntabs) + "\n";
     return retval;
 }
 
@@ -615,22 +573,29 @@ void SetMeter::SetTopLevelContent(const std::string& content_name) {
         m_value->SetTopLevelContent(content_name);
 }
 
+unsigned int SetMeter::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetMeter");
+    CheckSums::CheckSumCombine(retval, m_meter);
+    CheckSums::CheckSumCombine(retval, m_value);
+    CheckSums::CheckSumCombine(retval, m_accounting_label);
+
+    TraceLogger() << "GetCheckSum(SetMeter): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetShipPartMeter                                      //
 ///////////////////////////////////////////////////////////
 SetShipPartMeter::SetShipPartMeter(MeterType meter,
-                                   ValueRef::ValueRefBase<std::string>* part_name,
-                                   ValueRef::ValueRefBase<double>* value) :
-    m_part_name(part_name),
+                                   std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& part_name,
+                                   std::unique_ptr<ValueRef::ValueRefBase<double>>&& value) :
+    m_part_name(std::move(part_name)),
     m_meter(meter),
-    m_value(value)
+    m_value(std::move(value))
 {}
-
-SetShipPartMeter::~SetShipPartMeter() {
-    delete m_value;
-    delete m_part_name;
-}
 
 void SetShipPartMeter::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
@@ -643,7 +608,7 @@ void SetShipPartMeter::Execute(const ScriptingContext& context) const {
         return;
     }
 
-    TemporaryPtr<Ship> ship = boost::dynamic_pointer_cast<Ship>(context.effect_target);
+    auto ship = std::dynamic_pointer_cast<Ship>(context.effect_target);
     if (!ship) {
         ErrorLogger() << "SetShipPartMeter::Execute acting on non-ship target:";
         //context.effect_target->Dump();
@@ -654,50 +619,126 @@ void SetShipPartMeter::Execute(const ScriptingContext& context) const {
 
     // get meter, evaluate new value, assign
     Meter* meter = ship->GetPartMeter(m_meter, part_name);
-    if (!meter) {
-        ErrorLogger() << "SetShipPartMeter::Execute couldn't find meter " << m_meter << " for ship part name: " << part_name;
+    if (!meter)
         return;
-    }
 
     double val = m_value->Eval(ScriptingContext(context, meter->Current()));
     meter->SetCurrent(val);
 }
 
-std::string SetShipPartMeter::Description() const {
-    std::string value_str;
-    if (m_value) {
-        if (ValueRef::ConstantExpr(m_value))
-            value_str = lexical_cast<std::string>(m_value->Eval());
-        else
-            value_str = m_value->Description();
-    }
+void SetShipPartMeter::Execute(const ScriptingContext& context,
+                               const TargetSet& targets,
+                               AccountingMap* accounting_map,
+                               const EffectCause& effect_cause,
+                               bool only_meter_effects,
+                               bool only_appearance_effects,
+                               bool include_empire_meter_effects,
+                               bool only_generate_sitrep_effects) const
+{
+    if (only_appearance_effects || only_generate_sitrep_effects)
+        return;
 
-    std::string meter_str = UserString(lexical_cast<std::string>(m_meter));
+    TraceLogger(effects) << "\n\nExecute SetShipPartMeter effect: \n" << Dump();
+    TraceLogger(effects) << "SetShipPartMeter execute targets before: ";
+    for (auto& target : targets)
+        TraceLogger(effects) << " ... " << target->Dump(1);
 
-    std::string part_str;
-    if (m_part_name) {
-        part_str = m_part_name->Description();
-        if (ValueRef::ConstantExpr(m_part_name) && UserStringExists(part_str))
-            part_str = UserString(part_str);
-    }
+    Execute(context, targets);
 
-    return str(FlexibleFormat(UserString("DESC_SET_SHIP_PART_METER"))
-               % meter_str
-               % part_str
-               % value_str);
+    TraceLogger(effects) << "SetShipPartMeter execute targets after: ";
+    for (auto& target : targets)
+        TraceLogger(effects) << " ... " << target->Dump(1);
 }
 
-std::string SetShipPartMeter::Dump() const {
-    std::string retval = DumpIndent();
+void SetShipPartMeter::Execute(const ScriptingContext& context, const TargetSet& targets) const {
+    if (targets.empty())
+        return;
+    if (!m_part_name || !m_value) {
+        ErrorLogger() << "SetShipPartMeter::Execute missing part name or value ValueRefs";
+        return;
+    }
+
+    // TODO: Handle efficiently the case where the part name varies from target
+    // to target, but the value is target-invariant
+    if (!m_part_name->TargetInvariant()) {
+        DebugLogger() << "SetShipPartMeter::Execute has target-variant part name, which it is not (yet) coded to handle efficiently!";
+        EffectBase::Execute(context, targets);
+        return;
+    }
+
+    // part name doesn't depend on target, so handle with single ValueRef evaluation
+    std::string part_name = m_part_name->Eval(context);
+
+    if (m_value->TargetInvariant()) {
+        // meter value does not depend on target, so handle with single ValueRef evaluation
+        float val = m_value->Eval(context);
+        for (auto& target : targets) {
+            if (target->ObjectType() != OBJ_SHIP)
+                continue;
+            auto ship = std::dynamic_pointer_cast<Ship>(target);
+            if (!ship)
+                continue;
+            Meter* m = ship->GetPartMeter(m_meter, part_name);
+            if (m)
+                m->SetCurrent(val);
+        }
+        return;
+
+    } else if (m_value->SimpleIncrement()) {
+        // meter value is a consistent constant increment for each target, so handle with
+        // deep inspection single ValueRef evaluation
+        auto op = dynamic_cast<ValueRef::Operation<double>*>(m_value.get());
+        if (!op) {
+            ErrorLogger() << "SetShipPartMeter::Execute couldn't cast simple increment ValueRef to an Operation. Reverting to standard execute.";
+            EffectBase::Execute(context, targets);
+            return;
+        }
+        // RHS should be a ConstantExpr
+        float increment = op->RHS()->Eval();
+        if (op->GetOpType() == ValueRef::PLUS) {
+            // do nothing to modify increment
+        } else if (op->GetOpType() == ValueRef::MINUS) {
+            increment = -increment;
+        } else {
+            ErrorLogger() << "SetShipPartMeter::Execute got invalid increment optype (not PLUS or MINUS). Reverting to standard execute.";
+            EffectBase::Execute(context, targets);
+            return;
+        }
+        //DebugLogger() << "simple increment: " << increment;
+        // increment all target meters...
+        for (auto& target : targets) {
+            if (target->ObjectType() != OBJ_SHIP)
+                continue;
+            auto ship = std::dynamic_pointer_cast<Ship>(target);
+            if (!ship)
+                continue;
+            Meter* m = ship->GetPartMeter(m_meter, part_name);
+            if (m)
+                m->AddToCurrent(increment);
+        }
+        return;
+
+    } else {
+        //DebugLogger() << "complicated meter adjustment...";
+        // meter value depends on target non-trivially, so handle with default case of per-target ValueRef evaluation
+        EffectBase::Execute(context, targets);
+    }
+}
+
+std::string SetShipPartMeter::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs);
     switch (m_meter) {
-        case METER_CAPACITY:    retval += "SetCapacity";    break;
+        case METER_CAPACITY:            retval += "SetCapacity";        break;
+        case METER_MAX_CAPACITY:        retval += "SetMaxCapacity";     break;
+        case METER_SECONDARY_STAT:      retval += "SetSecondaryStat";   break;
+        case METER_MAX_SECONDARY_STAT:  retval += "SetMaxSecondaryStat";break;
         default:                retval += "Set???";         break;
     }
 
     if (m_part_name)
-        retval += " partname = " + m_part_name->Dump();
+        retval += " partname = " + m_part_name->Dump(ntabs);
 
-    retval += " value = " + m_value->Dump();
+    retval += " value = " + m_value->Dump(ntabs);
 
     return retval;
 }
@@ -709,31 +750,46 @@ void SetShipPartMeter::SetTopLevelContent(const std::string& content_name) {
         m_part_name->SetTopLevelContent(content_name);
 }
 
+unsigned int SetShipPartMeter::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetShipPartMeter");
+    CheckSums::CheckSumCombine(retval, m_part_name);
+    CheckSums::CheckSumCombine(retval, m_meter);
+    CheckSums::CheckSumCombine(retval, m_value);
+
+    TraceLogger() << "GetCheckSum(SetShipPartMeter): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetEmpireMeter                                        //
 ///////////////////////////////////////////////////////////
-SetEmpireMeter::SetEmpireMeter(const std::string& meter, ValueRef::ValueRefBase<double>* value) :
-    m_empire_id(new ValueRef::Variable<int>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner"))),
+SetEmpireMeter::SetEmpireMeter(const std::string& meter, std::unique_ptr<ValueRef::ValueRefBase<double>>&& value) :
+    m_empire_id(boost::make_unique<ValueRef::Variable<int>>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner"))),
     m_meter(meter),
-    m_value(value)
+    m_value(std::move(value))
 {}
 
-SetEmpireMeter::SetEmpireMeter(ValueRef::ValueRefBase<int>* empire_id, const std::string& meter,
-                               ValueRef::ValueRefBase<double>* value) :
-    m_empire_id(empire_id),
+SetEmpireMeter::SetEmpireMeter(std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id, const std::string& meter,
+                               std::unique_ptr<ValueRef::ValueRefBase<double>>&& value) :
+    m_empire_id(std::move(empire_id)),
     m_meter(meter),
-    m_value(value)
+    m_value(std::move(value))
 {}
-
-SetEmpireMeter::~SetEmpireMeter() {
-    delete m_empire_id;
-    delete m_value;
-}
 
 void SetEmpireMeter::Execute(const ScriptingContext& context) const {
-    int empire_id = m_empire_id->Eval(context);
+    if (!context.effect_target) {
+        DebugLogger() << "SetEmpireMeter::Execute passed null target pointer";
+        return;
+    }
+    if (!m_empire_id || !m_value || m_meter.empty()) {
+        ErrorLogger() << "SetEmpireMeter::Execute missing empire id or value ValueRefs, or given empty meter name";
+        return;
+    }
 
+    int empire_id = m_empire_id->Eval(context);
     Empire* empire = GetEmpire(empire_id);
     if (!empire) {
         DebugLogger() << "SetEmpireMeter::Execute unable to find empire with id " << empire_id;
@@ -746,33 +802,51 @@ void SetEmpireMeter::Execute(const ScriptingContext& context) const {
         return;
     }
 
-    double value = m_value->Eval(ScriptingContext(context, meter->Current()));
+    double&& value = m_value->Eval(ScriptingContext(context, meter->Current()));
 
     meter->SetCurrent(value);
 }
 
-std::string SetEmpireMeter::Description() const {
-    std::string empire_str;
-    if (m_empire_id) {
-        if (ValueRef::ConstantExpr(m_empire_id)) {
-            if (const Empire* empire = GetEmpire(m_empire_id->Eval()))
-                empire_str = empire->Name();
-        } else {
-            empire_str = m_empire_id->Description();
-        }
-    }
-    std::string value_str =     ValueRef::ConstantExpr(m_value) ?
-                                    lexical_cast<std::string>(m_value->Eval()) :
-                                    m_value->Description();
-
-    return str(FlexibleFormat(UserString("DESC_SET_EMPIRE_METER"))
-               % empire_str
-               % UserString(m_meter)
-               % value_str);
+void SetEmpireMeter::Execute(const ScriptingContext& context,
+                             const TargetSet& targets,
+                             AccountingMap* accounting_map,
+                             const EffectCause& effect_cause,
+                             bool only_meter_effects,
+                             bool only_appearance_effects,
+                             bool include_empire_meter_effects,
+                             bool only_generate_sitrep_effects) const
+{
+    if (!include_empire_meter_effects ||
+        only_appearance_effects ||
+        only_generate_sitrep_effects)
+    { return; }
+    // presently no accounting done for empire meters.
+    // TODO: maybe implement empire meter effect accounting?
+    Execute(context, targets);
 }
 
-std::string SetEmpireMeter::Dump() const
-{ return DumpIndent() + "SetEmpireMeter meter = " + m_meter + " empire = " + m_empire_id->Dump() + " value = " + m_value->Dump(); }
+void SetEmpireMeter::Execute(const ScriptingContext& context, const TargetSet& targets) const {
+    if (targets.empty())
+        return;
+    if (!m_empire_id || m_meter.empty() || !m_value) {
+        ErrorLogger() << "SetEmpireMeter::Execute missing empire id or value ValueRefs or meter name";
+        return;
+    }
+
+    // TODO: efficiently handle target invariant empire id and value
+    EffectBase::Execute(context, targets);
+    //return;
+
+    //if (m_empire_id->TargetInvariant() && m_value->TargetInvariant()) {
+    //}
+
+    ////DebugLogger() << "complicated meter adjustment...";
+    //// meter value depends on target non-trivially, so handle with default case of per-target ValueRef evaluation
+    //EffectBase::Execute(context, targets);
+}
+
+std::string SetEmpireMeter::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetEmpireMeter meter = " + m_meter + " empire = " + m_empire_id->Dump(ntabs) + " value = " + m_value->Dump(ntabs); }
 
 void SetEmpireMeter::SetTopLevelContent(const std::string& content_name) {
     if (m_empire_id)
@@ -781,29 +855,36 @@ void SetEmpireMeter::SetTopLevelContent(const std::string& content_name) {
         m_value->SetTopLevelContent(content_name);
 }
 
+unsigned int SetEmpireMeter::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetEmpireMeter");
+    CheckSums::CheckSumCombine(retval, m_empire_id);
+    CheckSums::CheckSumCombine(retval, m_meter);
+    CheckSums::CheckSumCombine(retval, m_value);
+
+    TraceLogger() << "GetCheckSum(SetEmpireMeter): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetEmpireStockpile                                    //
 ///////////////////////////////////////////////////////////
 SetEmpireStockpile::SetEmpireStockpile(ResourceType stockpile,
-                                       ValueRef::ValueRefBase<double>* value) :
-    m_empire_id(new ValueRef::Variable<int>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner"))),
+                                       std::unique_ptr<ValueRef::ValueRefBase<double>>&& value) :
+    m_empire_id(boost::make_unique<ValueRef::Variable<int>>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner"))),
     m_stockpile(stockpile),
-    m_value(value)
+    m_value(std::move(value))
 {}
 
-SetEmpireStockpile::SetEmpireStockpile(ValueRef::ValueRefBase<int>* empire_id,
+SetEmpireStockpile::SetEmpireStockpile(std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id,
                                        ResourceType stockpile,
-                                       ValueRef::ValueRefBase<double>* value) :
-    m_empire_id(empire_id),
+                                       std::unique_ptr<ValueRef::ValueRefBase<double>>&& value) :
+    m_empire_id(std::move(empire_id)),
     m_stockpile(stockpile),
-    m_value(value)
+    m_value(std::move(value))
 {}
-
-SetEmpireStockpile::~SetEmpireStockpile() {
-    delete m_empire_id;
-    delete m_value;
-}
 
 void SetEmpireStockpile::Execute(const ScriptingContext& context) const {
     int empire_id = m_empire_id->Eval(context);
@@ -818,33 +899,14 @@ void SetEmpireStockpile::Execute(const ScriptingContext& context) const {
     empire->SetResourceStockpile(m_stockpile, value);
 }
 
-std::string SetEmpireStockpile::Description() const {
-    std::string empire_str;
-    if (m_empire_id) {
-        if (ValueRef::ConstantExpr(m_empire_id)) {
-            if (const Empire* empire = GetEmpire(m_empire_id->Eval()))
-                empire_str = empire->Name();
-        } else {
-            empire_str = m_empire_id->Description();
-        }
-    }
-    std::string value_str = ValueRef::ConstantExpr(m_value) ?
-                                lexical_cast<std::string>(m_value->Eval()) :
-                                m_value->Description();
-
-    return str(FlexibleFormat(UserString("DESC_SET_EMPIRE_STOCKPILE"))
-               % UserString(lexical_cast<std::string>(m_stockpile))
-               % value_str
-               % empire_str);
-}
-
-std::string SetEmpireStockpile::Dump() const {
-    std::string retval = DumpIndent();
+std::string SetEmpireStockpile::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs);
     switch (m_stockpile) {
-    case RE_TRADE:      retval += "SetEmpireTradeStockpile"; break;
+        // TODO: Support for other resource stockpiles?
+    case RE_INDUSTRY:   retval += "SetEmpireStockpile"; break;
     default:            retval += "?"; break;
     }
-    retval += " empire = " + m_empire_id->Dump() + " value = " + m_value->Dump() + "\n";
+    retval += " empire = " + m_empire_id->Dump(ntabs) + " value = " + m_value->Dump(ntabs) + "\n";
     return retval;
 }
 
@@ -855,20 +917,29 @@ void SetEmpireStockpile::SetTopLevelContent(const std::string& content_name) {
         m_value->SetTopLevelContent(content_name);
 }
 
+unsigned int SetEmpireStockpile::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetEmpireStockpile");
+    CheckSums::CheckSumCombine(retval, m_empire_id);
+    CheckSums::CheckSumCombine(retval, m_stockpile);
+    CheckSums::CheckSumCombine(retval, m_value);
+
+    TraceLogger() << "GetCheckSum(SetEmpireStockpile): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetEmpireCapital                                      //
 ///////////////////////////////////////////////////////////
 SetEmpireCapital::SetEmpireCapital() :
-    m_empire_id(new ValueRef::Variable<int>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner")))
+    m_empire_id(boost::make_unique<ValueRef::Variable<int>>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner")))
 {}
 
-SetEmpireCapital::SetEmpireCapital(ValueRef::ValueRefBase<int>* empire_id) :
-    m_empire_id(empire_id)
+SetEmpireCapital::SetEmpireCapital(std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id) :
+    m_empire_id(std::move(empire_id))
 {}
-
-SetEmpireCapital::~SetEmpireCapital()
-{ delete m_empire_id; }
 
 void SetEmpireCapital::Execute(const ScriptingContext& context) const {
     int empire_id = m_empire_id->Eval(context);
@@ -877,47 +948,41 @@ void SetEmpireCapital::Execute(const ScriptingContext& context) const {
     if (!empire)
         return;
 
-    TemporaryPtr<const Planet> planet = boost::dynamic_pointer_cast<const Planet>(context.effect_target);
+    auto planet = std::dynamic_pointer_cast<const Planet>(context.effect_target);
     if (!planet)
         return;
 
     empire->SetCapitalID(planet->ID());
 }
 
-std::string SetEmpireCapital::Description() const {
-    std::string empire_str;
-    if (m_empire_id) {
-        if (ValueRef::ConstantExpr(m_empire_id)) {
-            if (const Empire* empire = GetEmpire(m_empire_id->Eval()))
-                empire_str = empire->Name();
-        } else {
-            empire_str = m_empire_id->Description();
-        }
-    }
-    return str(FlexibleFormat(UserString("DESC_SET_EMPIRE_CAPITAL")) % empire_str);
-}
-
-std::string SetEmpireCapital::Dump() const
-{ return DumpIndent() + "SetEmpireCapital empire = " + m_empire_id->Dump() + "\n"; }
+std::string SetEmpireCapital::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetEmpireCapital empire = " + m_empire_id->Dump(ntabs) + "\n"; }
 
 void SetEmpireCapital::SetTopLevelContent(const std::string& content_name) {
     if (m_empire_id)
         m_empire_id->SetTopLevelContent(content_name);
 }
 
+unsigned int SetEmpireCapital::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetEmpireCapital");
+    CheckSums::CheckSumCombine(retval, m_empire_id);
+
+    TraceLogger() << "GetCheckSum(SetEmpireCapital): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetPlanetType                                         //
 ///////////////////////////////////////////////////////////
-SetPlanetType::SetPlanetType(ValueRef::ValueRefBase<PlanetType>* type) :
-    m_type(type)
+SetPlanetType::SetPlanetType(std::unique_ptr<ValueRef::ValueRefBase<PlanetType>>&& type) :
+    m_type(std::move(type))
 {}
 
-SetPlanetType::~SetPlanetType()
-{ delete m_type; }
-
 void SetPlanetType::Execute(const ScriptingContext& context) const {
-    if (TemporaryPtr<Planet> p = boost::dynamic_pointer_cast<Planet>(context.effect_target)) {
+    if (auto p = std::dynamic_pointer_cast<Planet>(context.effect_target)) {
         PlanetType type = m_type->Eval(ScriptingContext(context, p->Type()));
         p->SetType(type);
         if (type == PT_ASTEROIDS)
@@ -931,34 +996,34 @@ void SetPlanetType::Execute(const ScriptingContext& context) const {
     }
 }
 
-std::string SetPlanetType::Description() const {
-    std::string value_str = ValueRef::ConstantExpr(m_type) ?
-                                UserString(lexical_cast<std::string>(m_type->Eval())) :
-                                m_type->Description();
-    return str(FlexibleFormat(UserString("DESC_SET_PLANET_TYPE")) % value_str);
-}
-
-std::string SetPlanetType::Dump() const
-{ return DumpIndent() + "SetPlanetType type = " + m_type->Dump() + "\n"; }
+std::string SetPlanetType::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetPlanetType type = " + m_type->Dump(ntabs) + "\n"; }
 
 void SetPlanetType::SetTopLevelContent(const std::string& content_name) {
     if (m_type)
         m_type->SetTopLevelContent(content_name);
 }
 
+unsigned int SetPlanetType::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetPlanetType");
+    CheckSums::CheckSumCombine(retval, m_type);
+
+    TraceLogger() << "GetCheckSum(SetPlanetType): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetPlanetSize                                         //
 ///////////////////////////////////////////////////////////
-SetPlanetSize::SetPlanetSize(ValueRef::ValueRefBase<PlanetSize>* size) :
-    m_size(size)
+SetPlanetSize::SetPlanetSize(std::unique_ptr<ValueRef::ValueRefBase<PlanetSize>>&& size) :
+    m_size(std::move(size))
 {}
 
-SetPlanetSize::~SetPlanetSize()
-{ delete m_size; }
-
 void SetPlanetSize::Execute(const ScriptingContext& context) const {
-    if (TemporaryPtr<Planet> p = boost::dynamic_pointer_cast<Planet>(context.effect_target)) {
+    if (auto p = std::dynamic_pointer_cast<Planet>(context.effect_target)) {
         PlanetSize size = m_size->Eval(ScriptingContext(context, p->Size()));
         p->SetSize(size);
         if (size == SZ_ASTEROIDS)
@@ -970,34 +1035,34 @@ void SetPlanetSize::Execute(const ScriptingContext& context) const {
     }
 }
 
-std::string SetPlanetSize::Description() const {
-    std::string value_str = ValueRef::ConstantExpr(m_size) ?
-                                UserString(lexical_cast<std::string>(m_size->Eval())) :
-                                m_size->Description();
-    return str(FlexibleFormat(UserString("DESC_SET_PLANET_SIZE")) % value_str);
-}
-
-std::string SetPlanetSize::Dump() const
-{ return DumpIndent() + "SetPlanetSize size = " + m_size->Dump() + "\n"; }
+std::string SetPlanetSize::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetPlanetSize size = " + m_size->Dump(ntabs) + "\n"; }
 
 void SetPlanetSize::SetTopLevelContent(const std::string& content_name) {
     if (m_size)
         m_size->SetTopLevelContent(content_name);
 }
 
+unsigned int SetPlanetSize::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetPlanetSize");
+    CheckSums::CheckSumCombine(retval, m_size);
+
+    TraceLogger() << "GetCheckSum(SetPlanetSize): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetSpecies                                            //
 ///////////////////////////////////////////////////////////
-SetSpecies::SetSpecies(ValueRef::ValueRefBase<std::string>* species) :
-    m_species_name(species)
+SetSpecies::SetSpecies(std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& species) :
+    m_species_name(std::move(species))
 {}
 
-SetSpecies::~SetSpecies()
-{ delete m_species_name; }
-
 void SetSpecies::Execute(const ScriptingContext& context) const {
-    if (TemporaryPtr<Planet> planet = boost::dynamic_pointer_cast<Planet>(context.effect_target)) {
+    if (auto planet = std::dynamic_pointer_cast<Planet>(context.effect_target)) {
         std::string species_name = m_species_name->Eval(ScriptingContext(context, planet->SpeciesName()));
         planet->SetSpecies(species_name);
 
@@ -1006,10 +1071,8 @@ void SetSpecies::Execute(const ScriptingContext& context) const {
         std::vector<std::string> available_foci = planet->AvailableFoci();
 
         // leave current focus unchanged if available.
-        for (std::vector<std::string>::const_iterator it = available_foci.begin();
-             it != available_foci.end(); ++it)
-        {
-            if (*it == initial_focus) {
+        for (const std::string& available_focus : available_foci) {
+            if (available_focus == initial_focus) {
                 return;
             }
         }
@@ -1024,54 +1087,52 @@ void SetSpecies::Execute(const ScriptingContext& context) const {
 
         // chose preferred focus if available. otherwise use any available focus
         bool preferred_available = false;
-        for (std::vector<std::string>::const_iterator it = available_foci.begin();
-                it != available_foci.end(); ++it)
-        {
-            if (*it == preferred_focus) {
+        for (const std::string& available_focus : available_foci) {
+            if (available_focus == preferred_focus) {
                 preferred_available = true;
                 break;
             }
         }
 
         if (preferred_available) {
-            new_focus = preferred_focus;
+            new_focus = std::move(preferred_focus);
         } else if (!available_foci.empty()) {
             new_focus = *available_foci.begin();
         }
 
         planet->SetFocus(new_focus);
 
-    } else if (TemporaryPtr<Ship> ship = boost::dynamic_pointer_cast<Ship>(context.effect_target)) {
+    } else if (auto ship = std::dynamic_pointer_cast<Ship>(context.effect_target)) {
         std::string species_name = m_species_name->Eval(ScriptingContext(context, ship->SpeciesName()));
         ship->SetSpecies(species_name);
     }
 }
 
-std::string SetSpecies::Description() const {
-    std::string value_str = ValueRef::ConstantExpr(m_species_name) ?
-                                UserString(m_species_name->Eval()) :
-                                m_species_name->Description();
-    return str(FlexibleFormat(UserString("DESC_SET_SPECIES")) % value_str);
-}
-
-std::string SetSpecies::Dump() const
-{ return DumpIndent() + "SetSpecies name = " + m_species_name->Dump() + "\n"; }
+std::string SetSpecies::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetSpecies name = " + m_species_name->Dump(ntabs) + "\n"; }
 
 void SetSpecies::SetTopLevelContent(const std::string& content_name) {
     if (m_species_name)
         m_species_name->SetTopLevelContent(content_name);
 }
 
+unsigned int SetSpecies::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetSpecies");
+    CheckSums::CheckSumCombine(retval, m_species_name);
+
+    TraceLogger() << "GetCheckSum(SetSpecies): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetOwner                                              //
 ///////////////////////////////////////////////////////////
-SetOwner::SetOwner(ValueRef::ValueRefBase<int>* empire_id) :
-    m_empire_id(empire_id)
+SetOwner::SetOwner(std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id) :
+    m_empire_id(std::move(empire_id))
 {}
-
-SetOwner::~SetOwner()
-{ delete m_empire_id; }
 
 void SetOwner::Execute(const ScriptingContext& context) const {
     if (!context.effect_target)
@@ -1084,18 +1145,18 @@ void SetOwner::Execute(const ScriptingContext& context) const {
 
     context.effect_target->SetOwner(empire_id);
 
-    if (TemporaryPtr<Ship> ship = boost::dynamic_pointer_cast<Ship>(context.effect_target)) {
+    if (auto ship = std::dynamic_pointer_cast<Ship>(context.effect_target)) {
         // assigning ownership of a ship requires updating the containing
         // fleet, or splitting ship off into a new fleet at the same location
-        TemporaryPtr<Fleet> fleet = GetFleet(ship->FleetID());
+        auto fleet = GetFleet(ship->FleetID());
         if (!fleet)
             return;
         if (fleet->Owner() == empire_id)
             return;
 
         // move ship into new fleet
-        TemporaryPtr<Fleet> new_fleet;
-        if (TemporaryPtr<System> system = GetSystem(ship->SystemID()))
+        std::shared_ptr<Fleet> new_fleet;
+        if (auto system = GetSystem(ship->SystemID()))
             new_fleet = CreateNewFleet(system, ship);
         else
             new_fleet = CreateNewFleet(ship->X(), ship->Y(), ship);
@@ -1110,44 +1171,37 @@ void SetOwner::Execute(const ScriptingContext& context) const {
     }
 }
 
-std::string SetOwner::Description() const {
-    std::string empire_str;
-    if (m_empire_id) {
-        if (ValueRef::ConstantExpr(m_empire_id)) {
-            if (const Empire* empire = GetEmpire(m_empire_id->Eval()))
-                empire_str = empire->Name();
-        } else {
-            empire_str = m_empire_id->Description();
-        }
-    }
-    return str(FlexibleFormat(UserString("DESC_SET_OWNER")) % empire_str);
-}
-
-std::string SetOwner::Dump() const
-{ return DumpIndent() + "SetOwner empire = " + m_empire_id->Dump() + "\n"; }
+std::string SetOwner::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetOwner empire = " + m_empire_id->Dump(ntabs) + "\n"; }
 
 void SetOwner::SetTopLevelContent(const std::string& content_name) {
     if (m_empire_id)
         m_empire_id->SetTopLevelContent(content_name);
 }
 
+unsigned int SetOwner::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetOwner");
+    CheckSums::CheckSumCombine(retval, m_empire_id);
+
+    TraceLogger() << "GetCheckSum(SetOwner): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetSpeciesEmpireOpinion                               //
 ///////////////////////////////////////////////////////////
-SetSpeciesEmpireOpinion::SetSpeciesEmpireOpinion(ValueRef::ValueRefBase<std::string>* species_name,
-                                                 ValueRef::ValueRefBase<int>* empire_id,
-                                                 ValueRef::ValueRefBase<double>* opinion) :
-    m_species_name(species_name),
-    m_empire_id(empire_id),
-    m_opinion(opinion)
+SetSpeciesEmpireOpinion::SetSpeciesEmpireOpinion(
+    std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& species_name,
+    std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id,
+    std::unique_ptr<ValueRef::ValueRefBase<double>>&& opinion
+) :
+    m_species_name(std::move(species_name)),
+    m_empire_id(std::move(empire_id)),
+    m_opinion(std::move(opinion))
 {}
-
-SetSpeciesEmpireOpinion::~SetSpeciesEmpireOpinion() {
-    delete m_species_name;
-    delete m_empire_id;
-    delete m_opinion;
-}
 
 void SetSpeciesEmpireOpinion::Execute(const ScriptingContext& context) const {
     if (!context.effect_target)
@@ -1169,22 +1223,8 @@ void SetSpeciesEmpireOpinion::Execute(const ScriptingContext& context) const {
     GetSpeciesManager().SetSpeciesEmpireOpinion(species_name, empire_id, opinion);
 }
 
-std::string SetSpeciesEmpireOpinion::Description() const {
-    std::string empire_str;
-    if (m_empire_id) {
-        if (ValueRef::ConstantExpr(m_empire_id)) {
-            if (const Empire* empire = GetEmpire(m_empire_id->Eval()))
-                empire_str = empire->Name();
-        } else {
-            empire_str = m_empire_id->Description();
-        }
-    }
-    return str(FlexibleFormat(UserString("DESC_SET_OWNER")) % empire_str);
-    // todo: fix
-}
-
-std::string SetSpeciesEmpireOpinion::Dump() const
-{ return DumpIndent() + "SetSpeciesEmpireOpinion empire = " + m_empire_id->Dump() + "\n"; }
+std::string SetSpeciesEmpireOpinion::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetSpeciesEmpireOpinion empire = " + m_empire_id->Dump(ntabs) + "\n"; }
 
 void SetSpeciesEmpireOpinion::SetTopLevelContent(const std::string& content_name) {
     if (m_empire_id)
@@ -1195,23 +1235,31 @@ void SetSpeciesEmpireOpinion::SetTopLevelContent(const std::string& content_name
         m_opinion->SetTopLevelContent(content_name);
 }
 
+unsigned int SetSpeciesEmpireOpinion::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetSpeciesEmpireOpinion");
+    CheckSums::CheckSumCombine(retval, m_species_name);
+    CheckSums::CheckSumCombine(retval, m_empire_id);
+    CheckSums::CheckSumCombine(retval, m_opinion);
+
+    TraceLogger() << "GetCheckSum(SetSpeciesEmpireOpinion): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetSpeciesSpeciesOpinion                              //
 ///////////////////////////////////////////////////////////
-SetSpeciesSpeciesOpinion::SetSpeciesSpeciesOpinion(ValueRef::ValueRefBase<std::string>* opinionated_species_name,
-                                                   ValueRef::ValueRefBase<std::string>* rated_species_name,
-                                                   ValueRef::ValueRefBase<double>* opinion) :
-    m_opinionated_species_name(opinionated_species_name),
-    m_rated_species_name(rated_species_name),
-    m_opinion(opinion)
+SetSpeciesSpeciesOpinion::SetSpeciesSpeciesOpinion(
+    std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& opinionated_species_name,
+    std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& rated_species_name,
+    std::unique_ptr<ValueRef::ValueRefBase<double>>&& opinion
+) :
+    m_opinionated_species_name(std::move(opinionated_species_name)),
+    m_rated_species_name(std::move(rated_species_name)),
+    m_opinion(std::move(opinion))
 {}
-
-SetSpeciesSpeciesOpinion::~SetSpeciesSpeciesOpinion() {
-    delete m_opinionated_species_name;
-    delete m_rated_species_name;
-    delete m_opinion;
-}
 
 void SetSpeciesSpeciesOpinion::Execute(const ScriptingContext& context) const {
     if (!context.effect_target)
@@ -1233,22 +1281,8 @@ void SetSpeciesSpeciesOpinion::Execute(const ScriptingContext& context) const {
     GetSpeciesManager().SetSpeciesSpeciesOpinion(opinionated_species_name, rated_species_name, opinion);
 }
 
-std::string SetSpeciesSpeciesOpinion::Description() const {
-    std::string empire_str;
-    //if (m_empire_id) {
-    //    if (ValueRef::ConstantExpr(m_empire_id)) {
-    //        if (const Empire* empire = GetEmpire(m_empire_id->Eval()))
-    //            empire_str = empire->Name();
-    //    } else {
-    //        empire_str = m_empire_id->Description();
-    //    }
-    //}
-    return str(FlexibleFormat(UserString("DESC_SET_OWNER")) % empire_str);
-    // todo: fix
-}
-
-std::string SetSpeciesSpeciesOpinion::Dump() const
-{ return DumpIndent() + "SetSpeciesSpeciesOpinion" + "\n"; }
+std::string SetSpeciesSpeciesOpinion::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetSpeciesSpeciesOpinion" + "\n"; }
 
 void SetSpeciesSpeciesOpinion::SetTopLevelContent(const std::string& content_name) {
     if (m_opinionated_species_name)
@@ -1259,36 +1293,38 @@ void SetSpeciesSpeciesOpinion::SetTopLevelContent(const std::string& content_nam
         m_opinion->SetTopLevelContent(content_name);
 }
 
+unsigned int SetSpeciesSpeciesOpinion::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetSpeciesSpeciesOpinion");
+    CheckSums::CheckSumCombine(retval, m_opinionated_species_name);
+    CheckSums::CheckSumCombine(retval, m_rated_species_name);
+    CheckSums::CheckSumCombine(retval, m_opinion);
+
+    TraceLogger() << "GetCheckSum(SetSpeciesSpeciesOpinion): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // CreatePlanet                                          //
 ///////////////////////////////////////////////////////////
-CreatePlanet::CreatePlanet(ValueRef::ValueRefBase<PlanetType>* type,
-                           ValueRef::ValueRefBase<PlanetSize>* size,
-                           ValueRef::ValueRefBase<std::string>* name,
-                           const std::vector<Effect::EffectBase*>& effects_to_apply_after) :
-    m_type(type),
-    m_size(size),
-    m_name(name),
-    m_effects_to_apply_after(effects_to_apply_after)
+CreatePlanet::CreatePlanet(std::unique_ptr<ValueRef::ValueRefBase<PlanetType>>&& type,
+                           std::unique_ptr<ValueRef::ValueRefBase<PlanetSize>>&& size,
+                           std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& name,
+                           std::vector<std::unique_ptr<EffectBase>>&& effects_to_apply_after) :
+    m_type(std::move(type)),
+    m_size(std::move(size)),
+    m_name(std::move(name)),
+    m_effects_to_apply_after(std::move(effects_to_apply_after))
 {}
-
-CreatePlanet::~CreatePlanet() {
-    delete m_type;
-    delete m_size;
-    delete m_name;
-    for (std::vector<Effect::EffectBase*>::iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    { delete *it; }
-    m_effects_to_apply_after.clear();
-}
 
 void CreatePlanet::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
         ErrorLogger() << "CreatePlanet::Execute passed no target object";
         return;
     }
-    TemporaryPtr<System> system = GetSystem(context.effect_target->SystemID());
+    auto system = GetSystem(context.effect_target->SystemID());
     if (!system) {
         ErrorLogger() << "CreatePlanet::Execute couldn't get a System object at which to create the planet";
         return;
@@ -1296,7 +1332,7 @@ void CreatePlanet::Execute(const ScriptingContext& context) const {
 
     PlanetSize target_size = INVALID_PLANET_SIZE;
     PlanetType target_type = INVALID_PLANET_TYPE;
-    if (TemporaryPtr<const Planet> location_planet = boost::dynamic_pointer_cast<const Planet>(context.effect_target)) {
+    if (auto location_planet = std::dynamic_pointer_cast<const Planet>(context.effect_target)) {
         target_size = location_planet->Size();
         target_type = location_planet->Type();
     }
@@ -1315,7 +1351,7 @@ void CreatePlanet::Execute(const ScriptingContext& context) const {
         return;
     }
 
-    TemporaryPtr<Planet> planet = GetUniverse().CreatePlanet(type, size);
+    auto planet = GetUniverse().InsertNew<Planet>(type, size);
     if (!planet) {
         ErrorLogger() << "CreatePlanet::Execute unable to create new Planet object";
         return;
@@ -1326,47 +1362,31 @@ void CreatePlanet::Execute(const ScriptingContext& context) const {
     std::string name_str;
     if (m_name) {
         name_str = m_name->Eval(context);
-        if (ValueRef::ConstantExpr(m_name) && UserStringExists(name_str))
+        if (m_name->ConstantExpr() && UserStringExists(name_str))
             name_str = UserString(name_str);
     } else {
-        name_str = str(FlexibleFormat(UserString("NEW_PLANET_NAME")) % system->Name());
+        name_str = str(FlexibleFormat(UserString("NEW_PLANET_NAME")) % system->Name() % planet->CardinalSuffix());
     }
     planet->Rename(name_str);
 
     // apply after-creation effects
     ScriptingContext local_context = context;
     local_context.effect_target = planet;
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->Execute(local_context);
     }
 }
 
-std::string CreatePlanet::Description() const {
-    std::string type_str = ValueRef::ConstantExpr(m_type) ?
-                                UserString(lexical_cast<std::string>(m_type->Eval())) :
-                                m_type->Description();
-    std::string size_str = ValueRef::ConstantExpr(m_size) ?
-                                UserString(lexical_cast<std::string>(m_size->Eval())) :
-                                m_size->Description();
-
-    return str(FlexibleFormat(UserString("DESC_CREATE_PLANET"))
-                % type_str
-                % size_str);
-}
-
-std::string CreatePlanet::Dump() const {
-    std::string retval = DumpIndent() + "CreatePlanet";
+std::string CreatePlanet::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "CreatePlanet";
     if (m_size)
-        retval += " size = " + m_size->Dump();
+        retval += " size = " + m_size->Dump(ntabs);
     if (m_type)
-        retval += " type = " + m_type->Dump();
+        retval += " type = " + m_type->Dump(ntabs);
     if (m_name)
-        retval += " name = " + m_name->Dump();
+        retval += " name = " + m_name->Dump(ntabs);
     return retval + "\n";
 }
 
@@ -1377,45 +1397,46 @@ void CreatePlanet::SetTopLevelContent(const std::string& content_name) {
         m_size->SetTopLevelContent(content_name);
     if (m_name)
         m_name->SetTopLevelContent(content_name);
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->SetTopLevelContent(content_name);
     }
 }
 
+unsigned int CreatePlanet::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "CreatePlanet");
+    CheckSums::CheckSumCombine(retval, m_type);
+    CheckSums::CheckSumCombine(retval, m_size);
+    CheckSums::CheckSumCombine(retval, m_name);
+    CheckSums::CheckSumCombine(retval, m_effects_to_apply_after);
+
+    TraceLogger() << "GetCheckSum(CreatePlanet): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // CreateBuilding                                        //
 ///////////////////////////////////////////////////////////
-CreateBuilding::CreateBuilding(ValueRef::ValueRefBase<std::string>* building_type_name,
-                               ValueRef::ValueRefBase<std::string>* name,
-                               const std::vector<Effect::EffectBase*>& effects_to_apply_after) :
-    m_building_type_name(building_type_name),
-    m_name(name),
-    m_effects_to_apply_after(effects_to_apply_after)
+CreateBuilding::CreateBuilding(std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& building_type_name,
+                               std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& name,
+                               std::vector<std::unique_ptr<EffectBase>>&& effects_to_apply_after) :
+    m_building_type_name(std::move(building_type_name)),
+    m_name(std::move(name)),
+    m_effects_to_apply_after(std::move(effects_to_apply_after))
 {}
-
-CreateBuilding::~CreateBuilding() {
-    delete m_building_type_name;
-    delete m_name;
-    for (std::vector<Effect::EffectBase*>::iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    { delete *it; }
-    m_effects_to_apply_after.clear();
-}
 
 void CreateBuilding::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
         ErrorLogger() << "CreateBuilding::Execute passed no target object";
         return;
     }
-    TemporaryPtr<Planet> location = boost::dynamic_pointer_cast<Planet>(context.effect_target);
+    auto location = std::dynamic_pointer_cast<Planet>(context.effect_target);
     if (!location)
-        if (TemporaryPtr<Building> location_building = boost::dynamic_pointer_cast<Building>(context.effect_target))
+        if (auto location_building = std::dynamic_pointer_cast<Building>(context.effect_target))
             location = GetPlanet(location_building->PlanetID());
     if (!location) {
         ErrorLogger() << "CreateBuilding::Execute couldn't get a Planet object at which to create the building";
@@ -1434,7 +1455,7 @@ void CreateBuilding::Execute(const ScriptingContext& context) const {
         return;
     }
 
-    TemporaryPtr<Building> building = GetUniverse().CreateBuilding(ALL_EMPIRES, building_type_name, ALL_EMPIRES);
+    auto building = GetUniverse().InsertNew<Building>(ALL_EMPIRES, building_type_name, ALL_EMPIRES);
     if (!building) {
         ErrorLogger() << "CreateBuilding::Execute couldn't create building!";
         return;
@@ -1445,13 +1466,13 @@ void CreateBuilding::Execute(const ScriptingContext& context) const {
 
     building->SetOwner(location->Owner());
 
-    TemporaryPtr<System> system = GetSystem(location->SystemID());
+    auto system = GetSystem(location->SystemID());
     if (system)
         system->Insert(building);
 
     if (m_name) {
         std::string name_str = m_name->Eval(context);
-        if (ValueRef::ConstantExpr(m_name) && UserStringExists(name_str))
+        if (m_name->ConstantExpr() && UserStringExists(name_str))
             name_str = UserString(name_str);
         building->Rename(name_str);
     }
@@ -1459,31 +1480,19 @@ void CreateBuilding::Execute(const ScriptingContext& context) const {
     // apply after-creation effects
     ScriptingContext local_context = context;
     local_context.effect_target = building;
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->Execute(local_context);
     }
 }
 
-std::string CreateBuilding::Description() const {
-    std::string type_str = ValueRef::ConstantExpr(m_building_type_name) ?
-                                UserString(lexical_cast<std::string>(m_building_type_name->Eval())) :
-                                m_building_type_name->Description();
-
-    return str(FlexibleFormat(UserString("DESC_CREATE_BUILDING"))
-                % type_str);
-}
-
-std::string CreateBuilding::Dump() const {
-    std::string retval = DumpIndent() + "CreateBuilding";
+std::string CreateBuilding::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "CreateBuilding";
     if (m_building_type_name)
-        retval += " type = " + m_building_type_name->Dump();
+        retval += " type = " + m_building_type_name->Dump(ntabs);
     if (m_name)
-        retval += " name = " + m_name->Dump();
+        retval += " name = " + m_name->Dump(ntabs);
     return retval + "\n";
 }
 
@@ -1492,57 +1501,54 @@ void CreateBuilding::SetTopLevelContent(const std::string& content_name) {
         m_building_type_name->SetTopLevelContent(content_name);
     if (m_name)
         m_name->SetTopLevelContent(content_name);
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->SetTopLevelContent(content_name);
     }
 }
 
+unsigned int CreateBuilding::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "CreateBuilding");
+    CheckSums::CheckSumCombine(retval, m_building_type_name);
+    CheckSums::CheckSumCombine(retval, m_name);
+    CheckSums::CheckSumCombine(retval, m_effects_to_apply_after);
+
+    TraceLogger() << "GetCheckSum(CreateBuilding): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // CreateShip                                            //
 ///////////////////////////////////////////////////////////
-CreateShip::CreateShip(ValueRef::ValueRefBase<std::string>* predefined_ship_design_name,
-                       ValueRef::ValueRefBase<int>* empire_id,
-                       ValueRef::ValueRefBase<std::string>* species_name,
-                       ValueRef::ValueRefBase<std::string>* ship_name,
-                       const std::vector<Effect::EffectBase*>& effects_to_apply_after) :
-    m_design_name(predefined_ship_design_name),
-    m_design_id(0),
-    m_empire_id(empire_id),
-    m_species_name(species_name),
-    m_name(ship_name),
-    m_effects_to_apply_after(effects_to_apply_after)
+CreateShip::CreateShip(std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& predefined_ship_design_name,
+                       std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id,
+                       std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& species_name,
+                       std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& ship_name,
+                       std::vector<std::unique_ptr<EffectBase>>&& effects_to_apply_after) :
+    m_design_name(std::move(predefined_ship_design_name)),
+    m_design_id(nullptr),
+    m_empire_id(std::move(empire_id)),
+    m_species_name(std::move(species_name)),
+    m_name(std::move(ship_name)),
+    m_effects_to_apply_after(std::move(effects_to_apply_after))
 {}
 
-CreateShip::CreateShip(ValueRef::ValueRefBase<int>* ship_design_id,
-                       ValueRef::ValueRefBase<int>* empire_id,
-                       ValueRef::ValueRefBase<std::string>* species_name,
-                       ValueRef::ValueRefBase<std::string>* ship_name,
-                       const std::vector<Effect::EffectBase*>& effects_to_apply_after) :
-    m_design_name(0),
-    m_design_id(ship_design_id),
-    m_empire_id(empire_id),
-    m_species_name(species_name),
-    m_name(ship_name),
-    m_effects_to_apply_after(effects_to_apply_after)
+CreateShip::CreateShip(std::unique_ptr<ValueRef::ValueRefBase<int>>&& ship_design_id,
+                       std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id,
+                       std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& species_name,
+                       std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& ship_name,
+                       std::vector<std::unique_ptr<EffectBase>>&& effects_to_apply_after) :
+    m_design_name(nullptr),
+    m_design_id(std::move(ship_design_id)),
+    m_empire_id(std::move(empire_id)),
+    m_species_name(std::move(species_name)),
+    m_name(std::move(ship_name)),
+    m_effects_to_apply_after(std::move(effects_to_apply_after))
 {}
-
-CreateShip::~CreateShip() {
-    delete m_design_name;
-    delete m_design_id;
-    delete m_empire_id;
-    delete m_species_name;
-    delete m_name;
-    for (std::vector<Effect::EffectBase*>::iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    { delete *it; }
-    m_effects_to_apply_after.clear();
-}
 
 void CreateShip::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
@@ -1550,13 +1556,13 @@ void CreateShip::Execute(const ScriptingContext& context) const {
         return;
     }
 
-    TemporaryPtr<System> system = GetSystem(context.effect_target->SystemID());
+    auto system = GetSystem(context.effect_target->SystemID());
     if (!system) {
         ErrorLogger() << "CreateShip::Execute passed a target not in a system";
         return;
     }
 
-    int design_id = ShipDesign::INVALID_DESIGN_ID;
+    int design_id = INVALID_DESIGN_ID;
     if (m_design_id) {
         design_id = m_design_id->Eval(context);
         if (!GetShipDesign(design_id)) {
@@ -1572,13 +1578,13 @@ void CreateShip::Execute(const ScriptingContext& context) const {
         }
         design_id = ship_design->ID();
     }
-    if (design_id == ShipDesign::INVALID_DESIGN_ID) {
+    if (design_id == INVALID_DESIGN_ID) {
         ErrorLogger() << "CreateShip::Execute got invalid ship design id: -1";
         return;
     }
 
     int empire_id = ALL_EMPIRES;
-    Empire* empire(0);  // not const Empire* so that empire::NewShipName can be called
+    Empire* empire = nullptr;  // not const Empire* so that empire::NewShipName can be called
     if (m_empire_id) {
         empire_id = m_empire_id->Eval(context);
         if (empire_id != ALL_EMPIRES) {
@@ -1602,18 +1608,18 @@ void CreateShip::Execute(const ScriptingContext& context) const {
     //// possible future modification: try to put new ship into existing fleet if
     //// ownership with target object's fleet works out (if target is a ship)
     //// attempt to find a
-    //TemporaryPtr<Fleet> fleet = boost::dynamic_pointer_cast<Fleet>(target);
+    //auto fleet = std::dynamic_pointer_cast<Fleet>(target);
     //if (!fleet)
-    //    if (TemporaryPtr<const Ship> ship = boost::dynamic_pointer_cast<const Ship>(target))
+    //    if (auto ship = std::dynamic_pointer_cast<const Ship>(target))
     //        fleet = ship->FleetID();
     //// etc.
 
-    TemporaryPtr<Ship> ship = GetUniverse().CreateShip(empire_id, design_id, species_name, ALL_EMPIRES);
+    auto ship = GetUniverse().InsertNew<Ship>(empire_id, design_id, species_name, ALL_EMPIRES);
     system->Insert(ship);
 
     if (m_name) {
         std::string name_str = m_name->Eval(context);
-        if (ValueRef::ConstantExpr(m_name) && UserStringExists(name_str))
+        if (m_name->ConstantExpr() && UserStringExists(name_str))
             name_str = UserString(name_str);
         ship->Rename(name_str);
     } else if (ship->IsMonster()) {
@@ -1626,15 +1632,9 @@ void CreateShip::Execute(const ScriptingContext& context) const {
 
     ship->ResetTargetMaxUnpairedMeters();
     ship->ResetPairedActiveMeters();
+    ship->SetShipMetersToMax();
 
-    ship->GetMeter(METER_MAX_FUEL)->SetCurrent(Meter::LARGE_VALUE);
-    ship->GetMeter(METER_MAX_SHIELD)->SetCurrent(Meter::LARGE_VALUE);
-    ship->GetMeter(METER_MAX_STRUCTURE)->SetCurrent(Meter::LARGE_VALUE);
-    ship->GetMeter(METER_FUEL)->SetCurrent(Meter::LARGE_VALUE);
-    ship->GetMeter(METER_SHIELD)->SetCurrent(Meter::LARGE_VALUE);
-    ship->GetMeter(METER_STRUCTURE)->SetCurrent(Meter::LARGE_VALUE);
-
-    ship->BackPropegateMeters();
+    ship->BackPropagateMeters();
 
     GetUniverse().SetEmpireKnowledgeOfShipDesign(design_id, empire_id);
 
@@ -1643,70 +1643,25 @@ void CreateShip::Execute(const ScriptingContext& context) const {
     // apply after-creation effects
     ScriptingContext local_context = context;
     local_context.effect_target = ship;
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->Execute(local_context);
     }
 }
 
-std::string CreateShip::Description() const {
-    std::string empire_str;
-    if (m_empire_id) {
-        if (ValueRef::ConstantExpr(m_empire_id)) {
-            if (const Empire* empire = GetEmpire(m_empire_id->Eval()))
-                empire_str = empire->Name();
-        } else {
-            empire_str = m_empire_id->Description();
-        }
-    }
-
-    std::string design_str;
-    if (m_design_id) {
-        if (ValueRef::ConstantExpr(m_design_id)) {
-            if (const ShipDesign* design = GetShipDesign(m_design_id->Eval()))
-                design_str = design->Name();
-        } else {
-            design_str = m_design_id->Description();
-        }
-    } else if (m_design_name) {
-        design_str = m_design_name->Description();
-        if (ValueRef::ConstantExpr(m_design_name) && UserStringExists(design_str))
-            design_str = UserString(design_str);
-    }
-
-    std::string species_str;
-    if (m_species_name)
-        species_str = ValueRef::ConstantExpr(m_species_name) ?
-                      UserString(m_species_name->Eval()) :
-                      m_species_name->Description();
-
-    if (!empire_str.empty() && !species_str.empty()) {
-        return str(FlexibleFormat(UserString("DESC_CREATE_SHIP"))
-                   % design_str
-                   % empire_str
-                   % species_str);
-    } else {
-        return str(FlexibleFormat(UserString("DESC_CREATE_SHIP_SIMPLE"))
-                   % design_str);
-    }
-}
-
-std::string CreateShip::Dump() const {
-    std::string retval = DumpIndent() + "CreateShip";
+std::string CreateShip::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "CreateShip";
     if (m_design_id)
-        retval += " designid = " + m_design_id->Dump();
+        retval += " designid = " + m_design_id->Dump(ntabs);
     if (m_design_name)
-        retval += " designname = " + m_design_name->Dump();
+        retval += " designname = " + m_design_name->Dump(ntabs);
     if (m_empire_id)
-        retval += " empire = " + m_empire_id->Dump();
+        retval += " empire = " + m_empire_id->Dump(ntabs);
     if (m_species_name)
-        retval += " species = " + m_species_name->Dump();
+        retval += " species = " + m_species_name->Dump(ntabs);
     if (m_name)
-        retval += " name = " + m_species_name->Dump();
+        retval += " name = " + m_name->Dump(ntabs);
 
     retval += "\n";
     return retval;
@@ -1723,64 +1678,64 @@ void CreateShip::SetTopLevelContent(const std::string& content_name) {
         m_species_name->SetTopLevelContent(content_name);
     if (m_name)
         m_name->SetTopLevelContent(content_name);
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->SetTopLevelContent(content_name);
     }
 }
 
+unsigned int CreateShip::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "CreateShip");
+    CheckSums::CheckSumCombine(retval, m_design_name);
+    CheckSums::CheckSumCombine(retval, m_design_id);
+    CheckSums::CheckSumCombine(retval, m_empire_id);
+    CheckSums::CheckSumCombine(retval, m_species_name);
+    CheckSums::CheckSumCombine(retval, m_name);
+    CheckSums::CheckSumCombine(retval, m_effects_to_apply_after);
+
+    TraceLogger() << "GetCheckSum(CreateShip): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // CreateField                                           //
 ///////////////////////////////////////////////////////////
-CreateField::CreateField(ValueRef::ValueRefBase<std::string>* field_type_name,
-                         ValueRef::ValueRefBase<double>* size,
-                         ValueRef::ValueRefBase<std::string>* name,
-                         const std::vector<Effect::EffectBase*>& effects_to_apply_after) :
-    m_field_type_name(field_type_name),
-    m_x(0),
-    m_y(0),
-    m_size(size),
-    m_name(name),
-    m_effects_to_apply_after(effects_to_apply_after)
+CreateField::CreateField(std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& field_type_name,
+                         std::unique_ptr<ValueRef::ValueRefBase<double>>&& size,
+                         std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& name,
+                         std::vector<std::unique_ptr<EffectBase>>&& effects_to_apply_after) :
+    m_field_type_name(std::move(field_type_name)),
+    m_x(nullptr),
+    m_y(nullptr),
+    m_size(std::move(size)),
+    m_name(std::move(name)),
+    m_effects_to_apply_after(std::move(effects_to_apply_after))
 {}
 
-CreateField::CreateField(ValueRef::ValueRefBase<std::string>* field_type_name,
-                         ValueRef::ValueRefBase<double>* x,
-                         ValueRef::ValueRefBase<double>* y,
-                         ValueRef::ValueRefBase<double>* size,
-                         ValueRef::ValueRefBase<std::string>* name,
-                         const std::vector<Effect::EffectBase*>& effects_to_apply_after) :
-    m_field_type_name(field_type_name),
-    m_x(x),
-    m_y(y),
-    m_size(size),
-    m_name(name),
-    m_effects_to_apply_after(effects_to_apply_after)
+CreateField::CreateField(std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& field_type_name,
+                         std::unique_ptr<ValueRef::ValueRefBase<double>>&& x,
+                         std::unique_ptr<ValueRef::ValueRefBase<double>>&& y,
+                         std::unique_ptr<ValueRef::ValueRefBase<double>>&& size,
+                         std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& name,
+                         std::vector<std::unique_ptr<EffectBase>>&& effects_to_apply_after) :
+    m_field_type_name(std::move(field_type_name)),
+    m_x(std::move(x)),
+    m_y(std::move(y)),
+    m_size(std::move(size)),
+    m_name(std::move(name)),
+    m_effects_to_apply_after(std::move(effects_to_apply_after))
 {}
-
-CreateField::~CreateField() {
-    delete m_field_type_name;
-    delete m_x;
-    delete m_y;
-    delete m_size;
-    delete m_name;
-    for (std::vector<Effect::EffectBase*>::iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    { delete *it; }
-    m_effects_to_apply_after.clear();
-}
 
 void CreateField::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
         ErrorLogger() << "CreateField::Execute passed null target";
         return;
     }
-    TemporaryPtr<UniverseObject> target = context.effect_target;
+    auto target = context.effect_target;
 
     if (!m_field_type_name)
         return;
@@ -1814,7 +1769,7 @@ void CreateField::Execute(const ScriptingContext& context) const {
     else
         y = target->Y();
 
-    TemporaryPtr<Field> field = GetUniverse().CreateField(field_type->Name(), x, y, size);
+    auto field = GetUniverse().InsertNew<Field>(field_type->Name(), x, y, size);
     if (!field) {
         ErrorLogger() << "CreateField::Execute couldn't create field!";
         return;
@@ -1822,14 +1777,14 @@ void CreateField::Execute(const ScriptingContext& context) const {
 
     // if target is a system, and location matches system location, can put
     // field into system
-    TemporaryPtr<System> system = boost::dynamic_pointer_cast<System>(target);
+    auto system = std::dynamic_pointer_cast<System>(target);
     if (system && (!m_y || y == system->Y()) && (!m_x || x == system->X()))
         system->Insert(field);
 
     std::string name_str;
     if (m_name) {
         name_str = m_name->Eval(context);
-        if (ValueRef::ConstantExpr(m_name) && UserStringExists(name_str))
+        if (m_name->ConstantExpr() && UserStringExists(name_str))
             name_str = UserString(name_str);
     } else {
         name_str = UserString(field_type->Name());
@@ -1839,54 +1794,25 @@ void CreateField::Execute(const ScriptingContext& context) const {
     // apply after-creation effects
     ScriptingContext local_context = context;
     local_context.effect_target = field;
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->Execute(local_context);
     }
 }
 
-std::string CreateField::Description() const {
-    std::string size_str;
-    if (m_size) {
-        if (ValueRef::ConstantExpr(m_size)) {
-            size_str = boost::lexical_cast<std::string>(m_size->Eval());
-        } else {
-            size_str = m_size->Description();
-        }
-    }
-    std::string type_str;
-    if (m_field_type_name) {
-        type_str = m_field_type_name->Description();
-        if (ValueRef::ConstantExpr(m_field_type_name) && UserStringExists(type_str))
-            type_str = UserString(type_str);
-    }
-
-    if (!size_str.empty()) {
-        return str(FlexibleFormat(UserString("DESC_CREATE_FIELD_SIZE"))
-                   % type_str
-                   % size_str);
-    } else {
-        return str(FlexibleFormat(UserString("DESC_CREATE_FIELD"))
-                   % type_str);
-    }
-}
-
-std::string CreateField::Dump() const {
-    std::string retval = DumpIndent() + "CreateField";
+std::string CreateField::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "CreateField";
     if (m_field_type_name)
-        retval += " type = " + m_field_type_name->Dump();
+        retval += " type = " + m_field_type_name->Dump(ntabs);
     if (m_x)
-        retval += " x = " + m_x->Dump();
+        retval += " x = " + m_x->Dump(ntabs);
     if (m_y)
-        retval += " y = " + m_y->Dump();
+        retval += " y = " + m_y->Dump(ntabs);
     if (m_size)
-        retval += " size = " + m_size->Dump();
+        retval += " size = " + m_size->Dump(ntabs);
     if (m_name)
-        retval += " name = " + m_name->Dump();
+        retval += " name = " + m_name->Dump(ntabs);
     retval += "\n";
     return retval;
 }
@@ -1902,52 +1828,57 @@ void CreateField::SetTopLevelContent(const std::string& content_name) {
         m_size->SetTopLevelContent(content_name);
     if (m_name)
         m_name->SetTopLevelContent(content_name);
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->SetTopLevelContent(content_name);
     }
 }
 
+unsigned int CreateField::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "CreateField");
+    CheckSums::CheckSumCombine(retval, m_field_type_name);
+    CheckSums::CheckSumCombine(retval, m_x);
+    CheckSums::CheckSumCombine(retval, m_y);
+    CheckSums::CheckSumCombine(retval, m_size);
+    CheckSums::CheckSumCombine(retval, m_name);
+    CheckSums::CheckSumCombine(retval, m_effects_to_apply_after);
+
+    TraceLogger() << "GetCheckSum(CreateField): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // CreateSystem                                          //
 ///////////////////////////////////////////////////////////
-CreateSystem::CreateSystem(ValueRef::ValueRefBase< ::StarType>* type,
-                           ValueRef::ValueRefBase<double>* x,
-                           ValueRef::ValueRefBase<double>* y,
-                           ValueRef::ValueRefBase<std::string>* name,
-                           const std::vector<Effect::EffectBase*>& effects_to_apply_after) :
-    m_type(type),
-    m_x(x),
-    m_y(y),
-    m_name(name),
-    m_effects_to_apply_after(effects_to_apply_after)
-{}
+CreateSystem::CreateSystem(std::unique_ptr<ValueRef::ValueRefBase< ::StarType>>&& type,
+                           std::unique_ptr<ValueRef::ValueRefBase<double>>&& x,
+                           std::unique_ptr<ValueRef::ValueRefBase<double>>&& y,
+                           std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& name,
+                           std::vector<std::unique_ptr<EffectBase>>&& effects_to_apply_after) :
+    m_type(std::move(type)),
+    m_x(std::move(x)),
+    m_y(std::move(y)),
+    m_name(std::move(name)),
+    m_effects_to_apply_after(std::move(effects_to_apply_after))
+{
+    DebugLogger() << "Effect System created 1";
+}
 
-CreateSystem::CreateSystem(ValueRef::ValueRefBase<double>* x,
-                           ValueRef::ValueRefBase<double>* y,
-                           ValueRef::ValueRefBase<std::string>* name,
-                           const std::vector<Effect::EffectBase*>& effects_to_apply_after) :
-    m_type(0),
-    m_x(x),
-    m_y(y),
-    m_name(name),
-    m_effects_to_apply_after(effects_to_apply_after)
-{}
-
-CreateSystem::~CreateSystem() {
-    delete m_type;
-    delete m_x;
-    delete m_y;
-    delete m_name;
-    for (std::vector<Effect::EffectBase*>::iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    { delete *it; }
-    m_effects_to_apply_after.clear();
+CreateSystem::CreateSystem(std::unique_ptr<ValueRef::ValueRefBase<double>>&& x,
+                           std::unique_ptr<ValueRef::ValueRefBase<double>>&& y,
+                           std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& name,
+                           std::vector<std::unique_ptr<EffectBase>>&& effects_to_apply_after) :
+    m_type(nullptr),
+    m_x(std::move(x)),
+    m_y(std::move(y)),
+    m_name(std::move(name)),
+    m_effects_to_apply_after(std::move(effects_to_apply_after))
+{
+    DebugLogger() << "Effect System created 2";
 }
 
 void CreateSystem::Execute(const ScriptingContext& context) const {
@@ -1972,13 +1903,13 @@ void CreateSystem::Execute(const ScriptingContext& context) const {
     std::string name_str;
     if (m_name) {
         name_str = m_name->Eval(context);
-        if (ValueRef::ConstantExpr(m_name) && UserStringExists(name_str))
+        if (m_name->ConstantExpr() && UserStringExists(name_str))
             name_str = UserString(name_str);
     } else {
         name_str = GenerateSystemName();
     }
 
-    TemporaryPtr<System> system = GetUniverse().CreateSystem(star_type, name_str, x, y);
+    auto system = GetUniverse().InsertNew<System>(star_type, name_str, x, y);
     if (!system) {
         ErrorLogger() << "CreateSystem::Execute couldn't create system!";
         return;
@@ -1987,41 +1918,23 @@ void CreateSystem::Execute(const ScriptingContext& context) const {
     // apply after-creation effects
     ScriptingContext local_context = context;
     local_context.effect_target = system;
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->Execute(local_context);
     }
 }
 
-std::string CreateSystem::Description() const {
-    if (m_type) {
-        std::string type_str;
-        if (ValueRef::ConstantExpr(m_type)) {
-            type_str = boost::lexical_cast<std::string>(m_type->Eval());
-        } else {
-            type_str = m_type->Description();
-        }
-        return str(FlexibleFormat(UserString("DESC_CREATE_SYSTEM_TYPE"))
-                   % UserString(type_str));
-    } else {
-        return UserString("DESC_CREATE_SYSTEM");
-    }
-}
-
-std::string CreateSystem::Dump() const {
-    std::string retval = DumpIndent() + "CreateSystem";
+std::string CreateSystem::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "CreateSystem";
     if (m_type)
-        retval += " type = " + m_type->Dump();
+        retval += " type = " + m_type->Dump(ntabs);
     if (m_x)
-        retval += " x = " + m_x->Dump();
+        retval += " x = " + m_x->Dump(ntabs);
     if (m_y)
-        retval += " y = " + m_y->Dump();
+        retval += " y = " + m_y->Dump(ntabs);
     if (m_name)
-        retval += " name = " + m_name->Dump();
+        retval += " name = " + m_name->Dump(ntabs);
     retval += "\n";
     return retval;
 }
@@ -2035,14 +1948,25 @@ void CreateSystem::SetTopLevelContent(const std::string& content_name) {
         m_type->SetTopLevelContent(content_name);
     if (m_name)
         m_name->SetTopLevelContent(content_name);
-    for (std::vector<Effect::EffectBase*>::const_iterator it = m_effects_to_apply_after.begin();
-         it != m_effects_to_apply_after.end(); ++it)
-    {
-        Effect::EffectBase* effect = *it;
+    for (auto& effect : m_effects_to_apply_after) {
         if (!effect)
             continue;
         effect->SetTopLevelContent(content_name);
     }
+}
+
+unsigned int CreateSystem::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "CreateSystem");
+    CheckSums::CheckSumCombine(retval, m_type);
+    CheckSums::CheckSumCombine(retval, m_x);
+    CheckSums::CheckSumCombine(retval, m_y);
+    CheckSums::CheckSumCombine(retval, m_name);
+    CheckSums::CheckSumCombine(retval, m_effects_to_apply_after);
+
+    TraceLogger() << "GetCheckSum(CreateSystem): retval: " << retval;
+    return retval;
 }
 
 
@@ -2065,29 +1989,32 @@ void Destroy::Execute(const ScriptingContext& context) const {
     GetUniverse().EffectDestroy(context.effect_target->ID(), source_id);
 }
 
-std::string Destroy::Description() const
-{ return UserString("DESC_DESTROY"); }
+std::string Destroy::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "Destroy\n"; }
 
-std::string Destroy::Dump() const
-{ return DumpIndent() + "Destroy\n"; }
+unsigned int Destroy::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "Destroy");
+
+    TraceLogger() << "GetCheckSum(Destroy): retval: " << retval;
+    return retval;
+}
 
 
 ///////////////////////////////////////////////////////////
 // AddSpecial                                            //
 ///////////////////////////////////////////////////////////
 AddSpecial::AddSpecial(const std::string& name, float capacity) :
-    m_name(new ValueRef::Constant<std::string>(name)),
-    m_capacity(new ValueRef::Constant<double>(capacity))
+    m_name(boost::make_unique<ValueRef::Constant<std::string>>(name)),
+    m_capacity(boost::make_unique<ValueRef::Constant<double>>(capacity))
 {}
 
-AddSpecial::AddSpecial(ValueRef::ValueRefBase<std::string>* name,
-                       ValueRef::ValueRefBase<double>* capacity) :
-    m_name(name),
-    m_capacity(capacity)
+AddSpecial::AddSpecial(std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& name,
+                       std::unique_ptr<ValueRef::ValueRefBase<double>>&& capacity) :
+    m_name(std::move(name)),
+    m_capacity(std::move(capacity))
 {}
-
-AddSpecial::~AddSpecial()
-{ delete m_name; }
 
 void AddSpecial::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
@@ -2100,25 +2027,12 @@ void AddSpecial::Execute(const ScriptingContext& context) const {
     float initial_capacity = context.effect_target->SpecialCapacity(name);  // returns 0.0f if no such special yet present
     float capacity = (m_capacity ? m_capacity->Eval(ScriptingContext(context, initial_capacity)) : initial_capacity);
 
-    context.effect_target->AddSpecial(name, capacity);
+    context.effect_target->SetSpecialCapacity(name, capacity);
 }
 
-std::string AddSpecial::Description() const {
-    std::string name_str;
-    if (m_name) {
-        name_str = m_name->Description();
-        if (ValueRef::ConstantExpr(m_name) && UserStringExists(name_str))
-            name_str = UserString(name_str);
-    }
-
-    std::string capacity = (m_capacity ? m_capacity->Description() : "0.0");
-
-    return str(FlexibleFormat(UserString("DESC_ADD_SPECIAL")) % name_str % capacity);
-}
-
-std::string AddSpecial::Dump() const {
-    return DumpIndent() + "AddSpecial name = " +  (m_name ? m_name->Dump() : "") +
-        " capacity = " + (m_capacity ? m_capacity->Dump() : "0.0") +  "\n";
+std::string AddSpecial::Dump(unsigned short ntabs) const {
+    return DumpIndent(ntabs) + "AddSpecial name = " +  (m_name ? m_name->Dump(ntabs) : "") +
+        " capacity = " + (m_capacity ? m_capacity->Dump(ntabs) : "0.0") +  "\n";
 }
 
 void AddSpecial::SetTopLevelContent(const std::string& content_name) {
@@ -2128,20 +2042,28 @@ void AddSpecial::SetTopLevelContent(const std::string& content_name) {
         m_capacity->SetTopLevelContent(content_name);
 }
 
+unsigned int AddSpecial::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "AddSpecial");
+    CheckSums::CheckSumCombine(retval, m_name);
+    CheckSums::CheckSumCombine(retval, m_capacity);
+
+    TraceLogger() << "GetCheckSum(AddSpecial): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // RemoveSpecial                                         //
 ///////////////////////////////////////////////////////////
 RemoveSpecial::RemoveSpecial(const std::string& name) :
-    m_name(new ValueRef::Constant<std::string>(name))
+    m_name(boost::make_unique<ValueRef::Constant<std::string>>(name))
 {}
 
-RemoveSpecial::RemoveSpecial(ValueRef::ValueRefBase<std::string>* name) :
-    m_name(name)
+RemoveSpecial::RemoveSpecial(std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& name) :
+    m_name(std::move(name))
 {}
-
-RemoveSpecial::~RemoveSpecial()
-{ delete m_name; }
 
 void RemoveSpecial::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
@@ -2153,18 +2075,8 @@ void RemoveSpecial::Execute(const ScriptingContext& context) const {
     context.effect_target->RemoveSpecial(name);
 }
 
-std::string RemoveSpecial::Description() const {
-    std::string name_str;
-    if (m_name) {
-        name_str = m_name->Description();
-        if (ValueRef::ConstantExpr(m_name) && UserStringExists(name_str))
-            name_str = UserString(name_str);
-    }
-    return str(FlexibleFormat(UserString("DESC_REMOVE_SPECIAL")) % name_str);
-}
-
-std::string RemoveSpecial::Dump() const {
-    return DumpIndent() + "RemoveSpecial name = " +  (m_name ? m_name->Dump() : "") + "\n";
+std::string RemoveSpecial::Dump(unsigned short ntabs) const {
+    return DumpIndent(ntabs) + "RemoveSpecial name = " +  (m_name ? m_name->Dump(ntabs) : "") + "\n";
 }
 
 void RemoveSpecial::SetTopLevelContent(const std::string& content_name) {
@@ -2172,16 +2084,23 @@ void RemoveSpecial::SetTopLevelContent(const std::string& content_name) {
         m_name->SetTopLevelContent(content_name);
 }
 
+unsigned int RemoveSpecial::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "RemoveSpecial");
+    CheckSums::CheckSumCombine(retval, m_name);
+
+    TraceLogger() << "GetCheckSum(RemoveSpecial): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // AddStarlanes                                          //
 ///////////////////////////////////////////////////////////
-AddStarlanes::AddStarlanes(Condition::ConditionBase* other_lane_endpoint_condition) :
-    m_other_lane_endpoint_condition(other_lane_endpoint_condition)
+AddStarlanes::AddStarlanes(std::unique_ptr<Condition::ConditionBase>&& other_lane_endpoint_condition) :
+    m_other_lane_endpoint_condition(std::move(other_lane_endpoint_condition))
 {}
-
-AddStarlanes::~AddStarlanes()
-{ delete m_other_lane_endpoint_condition; }
 
 void AddStarlanes::Execute(const ScriptingContext& context) const {
     // get target system
@@ -2189,7 +2108,7 @@ void AddStarlanes::Execute(const ScriptingContext& context) const {
         ErrorLogger() << "AddStarlanes::Execute passed no target object";
         return;
     }
-    TemporaryPtr<System> target_system = boost::dynamic_pointer_cast<System>(context.effect_target);
+    auto target_system = std::dynamic_pointer_cast<System>(context.effect_target);
     if (!target_system)
         target_system = GetSystem(context.effect_target->SystemID());
     if (!target_system)
@@ -2201,54 +2120,53 @@ void AddStarlanes::Execute(const ScriptingContext& context) const {
     // connected to the source system
     m_other_lane_endpoint_condition->Eval(context, endpoint_objects);
 
-    // early exit if there are no valid locations - can't move anything if there's nowhere to move to
+    // early exit if there are no valid locations
     if (endpoint_objects.empty())
         return; // nothing to do!
 
     // get systems containing at least one endpoint object
-    std::set<TemporaryPtr<System> > endpoint_systems;
-    for (Condition::ObjectSet::const_iterator it = endpoint_objects.begin(); it != endpoint_objects.end(); ++it) {
-        TemporaryPtr<const UniverseObject> endpoint_object = *it;
-        TemporaryPtr<const System> endpoint_system = boost::dynamic_pointer_cast<const System>(endpoint_object);
+    std::set<std::shared_ptr<System>> endpoint_systems;
+    for (auto& endpoint_object : endpoint_objects) {
+        auto endpoint_system = std::dynamic_pointer_cast<const System>(endpoint_object);
         if (!endpoint_system)
             endpoint_system = GetSystem(endpoint_object->SystemID());
         if (!endpoint_system)
             continue;
-        endpoint_systems.insert(boost::const_pointer_cast<System>(endpoint_system));
+        endpoint_systems.insert(std::const_pointer_cast<System>(endpoint_system));
     }
 
     // add starlanes from target to endpoint systems
-    int target_system_id = target_system->ID();
-    for (std::set<TemporaryPtr<System> >::iterator it = endpoint_systems.begin(); it != endpoint_systems.end(); ++it) {
-        TemporaryPtr<System> endpoint_system = *it;
+    for (auto& endpoint_system : endpoint_systems) {
         target_system->AddStarlane(endpoint_system->ID());
-        endpoint_system->AddStarlane(target_system_id);
+        endpoint_system->AddStarlane(target_system->ID());
     }
 }
 
-std::string AddStarlanes::Description() const {
-    std::string value_str = m_other_lane_endpoint_condition->Description();
-    return str(FlexibleFormat(UserString("DESC_ADD_STARLANES")) % value_str);
-}
-
-std::string AddStarlanes::Dump() const
-{ return DumpIndent() + "AddStarlanes endpoints = " + m_other_lane_endpoint_condition->Dump() + "\n"; }
+std::string AddStarlanes::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "AddStarlanes endpoints = " + m_other_lane_endpoint_condition->Dump(ntabs) + "\n"; }
 
 void AddStarlanes::SetTopLevelContent(const std::string& content_name) {
     if (m_other_lane_endpoint_condition)
         m_other_lane_endpoint_condition->SetTopLevelContent(content_name);
 }
 
+unsigned int AddStarlanes::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "AddStarlanes");
+    CheckSums::CheckSumCombine(retval, m_other_lane_endpoint_condition);
+
+    TraceLogger() << "GetCheckSum(AddStarlanes): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // RemoveStarlanes                                       //
 ///////////////////////////////////////////////////////////
-RemoveStarlanes::RemoveStarlanes(Condition::ConditionBase* other_lane_endpoint_condition) :
-    m_other_lane_endpoint_condition(other_lane_endpoint_condition)
+RemoveStarlanes::RemoveStarlanes(std::unique_ptr<Condition::ConditionBase>&& other_lane_endpoint_condition) :
+    m_other_lane_endpoint_condition(std::move(other_lane_endpoint_condition))
 {}
-
-RemoveStarlanes::~RemoveStarlanes()
-{ delete m_other_lane_endpoint_condition; }
 
 void RemoveStarlanes::Execute(const ScriptingContext& context) const {
     // get target system
@@ -2256,7 +2174,7 @@ void RemoveStarlanes::Execute(const ScriptingContext& context) const {
         ErrorLogger() << "AddStarlanes::Execute passed no target object";
         return;
     }
-    TemporaryPtr<System> target_system = boost::dynamic_pointer_cast<System>(context.effect_target);
+    auto target_system = std::dynamic_pointer_cast<System>(context.effect_target);
     if (!target_system)
         target_system = GetSystem(context.effect_target->SystemID());
     if (!target_system)
@@ -2274,86 +2192,86 @@ void RemoveStarlanes::Execute(const ScriptingContext& context) const {
         return; // nothing to do!
 
     // get systems containing at least one endpoint object
-    std::set<TemporaryPtr<System> > endpoint_systems;
-    for (Condition::ObjectSet::const_iterator it = endpoint_objects.begin(); it != endpoint_objects.end(); ++it) {
-        TemporaryPtr<const UniverseObject> endpoint_object = *it;
-        TemporaryPtr<const System> endpoint_system = boost::dynamic_pointer_cast<const System>(endpoint_object);
+    std::set<std::shared_ptr<System>> endpoint_systems;
+    for (auto& endpoint_object : endpoint_objects) {
+        auto endpoint_system = std::dynamic_pointer_cast<const System>(endpoint_object);
         if (!endpoint_system)
             endpoint_system = GetSystem(endpoint_object->SystemID());
         if (!endpoint_system)
             continue;
-        endpoint_systems.insert(boost::const_pointer_cast<System>(endpoint_system));
+        endpoint_systems.insert(std::const_pointer_cast<System>(endpoint_system));
     }
 
     // remove starlanes from target to endpoint systems
     int target_system_id = target_system->ID();
-    for (std::set<TemporaryPtr<System> >::iterator it = endpoint_systems.begin(); it != endpoint_systems.end(); ++it) {
-        TemporaryPtr<System> endpoint_system = *it;
+    for (auto& endpoint_system : endpoint_systems) {
         target_system->RemoveStarlane(endpoint_system->ID());
         endpoint_system->RemoveStarlane(target_system_id);
     }
 }
 
-std::string RemoveStarlanes::Description() const {
-    std::string value_str = m_other_lane_endpoint_condition->Description();
-    return str(FlexibleFormat(UserString("DESC_REMOVE_STARLANES")) % value_str);
-}
-
-std::string RemoveStarlanes::Dump() const
-{ return DumpIndent() + "RemoveStarlanes endpoints = " + m_other_lane_endpoint_condition->Dump() + "\n"; }
+std::string RemoveStarlanes::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "RemoveStarlanes endpoints = " + m_other_lane_endpoint_condition->Dump(ntabs) + "\n"; }
 
 void RemoveStarlanes::SetTopLevelContent(const std::string& content_name) {
     if (m_other_lane_endpoint_condition)
         m_other_lane_endpoint_condition->SetTopLevelContent(content_name);
 }
 
+unsigned int RemoveStarlanes::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "RemoveStarlanes");
+    CheckSums::CheckSumCombine(retval, m_other_lane_endpoint_condition);
+
+    TraceLogger() << "GetCheckSum(RemoveStarlanes): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetStarType                                           //
 ///////////////////////////////////////////////////////////
-SetStarType::SetStarType(ValueRef::ValueRefBase<StarType>* type) :
-    m_type(type)
+SetStarType::SetStarType(std::unique_ptr<ValueRef::ValueRefBase<StarType>>&& type) :
+    m_type(std::move(type))
 {}
-
-SetStarType::~SetStarType()
-{ delete m_type; }
 
 void SetStarType::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
         ErrorLogger() << "SetStarType::Execute given no target object";
         return;
     }
-    if (TemporaryPtr<System> s = boost::dynamic_pointer_cast<System>(context.effect_target))
+    if (auto s = std::dynamic_pointer_cast<System>(context.effect_target))
         s->SetStarType(m_type->Eval(ScriptingContext(context, s->GetStarType())));
     else
         ErrorLogger() << "SetStarType::Execute given a non-system target";
 }
 
-std::string SetStarType::Description() const {
-    std::string value_str = ValueRef::ConstantExpr(m_type) ?
-                                UserString(lexical_cast<std::string>(m_type->Eval())) :
-                                m_type->Description();
-    return str(FlexibleFormat(UserString("DESC_SET_STAR_TYPE")) % value_str);
-}
-
-std::string SetStarType::Dump() const
-{ return DumpIndent() + "SetStarType type = " + m_type->Dump() + "\n"; }
+std::string SetStarType::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetStarType type = " + m_type->Dump(ntabs) + "\n"; }
 
 void SetStarType::SetTopLevelContent(const std::string& content_name) {
     if (m_type)
         m_type->SetTopLevelContent(content_name);
 }
 
+unsigned int SetStarType::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetStarType");
+    CheckSums::CheckSumCombine(retval, m_type);
+
+    TraceLogger() << "GetCheckSum(SetStarType): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // MoveTo                                                //
 ///////////////////////////////////////////////////////////
-MoveTo::MoveTo(Condition::ConditionBase* location_condition) :
-    m_location_condition(location_condition)
+MoveTo::MoveTo(std::unique_ptr<Condition::ConditionBase>&& location_condition) :
+    m_location_condition(std::move(location_condition))
 {}
-
-MoveTo::~MoveTo()
-{ delete m_location_condition; }
 
 void MoveTo::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
@@ -2372,16 +2290,16 @@ void MoveTo::Execute(const ScriptingContext& context) const {
         return;
 
     // "randomly" pick a destination
-    TemporaryPtr<UniverseObject> destination = boost::const_pointer_cast<UniverseObject>(*valid_locations.begin());
+    auto destination = std::const_pointer_cast<UniverseObject>(*valid_locations.begin());
 
     // get previous system from which to remove object if necessary
-    TemporaryPtr<System> old_sys = GetSystem(context.effect_target->SystemID());
+    auto old_sys = GetSystem(context.effect_target->SystemID());
 
     // do the moving...
-    if (TemporaryPtr<Fleet> fleet = boost::dynamic_pointer_cast<Fleet>(context.effect_target)) {
+    if (auto fleet = std::dynamic_pointer_cast<Fleet>(context.effect_target)) {
         // fleets can be inserted into the system that contains the destination
         // object (or the destination object itself if it is a system)
-        if (TemporaryPtr<System> dest_system = GetSystem(destination->SystemID())) {
+        if (auto dest_system = GetSystem(destination->SystemID())) {
             if (fleet->SystemID() != dest_system->ID()) {
                 // remove fleet from old system, put into new system
                 if (old_sys)
@@ -2389,14 +2307,10 @@ void MoveTo::Execute(const ScriptingContext& context) const {
                 dest_system->Insert(fleet);
 
                 // also move ships of fleet
-                std::vector<TemporaryPtr<Ship> > ships = Objects().FindObjects<Ship>(fleet->ShipIDs());
-                for (std::vector<TemporaryPtr<Ship> >::iterator ship_it = ships.begin();
-                     ship_it != ships.end(); ++ship_it)
-                {
-                    TemporaryPtr<Ship> ship = *ship_it;
+                for (auto& ship : Objects().FindObjects<Ship>(fleet->ShipIDs())) {
                     if (old_sys)
                         old_sys->Remove(ship->ID());
-                    dest_system->Insert(*ship_it);
+                    dest_system->Insert(ship);
                 }
 
                 ExploreSystem(dest_system->ID(), fleet);
@@ -2414,11 +2328,7 @@ void MoveTo::Execute(const ScriptingContext& context) const {
             fleet->MoveTo(destination);
 
             // also move ships of fleet
-            std::vector<TemporaryPtr<Ship> > ships = Objects().FindObjects<Ship>(fleet->ShipIDs());
-            for (std::vector<TemporaryPtr<Ship> >::iterator ship_it = ships.begin();
-                    ship_it != ships.end(); ++ship_it)
-            {
-                TemporaryPtr<Ship> ship = *ship_it;
+            for (auto& ship : Objects().FindObjects<Ship>(fleet->ShipIDs())) {
                 if (old_sys)
                     old_sys->Remove(ship->ID());
                 ship->SetSystem(INVALID_OBJECT_ID);
@@ -2439,9 +2349,9 @@ void MoveTo::Execute(const ScriptingContext& context) const {
             // if destination object is a fleet or is part of a fleet, can use
             // that fleet's previous and next systems to get valid next and
             // previous systems for the target fleet.
-            TemporaryPtr<const Fleet> dest_fleet = boost::dynamic_pointer_cast<const Fleet>(destination);
+            auto dest_fleet = std::dynamic_pointer_cast<const Fleet>(destination);
             if (!dest_fleet)
-                if (TemporaryPtr<const Ship> dest_ship = boost::dynamic_pointer_cast<const Ship>(destination))
+                if (auto dest_ship = std::dynamic_pointer_cast<const Ship>(destination))
                     dest_fleet = GetFleet(dest_ship->FleetID());
             if (dest_fleet) {
                 UpdateFleetRoute(fleet, dest_fleet->NextSystemID(), dest_fleet->PreviousSystemID());
@@ -2449,17 +2359,17 @@ void MoveTo::Execute(const ScriptingContext& context) const {
             } else {
                 // TODO: need to do something else to get updated previous/next
                 // systems if the destination is a field.
-                ErrorLogger() << "Effect::MoveTo::Execute couldn't find a way to set the previous and next systems for the target fleet!";
+                ErrorLogger() << "MoveTo::Execute couldn't find a way to set the previous and next systems for the target fleet!";
             }
         }
 
-    } else if (TemporaryPtr<Ship> ship = boost::dynamic_pointer_cast<Ship>(context.effect_target)) {
+    } else if (auto ship = std::dynamic_pointer_cast<Ship>(context.effect_target)) {
         // TODO: make sure colonization doesn't interfere with this effect, and vice versa
 
         // is destination a ship/fleet ?
-        TemporaryPtr<Fleet> dest_fleet = boost::dynamic_pointer_cast<Fleet>(destination);   // may be 0 if destination is not a fleet
+        auto dest_fleet = std::dynamic_pointer_cast<Fleet>(destination);
         if (!dest_fleet) {
-            TemporaryPtr<Ship> dest_ship = boost::dynamic_pointer_cast<Ship>(destination);  // may still be 0
+            auto dest_ship = std::dynamic_pointer_cast<Ship>(destination);
             if (dest_ship)
                 dest_fleet = GetFleet(dest_ship->FleetID());
         }
@@ -2480,24 +2390,24 @@ void MoveTo::Execute(const ScriptingContext& context) const {
                 ship->SetSystem(INVALID_OBJECT_ID);
             }
 
-            if (TemporaryPtr<System> new_sys = GetSystem(dest_sys_id)) {
+            if (auto new_sys = GetSystem(dest_sys_id)) {
                 // ship is moving to a new system. insert it.
                 new_sys->Insert(ship);
             } else {
                 // ship is moving to a non-system location. move it there.
-                ship->MoveTo(boost::dynamic_pointer_cast<UniverseObject>(dest_fleet));
+                ship->MoveTo(std::dynamic_pointer_cast<UniverseObject>(dest_fleet));
             }
 
             // may create a fleet for ship below...
         }
 
-        TemporaryPtr<Fleet> old_fleet = GetFleet(ship->FleetID());
+        auto old_fleet = GetFleet(ship->FleetID());
 
         if (dest_fleet && same_owners) {
             // ship is moving to a different fleet owned by the same empire, so
             // can be inserted into it.
-            old_fleet->RemoveShip(ship->ID());
-            dest_fleet->AddShip(ship->ID());
+            old_fleet->RemoveShips({ship->ID()});
+            dest_fleet->AddShips({ship->ID()});
             ship->SetFleetID(dest_fleet->ID());
 
         } else if (dest_sys_id == ship_sys_id && dest_sys_id != INVALID_OBJECT_ID) {
@@ -2512,7 +2422,7 @@ void MoveTo::Execute(const ScriptingContext& context) const {
 
         } else {
             // need to create a new fleet for ship
-            if (TemporaryPtr<System> dest_system = GetSystem(dest_sys_id)) {
+            if (auto dest_system = GetSystem(dest_sys_id)) {
                 CreateNewFleet(dest_system, ship);                          // creates new fleet, inserts fleet into system and ship into fleet
                 ExploreSystem(dest_system->ID(), ship);
 
@@ -2526,10 +2436,10 @@ void MoveTo::Execute(const ScriptingContext& context) const {
             universe.EffectDestroy(old_fleet->ID(), INVALID_OBJECT_ID); // no particular object destroyed this fleet
         }
 
-    } else if (TemporaryPtr<Planet> planet = boost::dynamic_pointer_cast<Planet>(context.effect_target)) {
+    } else if (auto planet = std::dynamic_pointer_cast<Planet>(context.effect_target)) {
         // planets need to be located in systems, so get system that contains destination object
 
-        TemporaryPtr<System> dest_system = GetSystem(destination->SystemID());
+        auto dest_system = GetSystem(destination->SystemID());
         if (!dest_system)
             return; // can't move a planet to a non-system
 
@@ -2544,11 +2454,7 @@ void MoveTo::Execute(const ScriptingContext& context) const {
         dest_system->Insert(planet);  // let system pick an orbit
 
         // also insert buildings of planet into system.
-        std::vector<TemporaryPtr<Building> > buildings = Objects().FindObjects<Building>(planet->BuildingIDs());
-        for (std::vector<TemporaryPtr<Building> >::iterator building_it = buildings.begin();
-             building_it != buildings.end(); ++building_it)
-        {
-            TemporaryPtr<Building> building = *building_it;
+        for (auto& building : Objects().FindObjects<Building>(planet->BuildingIDs())) {
             if (old_sys)
                 old_sys->Remove(building->ID());
             dest_system->Insert(building);
@@ -2560,14 +2466,14 @@ void MoveTo::Execute(const ScriptingContext& context) const {
         ExploreSystem(dest_system->ID(), planet);
 
 
-    } else if (TemporaryPtr<Building> building = boost::dynamic_pointer_cast<Building>(context.effect_target)) {
+    } else if (auto building = std::dynamic_pointer_cast<Building>(context.effect_target)) {
         // buildings need to be located on planets, so if destination is a
         // planet, insert building into it, or attempt to get the planet on
         // which the destination object is located and insert target building
         // into that
-        TemporaryPtr<Planet> dest_planet = boost::dynamic_pointer_cast<Planet>(destination);
+        auto dest_planet = std::dynamic_pointer_cast<Planet>(destination);
         if (!dest_planet) {
-            TemporaryPtr<Building> dest_building = boost::dynamic_pointer_cast<Building>(destination);
+            auto dest_building = std::dynamic_pointer_cast<Building>(destination);
             if (dest_building) {
                 dest_planet = GetPlanet(dest_building->PlanetID());
             }
@@ -2578,7 +2484,7 @@ void MoveTo::Execute(const ScriptingContext& context) const {
         if (dest_planet->ID() == building->PlanetID())
             return; // nothing to do
 
-        TemporaryPtr<System> dest_system = GetSystem(destination->SystemID());
+        auto dest_system = GetSystem(destination->SystemID());
         if (!dest_system)
             return;
 
@@ -2587,7 +2493,7 @@ void MoveTo::Execute(const ScriptingContext& context) const {
             old_sys->Remove(building->ID());
         building->SetSystem(INVALID_OBJECT_ID);
 
-        if (TemporaryPtr<Planet> old_planet = GetPlanet(building->PlanetID()))
+        if (auto old_planet = GetPlanet(building->PlanetID()))
             old_planet->RemoveBuilding(building->ID());
 
         dest_planet->AddBuilding(building->ID());
@@ -2597,7 +2503,7 @@ void MoveTo::Execute(const ScriptingContext& context) const {
         ExploreSystem(dest_system->ID(), building);
 
 
-    } else if (TemporaryPtr<System> system = boost::dynamic_pointer_cast<System>(context.effect_target)) {
+    } else if (auto system = std::dynamic_pointer_cast<System>(context.effect_target)) {
         if (destination->SystemID() != INVALID_OBJECT_ID) {
             // TODO: merge systems
             return;
@@ -2611,76 +2517,72 @@ void MoveTo::Execute(const ScriptingContext& context) const {
             system->Insert(destination);
 
         // find fleets / ships at destination location and insert into system
-        for (ObjectMap::iterator<Fleet> it = Objects().begin<Fleet>(); it != Objects().end<Fleet>(); ++it) {
-            TemporaryPtr<Fleet> obj = *it;
+        for (auto& obj : Objects().FindObjects<Fleet>()) {
             if (obj->X() == system->X() && obj->Y() == system->Y())
                 system->Insert(obj);
         }
 
-        for (ObjectMap::iterator<Ship> it = Objects().begin<Ship>(); it != Objects().end<Ship>(); ++it) {
-            TemporaryPtr<Ship> obj = *it;
+        for (auto& obj : Objects().FindObjects<Ship>()) {
             if (obj->X() == system->X() && obj->Y() == system->Y())
                 system->Insert(obj);
         }
 
 
-    } else if (TemporaryPtr<Field> field = boost::dynamic_pointer_cast<Field>(context.effect_target)) {
+    } else if (auto field = std::dynamic_pointer_cast<Field>(context.effect_target)) {
         if (old_sys)
             old_sys->Remove(field->ID());
         field->SetSystem(INVALID_OBJECT_ID);
         field->MoveTo(destination);
-        if (TemporaryPtr<System> dest_system = boost::dynamic_pointer_cast<System>(destination))
+        if (auto dest_system = std::dynamic_pointer_cast<System>(destination))
             dest_system->Insert(field);
     }
 }
 
-std::string MoveTo::Description() const {
-    std::string value_str = m_location_condition->Description();
-    return str(FlexibleFormat(UserString("DESC_MOVE_TO")) % value_str);
-}
-
-std::string MoveTo::Dump() const
-{ return DumpIndent() + "MoveTo destination = " + m_location_condition->Dump() + "\n"; }
+std::string MoveTo::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "MoveTo destination = " + m_location_condition->Dump(ntabs) + "\n"; }
 
 void MoveTo::SetTopLevelContent(const std::string& content_name) {
     if (m_location_condition)
         m_location_condition->SetTopLevelContent(content_name);
 }
 
+unsigned int MoveTo::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "MoveTo");
+    CheckSums::CheckSumCombine(retval, m_location_condition);
+
+    TraceLogger() << "GetCheckSum(MoveTo): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // MoveInOrbit                                           //
 ///////////////////////////////////////////////////////////
-MoveInOrbit::MoveInOrbit(ValueRef::ValueRefBase<double>* speed,
-                         Condition::ConditionBase* focal_point_condition) :
-    m_speed(speed),
-    m_focal_point_condition(focal_point_condition),
-    m_focus_x(0),
-    m_focus_y(0)
+MoveInOrbit::MoveInOrbit(std::unique_ptr<ValueRef::ValueRefBase<double>>&& speed,
+                         std::unique_ptr<Condition::ConditionBase>&& focal_point_condition) :
+    m_speed(std::move(speed)),
+    m_focal_point_condition(std::move(focal_point_condition)),
+    m_focus_x(nullptr),
+    m_focus_y(nullptr)
 {}
 
-MoveInOrbit::MoveInOrbit(ValueRef::ValueRefBase<double>* speed,
-                         ValueRef::ValueRefBase<double>* focus_x/* = 0*/,
-                         ValueRef::ValueRefBase<double>* focus_y/* = 0*/) :
-    m_speed(speed),
-    m_focal_point_condition(0),
-    m_focus_x(focus_x),
-    m_focus_y(focus_y)
+MoveInOrbit::MoveInOrbit(std::unique_ptr<ValueRef::ValueRefBase<double>>&& speed,
+                         std::unique_ptr<ValueRef::ValueRefBase<double>>&& focus_x/* = 0*/,
+                         std::unique_ptr<ValueRef::ValueRefBase<double>>&& focus_y/* = 0*/) :
+    m_speed(std::move(speed)),
+    m_focal_point_condition(nullptr),
+    m_focus_x(std::move(focus_x)),
+    m_focus_y(std::move(focus_y))
 {}
-
-MoveInOrbit::~MoveInOrbit() {
-    delete m_speed;
-    delete m_focal_point_condition;
-    delete m_focus_x;
-    delete m_focus_y;
-}
 
 void MoveInOrbit::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
         ErrorLogger() << "MoveInOrbit::Execute given no target object";
         return;
     }
-    TemporaryPtr<UniverseObject> target = context.effect_target;
+    auto target = context.effect_target;
 
     double focus_x = 0.0, focus_y = 0.0, speed = 1.0;
     if (m_focus_x)
@@ -2696,7 +2598,7 @@ void MoveInOrbit::Execute(const ScriptingContext& context) const {
         m_focal_point_condition->Eval(context, matches);
         if (matches.empty())
             return;
-        TemporaryPtr<const UniverseObject> focus_object = *matches.begin();
+        std::shared_ptr<const UniverseObject> focus_object = *matches.begin();
         focus_x = focus_object->X();
         focus_y = focus_object->Y();
     }
@@ -2718,24 +2620,20 @@ void MoveInOrbit::Execute(const ScriptingContext& context) const {
     if (target->X() == new_x && target->Y() == new_y)
         return;
 
-    TemporaryPtr<System> old_sys = GetSystem(target->SystemID());
+    auto old_sys = GetSystem(target->SystemID());
 
-    if (TemporaryPtr<System> system = boost::dynamic_pointer_cast<System>(target)) {
+    if (auto system = std::dynamic_pointer_cast<System>(target)) {
         system->MoveTo(new_x, new_y);
         return;
 
-    } else if (TemporaryPtr<Fleet> fleet = boost::dynamic_pointer_cast<Fleet>(target)) {
+    } else if (auto fleet = std::dynamic_pointer_cast<Fleet>(target)) {
         if (old_sys)
             old_sys->Remove(fleet->ID());
         fleet->SetSystem(INVALID_OBJECT_ID);
         fleet->MoveTo(new_x, new_y);
         UpdateFleetRoute(fleet, INVALID_OBJECT_ID, INVALID_OBJECT_ID);
 
-        std::vector<TemporaryPtr<Ship> > ships = Objects().FindObjects<Ship>(fleet->ShipIDs());
-        for (std::vector<TemporaryPtr<Ship> >::iterator ship_it = ships.begin();
-             ship_it != ships.end(); ++ship_it)
-        {
-            TemporaryPtr<Ship> ship = *ship_it;
+        for (auto& ship : Objects().FindObjects<Ship>(fleet->ShipIDs())) {
             if (old_sys)
                 old_sys->Remove(ship->ID());
             ship->SetSystem(INVALID_OBJECT_ID);
@@ -2743,14 +2641,14 @@ void MoveInOrbit::Execute(const ScriptingContext& context) const {
         }
         return;
 
-    } else if (TemporaryPtr<Ship> ship = boost::dynamic_pointer_cast<Ship>(target)) {
+    } else if (auto ship = std::dynamic_pointer_cast<Ship>(target)) {
         if (old_sys)
             old_sys->Remove(ship->ID());
         ship->SetSystem(INVALID_OBJECT_ID);
 
-        TemporaryPtr<Fleet> old_fleet = GetFleet(ship->FleetID());
+        auto old_fleet = GetFleet(ship->FleetID());
         if (old_fleet) {
-            old_fleet->RemoveShip(ship->ID());
+            old_fleet->RemoveShips({ship->ID()});
             if (old_fleet->Empty()) {
                 old_sys->Remove(old_fleet->ID());
                 GetUniverse().EffectDestroy(old_fleet->ID(), INVALID_OBJECT_ID);    // no object in particular destroyed this fleet
@@ -2763,7 +2661,7 @@ void MoveInOrbit::Execute(const ScriptingContext& context) const {
         CreateNewFleet(new_x, new_y, ship); // creates new fleet and inserts ship into fleet
         return;
 
-    } else if (TemporaryPtr<Field> field = boost::dynamic_pointer_cast<Field>(target)) {
+    } else if (auto field = std::dynamic_pointer_cast<Field>(target)) {
         if (old_sys)
             old_sys->Remove(field->ID());
         field->SetSystem(INVALID_OBJECT_ID);
@@ -2772,41 +2670,13 @@ void MoveInOrbit::Execute(const ScriptingContext& context) const {
     // don't move planets or buildings, as these can't exist outside of systems
 }
 
-std::string MoveInOrbit::Description() const {
-    std::string focus_str;
+std::string MoveInOrbit::Dump(unsigned short ntabs) const {
     if (m_focal_point_condition)
-        focus_str = m_focal_point_condition->Description();
-
-    std::string speed_str;
-    if (m_speed)
-        speed_str = m_speed->Description();
-
-    if (!focus_str.empty())
-        return str(FlexibleFormat(UserString("DESC_MOVE_IN_ORBIT_OF_OBJECT"))
-                   % focus_str
-                   % speed_str);
-
-    std::string x_str = "0.0";
-    if (m_focus_x)
-        x_str = m_focus_x->Description();
-
-    std::string y_str = "0.0";
-    if (m_focus_y)
-        y_str = m_focus_y->Description();
-
-    return str(FlexibleFormat(UserString("DESC_MOVE_IN_ORBIT_OF_XY"))
-               % x_str
-               % y_str
-               % speed_str);
-}
-
-std::string MoveInOrbit::Dump() const {
-    if (m_focal_point_condition)
-        return DumpIndent() + "MoveInOrbit around = " + m_focal_point_condition->Dump() + "\n";
+        return DumpIndent(ntabs) + "MoveInOrbit around = " + m_focal_point_condition->Dump(ntabs) + "\n";
     else if (m_focus_x && m_focus_y)
-        return DumpIndent() + "MoveInOrbit x = " + m_focus_x->Dump() + " y = " + m_focus_y->Dump() + "\n";
+        return DumpIndent(ntabs) + "MoveInOrbit x = " + m_focus_x->Dump(ntabs) + " y = " + m_focus_y->Dump(ntabs) + "\n";
     else
-        return DumpIndent() + "MoveInOrbit";
+        return DumpIndent(ntabs) + "MoveInOrbit";
 }
 
 void MoveInOrbit::SetTopLevelContent(const std::string& content_name) {
@@ -2820,40 +2690,46 @@ void MoveInOrbit::SetTopLevelContent(const std::string& content_name) {
         m_focus_y->SetTopLevelContent(content_name);
 }
 
+unsigned int MoveInOrbit::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "MoveInOrbit");
+    CheckSums::CheckSumCombine(retval, m_speed);
+    CheckSums::CheckSumCombine(retval, m_focal_point_condition);
+    CheckSums::CheckSumCombine(retval, m_focus_x);
+    CheckSums::CheckSumCombine(retval, m_focus_y);
+
+    TraceLogger() << "GetCheckSum(MoveInOrbit): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // MoveTowards                                           //
 ///////////////////////////////////////////////////////////
-MoveTowards::MoveTowards(ValueRef::ValueRefBase<double>* speed,
-                         Condition::ConditionBase* dest_condition) :
-    m_speed(speed),
-    m_dest_condition(dest_condition),
-    m_dest_x(0),
-    m_dest_y(0)
+MoveTowards::MoveTowards(std::unique_ptr<ValueRef::ValueRefBase<double>>&& speed,
+                         std::unique_ptr<Condition::ConditionBase>&& dest_condition) :
+    m_speed(std::move(speed)),
+    m_dest_condition(std::move(dest_condition)),
+    m_dest_x(nullptr),
+    m_dest_y(nullptr)
 {}
 
-MoveTowards::MoveTowards(ValueRef::ValueRefBase<double>* speed,
-                         ValueRef::ValueRefBase<double>* dest_x/* = 0*/,
-                         ValueRef::ValueRefBase<double>* dest_y/* = 0*/) :
-    m_speed(speed),
-    m_dest_condition(0),
-    m_dest_x(dest_x),
-    m_dest_y(dest_y)
+MoveTowards::MoveTowards(std::unique_ptr<ValueRef::ValueRefBase<double>>&& speed,
+                         std::unique_ptr<ValueRef::ValueRefBase<double>>&& dest_x/* = 0*/,
+                         std::unique_ptr<ValueRef::ValueRefBase<double>>&& dest_y/* = 0*/) :
+    m_speed(std::move(speed)),
+    m_dest_condition(nullptr),
+    m_dest_x(std::move(dest_x)),
+    m_dest_y(std::move(dest_y))
 {}
-
-MoveTowards::~MoveTowards() {
-    delete m_speed;
-    delete m_dest_condition;
-    delete m_dest_x;
-    delete m_dest_y;
-}
 
 void MoveTowards::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
         ErrorLogger() << "MoveTowards::Execute given no target object";
         return;
     }
-    TemporaryPtr<UniverseObject> target = context.effect_target;
+    auto target = context.effect_target;
 
     double dest_x = 0.0, dest_y = 0.0, speed = 1.0;
     if (m_dest_x)
@@ -2869,7 +2745,7 @@ void MoveTowards::Execute(const ScriptingContext& context) const {
         m_dest_condition->Eval(context, matches);
         if (matches.empty())
             return;
-        TemporaryPtr<const UniverseObject> focus_object = *matches.begin();
+        std::shared_ptr<const UniverseObject> focus_object = *matches.begin();
         dest_x = focus_object->X();
         dest_y = focus_object->Y();
     }
@@ -2897,31 +2773,22 @@ void MoveTowards::Execute(const ScriptingContext& context) const {
     if (target->X() == new_x && target->Y() == new_y)
         return; // nothing to do
 
-    if (TemporaryPtr<System> system = boost::dynamic_pointer_cast<System>(target)) {
+    if (auto system = std::dynamic_pointer_cast<System>(target)) {
         system->MoveTo(new_x, new_y);
-        std::vector<TemporaryPtr<UniverseObject> > contained_objects =
-            Objects().FindObjects<UniverseObject>(system->ObjectIDs());
-        for (std::vector<TemporaryPtr<UniverseObject> >::iterator it = contained_objects.begin();
-             it != contained_objects.end(); ++it)
-        {
-            TemporaryPtr<UniverseObject> obj = *it;
+        for (auto& obj : Objects().FindObjects<UniverseObject>(system->ObjectIDs())) {
             obj->MoveTo(new_x, new_y);
         }
         // don't need to remove objects from system or insert into it, as all
         // contained objects in system are moved with it, maintaining their
         // containment situation
 
-    } else if (TemporaryPtr<Fleet> fleet = boost::dynamic_pointer_cast<Fleet>(target)) {
-        TemporaryPtr<System> old_sys = GetSystem(fleet->SystemID());
+    } else if (auto fleet = std::dynamic_pointer_cast<Fleet>(target)) {
+        auto old_sys = GetSystem(fleet->SystemID());
         if (old_sys)
             old_sys->Remove(fleet->ID());
         fleet->SetSystem(INVALID_OBJECT_ID);
         fleet->MoveTo(new_x, new_y);
-        std::vector<TemporaryPtr<Ship> > ships = Objects().FindObjects<Ship>(fleet->ShipIDs());
-        for (std::vector<TemporaryPtr<Ship> >::iterator it = ships.begin();
-             it != ships.end(); ++it)
-        {
-            TemporaryPtr<Ship> ship = *it;
+        for (auto& ship : Objects().FindObjects<Ship>(fleet->ShipIDs())) {
             if (old_sys)
                 old_sys->Remove(ship->ID());
             ship->SetSystem(INVALID_OBJECT_ID);
@@ -2931,15 +2798,15 @@ void MoveTowards::Execute(const ScriptingContext& context) const {
         // todo: is fleet now close enough to fall into a system?
         UpdateFleetRoute(fleet, INVALID_OBJECT_ID, INVALID_OBJECT_ID);
 
-    } else if (TemporaryPtr<Ship> ship = boost::dynamic_pointer_cast<Ship>(target)) {
-        TemporaryPtr<System> old_sys = GetSystem(ship->SystemID());
+    } else if (auto ship = std::dynamic_pointer_cast<Ship>(target)) {
+        auto old_sys = GetSystem(ship->SystemID());
         if (old_sys)
             old_sys->Remove(ship->ID());
         ship->SetSystem(INVALID_OBJECT_ID);
 
-        TemporaryPtr<Fleet> old_fleet = GetFleet(ship->FleetID());
+        auto old_fleet = GetFleet(ship->FleetID());
         if (old_fleet)
-            old_fleet->RemoveShip(ship->ID());
+            old_fleet->RemoveShips({ship->ID()});
         ship->SetFleetID(INVALID_OBJECT_ID);
 
         CreateNewFleet(new_x, new_y, ship); // creates new fleet and inserts ship into fleet
@@ -2949,8 +2816,8 @@ void MoveTowards::Execute(const ScriptingContext& context) const {
             GetUniverse().EffectDestroy(old_fleet->ID(), INVALID_OBJECT_ID);    // no object in particular destroyed this fleet
         }
 
-    } else if (TemporaryPtr<Field> field = boost::dynamic_pointer_cast<Field>(target)) {
-        TemporaryPtr<System> old_sys = GetSystem(field->SystemID());
+    } else if (auto field = std::dynamic_pointer_cast<Field>(target)) {
+        auto old_sys = GetSystem(field->SystemID());
         if (old_sys)
             old_sys->Remove(field->ID());
         field->SetSystem(INVALID_OBJECT_ID);
@@ -2960,41 +2827,13 @@ void MoveTowards::Execute(const ScriptingContext& context) const {
     // don't move planets or buildings, as these can't exist outside of systems
 }
 
-std::string MoveTowards::Description() const {
-    std::string dest_str;
+std::string MoveTowards::Dump(unsigned short ntabs) const {
     if (m_dest_condition)
-        dest_str = m_dest_condition->Description();
-
-    std::string speed_str;
-    if (m_speed)
-        speed_str = m_speed->Description();
-
-    if (!dest_str.empty())
-        return str(FlexibleFormat(UserString("DESC_MOVE_TOWARDS_OBJECT"))
-                   % dest_str
-                   % speed_str);
-
-    std::string x_str = "0.0";
-    if (m_dest_x)
-        x_str = m_dest_x->Description();
-
-    std::string y_str = "0.0";
-    if (m_dest_y)
-        y_str = m_dest_y->Description();
-
-    return str(FlexibleFormat(UserString("DESC_MOVE_TOWARDS_XY"))
-               % x_str
-               % y_str
-               % speed_str);
-}
-
-std::string MoveTowards::Dump() const {
-    if (m_dest_condition)
-        return DumpIndent() + "MoveTowards destination = " + m_dest_condition->Dump() + "\n";
+        return DumpIndent(ntabs) + "MoveTowards destination = " + m_dest_condition->Dump(ntabs) + "\n";
     else if (m_dest_x && m_dest_y)
-        return DumpIndent() + "MoveTowards x = " + m_dest_x->Dump() + " y = " + m_dest_y->Dump() + "\n";
+        return DumpIndent(ntabs) + "MoveTowards x = " + m_dest_x->Dump(ntabs) + " y = " + m_dest_y->Dump(ntabs) + "\n";
     else
-        return DumpIndent() + "MoveTowards";
+        return DumpIndent(ntabs) + "MoveTowards";
 }
 
 void MoveTowards::SetTopLevelContent(const std::string& content_name) {
@@ -3008,16 +2847,26 @@ void MoveTowards::SetTopLevelContent(const std::string& content_name) {
         m_dest_y->SetTopLevelContent(content_name);
 }
 
+unsigned int MoveTowards::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "MoveTowards");
+    CheckSums::CheckSumCombine(retval, m_speed);
+    CheckSums::CheckSumCombine(retval, m_dest_condition);
+    CheckSums::CheckSumCombine(retval, m_dest_x);
+    CheckSums::CheckSumCombine(retval, m_dest_y);
+
+    TraceLogger() << "GetCheckSum(MoveTowards): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // SetDestination                                        //
 ///////////////////////////////////////////////////////////
-SetDestination::SetDestination(Condition::ConditionBase* location_condition) :
-    m_location_condition(location_condition)
+SetDestination::SetDestination(std::unique_ptr<Condition::ConditionBase>&& location_condition) :
+    m_location_condition(std::move(location_condition))
 {}
-
-SetDestination::~SetDestination()
-{ delete m_location_condition; }
 
 void SetDestination::Execute(const ScriptingContext& context) const {
     if (!context.effect_target) {
@@ -3025,7 +2874,7 @@ void SetDestination::Execute(const ScriptingContext& context) const {
         return;
     }
 
-    TemporaryPtr<Fleet> target_fleet = boost::dynamic_pointer_cast<Fleet>(context.effect_target);
+    auto target_fleet = std::dynamic_pointer_cast<Fleet>(context.effect_target);
     if (!target_fleet) {
         ErrorLogger() << "SetDestination::Execute acting on non-fleet target:";
         context.effect_target->Dump();
@@ -3044,9 +2893,8 @@ void SetDestination::Execute(const ScriptingContext& context) const {
 
     // "randomly" pick a destination
     int destination_idx = RandSmallInt(0, valid_locations.size() - 1);
-    Condition::ObjectSet::iterator obj_it = valid_locations.begin();
-    std::advance(obj_it, destination_idx);
-    TemporaryPtr<UniverseObject> destination = boost::const_pointer_cast<UniverseObject>(*obj_it);
+    auto destination = std::const_pointer_cast<UniverseObject>(
+        *std::next(valid_locations.begin(), destination_idx));
     int destination_system_id = destination->SystemID();
 
     // early exit if destination is not / in a system
@@ -3061,7 +2909,7 @@ void SetDestination::Execute(const ScriptingContext& context) const {
         return;
 
     // find shortest path for fleet's owner
-    std::pair<std::list<int>, double> short_path = universe.ShortestPath(start_system_id, destination_system_id, target_fleet->Owner());
+    std::pair<std::list<int>, double> short_path = universe.GetPathfinder()->ShortestPath(start_system_id, destination_system_id, target_fleet->Owner());
     const std::list<int>& route_list = short_path.first;
 
     // reject empty move paths (no path exists).
@@ -3076,17 +2924,22 @@ void SetDestination::Execute(const ScriptingContext& context) const {
     target_fleet->SetRoute(route_list);
 }
 
-std::string SetDestination::Description() const {
-    std::string value_str = m_location_condition->Description();
-    return str(FlexibleFormat(UserString("DESC_SET_DESTINATION")) % value_str);
-}
-
-std::string SetDestination::Dump() const
-{ return DumpIndent() + "SetDestination destination = " + m_location_condition->Dump() + "\n"; }
+std::string SetDestination::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetDestination destination = " + m_location_condition->Dump(ntabs) + "\n"; }
 
 void SetDestination::SetTopLevelContent(const std::string& content_name) {
     if (m_location_condition)
         m_location_condition->SetTopLevelContent(content_name);
+}
+
+unsigned int SetDestination::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetDestination");
+    CheckSums::CheckSumCombine(retval, m_location_condition);
+
+    TraceLogger() << "GetCheckSum(SetDestination): retval: " << retval;
+    return retval;
 }
 
 
@@ -3103,7 +2956,7 @@ void SetAggression::Execute(const ScriptingContext& context) const {
         return;
     }
 
-    TemporaryPtr<Fleet> target_fleet = boost::dynamic_pointer_cast<Fleet>(context.effect_target);
+    auto target_fleet = std::dynamic_pointer_cast<Fleet>(context.effect_target);
     if (!target_fleet) {
         ErrorLogger() << "SetAggression::Execute acting on non-fleet target:";
         context.effect_target->Dump();
@@ -3113,11 +2966,18 @@ void SetAggression::Execute(const ScriptingContext& context) const {
     target_fleet->SetAggressive(m_aggressive);
 }
 
-std::string SetAggression::Description() const
-{ return (m_aggressive ? UserString("DESC_SET_AGGRESSIVE") : UserString("DESC_SET_PASSIVE")); }
+std::string SetAggression::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + (m_aggressive ? "SetAggressive" : "SetPassive") + "\n"; }
 
-std::string SetAggression::Dump() const
-{ return DumpIndent() + (m_aggressive ? "SetAggressive" : "SetPassive") + "\n"; }
+unsigned int SetAggression::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetAggression");
+    CheckSums::CheckSumCombine(retval, m_aggressive);
+
+    TraceLogger() << "GetCheckSum(SetAggression): retval: " << retval;
+    return retval;
+}
 
 
 ///////////////////////////////////////////////////////////
@@ -3132,39 +2992,39 @@ void Victory::Execute(const ScriptingContext& context) const {
         ErrorLogger() << "Victory::Execute given no target object";
         return;
     }
-    GetUniverse().EffectVictory(context.effect_target->ID(), m_reason_string);
+    if (Empire* empire = GetEmpire(context.effect_target->Owner()))
+        empire->Win(m_reason_string);
+    else
+        ErrorLogger() << "Trying to grant victory to a missing empire!";
 }
 
-std::string Victory::Description() const
-{ return UserString("DESC_VICTORY"); }
+std::string Victory::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "Victory reason = \"" + m_reason_string + "\"\n"; }
 
-std::string Victory::Dump() const
-{ return DumpIndent() + "Victory reason = \"" + m_reason_string + "\"\n"; }
+unsigned int Victory::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "Victory");
+    CheckSums::CheckSumCombine(retval, m_reason_string);
+
+    TraceLogger() << "GetCheckSum(Victory): retval: " << retval;
+    return retval;
+}
 
 
 ///////////////////////////////////////////////////////////
 // SetEmpireTechProgress                                 //
 ///////////////////////////////////////////////////////////
-SetEmpireTechProgress::SetEmpireTechProgress(ValueRef::ValueRefBase<std::string>* tech_name,
-                                             ValueRef::ValueRefBase<double>* research_progress) :
-    m_tech_name(tech_name),
-    m_research_progress(research_progress),
-    m_empire_id(new ValueRef::Variable<int>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner")))
+SetEmpireTechProgress::SetEmpireTechProgress(std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& tech_name,
+                                             std::unique_ptr<ValueRef::ValueRefBase<double>>&& research_progress,
+                                             std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id /*= nullptr*/) :
+    m_tech_name(std::move(tech_name)),
+    m_research_progress(std::move(research_progress)),
+    m_empire_id(
+        empire_id
+        ? std::move(empire_id)
+        : boost::make_unique<ValueRef::Variable<int>>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner")))
 {}
-
-SetEmpireTechProgress::SetEmpireTechProgress(ValueRef::ValueRefBase<std::string>* tech_name,
-                                             ValueRef::ValueRefBase<double>* research_progress,
-                                             ValueRef::ValueRefBase<int>* empire_id) :
-    m_tech_name(tech_name),
-    m_research_progress(research_progress),
-    m_empire_id(empire_id)
-{}
-
-SetEmpireTechProgress::~SetEmpireTechProgress() {
-    delete m_tech_name;
-    delete m_research_progress;
-    delete m_empire_id;
-}
 
 void SetEmpireTechProgress::Execute(const ScriptingContext& context) const {
     if (!m_empire_id) return;
@@ -3190,46 +3050,14 @@ void SetEmpireTechProgress::Execute(const ScriptingContext& context) const {
     empire->SetTechResearchProgress(tech_name, value);
 }
 
-std::string SetEmpireTechProgress::Description() const {
-    std::string progress_str = ValueRef::ConstantExpr(m_research_progress) ?
-                               lexical_cast<std::string>(m_research_progress->Eval()) :
-                               m_research_progress->Description();
-    std::string empire_str;
-    if (m_empire_id) {
-        if (ValueRef::ConstantExpr(m_empire_id)) {
-            if (const Empire* empire = GetEmpire(m_empire_id->Eval()))
-                empire_str = empire->Name();
-        } else {
-            empire_str = m_empire_id->Description();
-        }
-    }
-    std::string tech_name;
-    if (m_tech_name) {
-        if (ValueRef::ConstantExpr(m_tech_name)) {
-            tech_name = m_tech_name->Eval();
-        } else {
-            tech_name = m_tech_name->Description();
-        }
-        if (GetTech(tech_name)) {
-            std::string name_temp = tech_name;
-            tech_name = UserString(name_temp);
-        }
-    }
-
-    return str(FlexibleFormat(UserString("DESC_SET_EMPIRE_TECH_PROGRESS"))
-               % tech_name
-               % progress_str
-               % empire_str);
-}
-
-std::string SetEmpireTechProgress::Dump() const {
+std::string SetEmpireTechProgress::Dump(unsigned short ntabs) const {
     std::string retval = "SetEmpireTechProgress name = ";
     if (m_tech_name)
-        retval += m_tech_name->Dump();
+        retval += m_tech_name->Dump(ntabs);
     if (m_research_progress)
-        retval += " progress = " + m_research_progress->Dump();
+        retval += " progress = " + m_research_progress->Dump(ntabs);
     if (m_empire_id)
-        retval += " empire = " + m_empire_id->Dump() + "\n";
+        retval += " empire = " + m_empire_id->Dump(ntabs) + "\n";
     return retval;
 }
 
@@ -3242,22 +3070,29 @@ void SetEmpireTechProgress::SetTopLevelContent(const std::string& content_name) 
         m_empire_id->SetTopLevelContent(content_name);
 }
 
+unsigned int SetEmpireTechProgress::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetEmpireTechProgress");
+    CheckSums::CheckSumCombine(retval, m_tech_name);
+    CheckSums::CheckSumCombine(retval, m_research_progress);
+    CheckSums::CheckSumCombine(retval, m_empire_id);
+
+    TraceLogger() << "GetCheckSum(SetEmpireTechProgress): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // GiveEmpireTech                                        //
 ///////////////////////////////////////////////////////////
-GiveEmpireTech::GiveEmpireTech(ValueRef::ValueRefBase<std::string>* tech_name,
-                               ValueRef::ValueRefBase<int>* empire_id) :
-    m_tech_name(tech_name),
-    m_empire_id(empire_id)
+GiveEmpireTech::GiveEmpireTech(std::unique_ptr<ValueRef::ValueRefBase<std::string>>&& tech_name,
+                               std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id) :
+    m_tech_name(std::move(tech_name)),
+    m_empire_id(std::move(empire_id))
 {
     if (!m_empire_id)
-        m_empire_id = new ValueRef::Variable<int>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner"));
-}
-
-GiveEmpireTech::~GiveEmpireTech() {
-    delete m_empire_id;
-    delete m_tech_name;
+        m_empire_id.reset(new ValueRef::Variable<int>(ValueRef::EFFECT_TARGET_REFERENCE, std::vector<std::string>(1, "Owner")));
 }
 
 void GiveEmpireTech::Execute(const ScriptingContext& context) const {
@@ -3279,37 +3114,14 @@ void GiveEmpireTech::Execute(const ScriptingContext& context) const {
     empire->AddTech(tech_name);
 }
 
-std::string GiveEmpireTech::Description() const {
-    std::string empire_str;
-    if (m_empire_id) {
-        if (ValueRef::ConstantExpr(m_empire_id)) {
-            if (const Empire* empire = GetEmpire(m_empire_id->Eval()))
-                empire_str = empire->Name();
-        } else {
-            empire_str = m_empire_id->Description();
-        }
-    }
-
-    std::string tech_str;
-    if (m_tech_name) {
-        tech_str = m_tech_name->Description();
-        if (ValueRef::ConstantExpr(m_tech_name) && UserStringExists(tech_str))
-            tech_str = UserString(tech_str);
-    }
-
-    return str(FlexibleFormat(UserString("DESC_GIVE_EMPIRE_TECH"))
-                % tech_str
-                % empire_str);
-}
-
-std::string GiveEmpireTech::Dump() const {
-    std::string retval = DumpIndent() + "GiveEmpireTech";
+std::string GiveEmpireTech::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "GiveEmpireTech";
 
     if (m_tech_name)
-        retval += " name = " + m_tech_name->Dump();
+        retval += " name = " + m_tech_name->Dump(ntabs);
 
     if (m_empire_id)
-        retval += " empire = " + m_empire_id->Dump();
+        retval += " empire = " + m_empire_id->Dump(ntabs);
 
     retval += "\n";
     return retval;
@@ -3322,22 +3134,33 @@ void GiveEmpireTech::SetTopLevelContent(const std::string& content_name) {
         m_tech_name->SetTopLevelContent(content_name);
 }
 
+unsigned int GiveEmpireTech::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "GiveEmpireTech");
+    CheckSums::CheckSumCombine(retval, m_tech_name);
+    CheckSums::CheckSumCombine(retval, m_empire_id);
+
+    TraceLogger() << "GetCheckSum(GiveEmpireTech): retval: " << retval;
+    return retval;
+}
+
 
 ///////////////////////////////////////////////////////////
 // GenerateSitRepMessage                                 //
 ///////////////////////////////////////////////////////////
 GenerateSitRepMessage::GenerateSitRepMessage(const std::string& message_string,
                                              const std::string& icon,
-                                             const std::vector<std::pair<std::string, ValueRef::ValueRefBase<std::string>*> >& message_parameters,
-                                             ValueRef::ValueRefBase<int>* recipient_empire_id,
+                                             MessageParams&& message_parameters,
+                                             std::unique_ptr<ValueRef::ValueRefBase<int>>&& recipient_empire_id,
                                              EmpireAffiliationType affiliation,
                                              const std::string label,
                                              bool stringtable_lookup) :
     m_message_string(message_string),
     m_icon(icon),
-    m_message_parameters(message_parameters),
-    m_recipient_empire_id(recipient_empire_id),
-    m_condition(0),
+    m_message_parameters(std::move(message_parameters)),
+    m_recipient_empire_id(std::move(recipient_empire_id)),
+    m_condition(nullptr),
     m_affiliation(affiliation),
     m_label(label),
     m_stringtable_lookup(stringtable_lookup)
@@ -3345,44 +3168,35 @@ GenerateSitRepMessage::GenerateSitRepMessage(const std::string& message_string,
 
 GenerateSitRepMessage::GenerateSitRepMessage(const std::string& message_string,
                                              const std::string& icon,
-                                             const std::vector<std::pair<std::string, ValueRef::ValueRefBase<std::string>*> >& message_parameters,
+                                             MessageParams&& message_parameters,
                                              EmpireAffiliationType affiliation,
-                                             Condition::ConditionBase* condition,
+                                             std::unique_ptr<Condition::ConditionBase>&& condition,
                                              const std::string label,
                                              bool stringtable_lookup) :
     m_message_string(message_string),
     m_icon(icon),
-    m_message_parameters(message_parameters),
-    m_recipient_empire_id(0),
-    m_condition(condition),
+    m_message_parameters(std::move(message_parameters)),
+    m_recipient_empire_id(nullptr),
+    m_condition(std::move(condition)),
     m_affiliation(affiliation),
     m_label(label),
     m_stringtable_lookup(stringtable_lookup)
 {}
 
 GenerateSitRepMessage::GenerateSitRepMessage(const std::string& message_string, const std::string& icon,
-                                             const std::vector<std::pair<std::string, ValueRef::ValueRefBase<std::string>*> >& message_parameters,
+                                             MessageParams&& message_parameters,
                                              EmpireAffiliationType affiliation,
                                              const std::string& label,
                                              bool stringtable_lookup):
     m_message_string(message_string),
     m_icon(icon),
-    m_message_parameters(message_parameters),
-    m_recipient_empire_id(0),
+    m_message_parameters(std::move(message_parameters)),
+    m_recipient_empire_id(nullptr),
     m_condition(),
     m_affiliation(affiliation),
     m_label(label),
     m_stringtable_lookup(stringtable_lookup)
 {}
-
-GenerateSitRepMessage::~GenerateSitRepMessage() {
-    for (std::vector<std::pair<std::string, ValueRef::ValueRefBase<std::string>*> >::iterator it =
-         m_message_parameters.begin(); it != m_message_parameters.end(); ++it)
-    {
-        delete it->second;
-    }
-    delete m_recipient_empire_id;
-}
 
 void GenerateSitRepMessage::Execute(const ScriptingContext& context) const {
     int recipient_id = ALL_EMPIRES;
@@ -3397,18 +3211,15 @@ void GenerateSitRepMessage::Execute(const ScriptingContext& context) const {
 
 
     // evaluate all parameter valuerefs so they can be substituted into sitrep template
-    std::vector<std::pair<std::string, std::string> > parameter_tag_values;
-    for (std::vector<std::pair<std::string, ValueRef::ValueRefBase<std::string>*> >::const_iterator it =
-         m_message_parameters.begin(); it != m_message_parameters.end(); ++it)
-    {
-        parameter_tag_values.push_back(std::make_pair(it->first, it->second->Eval(context)));
+    std::vector<std::pair<std::string, std::string>> parameter_tag_values;
+    for (const auto& entry : m_message_parameters) {
+        parameter_tag_values.push_back({entry.first, entry.second->Eval(context)});
 
         // special case for ship designs: make sure sitrep recipient knows about the design
         // so the sitrep won't have errors about unknown designs being referenced
-        if (it->first == VarText::PREDEFINED_DESIGN_TAG) {
-            if (const ShipDesign* design = GetPredefinedShipDesign(it->second->Eval(context))) {
-                int design_id = design->ID();
-                ship_design_ids_to_inform_receipits_of.insert(design_id);
+        if (entry.first == VarText::PREDEFINED_DESIGN_TAG) {
+            if (const ShipDesign* design = GetPredefinedShipDesign(entry.second->Eval(context))) {
+                ship_design_ids_to_inform_receipits_of.insert(design->ID());
             }
         }
     }
@@ -3425,30 +3236,26 @@ void GenerateSitRepMessage::Execute(const ScriptingContext& context) const {
 
     case AFFIL_ALLY: {
         // add allies of specified empire
-        for (EmpireManager::const_iterator emp_it = Empires().begin();
-             emp_it != Empires().end(); ++emp_it)
-        {
-            if (emp_it->first == recipient_id || recipient_id == ALL_EMPIRES)
+        for (auto& empire_id : Empires()) {
+            if (empire_id.first == recipient_id || recipient_id == ALL_EMPIRES)
                 continue;
 
-            DiplomaticStatus status = Empires().GetDiplomaticStatus(recipient_id, emp_it->first);
+            DiplomaticStatus status = Empires().GetDiplomaticStatus(recipient_id, empire_id.first);
             if (status == DIPLO_PEACE)
-                recipient_empire_ids.insert(emp_it->first);
+                recipient_empire_ids.insert(empire_id.first);
         }
         break;
     }
 
     case AFFIL_ENEMY: {
         // add enemies of specified empire
-        for (EmpireManager::const_iterator emp_it = Empires().begin();
-             emp_it != Empires().end(); ++emp_it)
-        {
-            if (emp_it->first == recipient_id || recipient_id == ALL_EMPIRES)
+        for (auto& empire_id : Empires()) {
+            if (empire_id.first == recipient_id || recipient_id == ALL_EMPIRES)
                 continue;
 
-            DiplomaticStatus status = Empires().GetDiplomaticStatus(recipient_id, emp_it->first);
+            DiplomaticStatus status = Empires().GetDiplomaticStatus(recipient_id, empire_id.first);
             if (status == DIPLO_WAR)
-                recipient_empire_ids.insert(emp_it->first);
+                recipient_empire_ids.insert(empire_id.first);
         }
         break;
     }
@@ -3460,14 +3267,10 @@ void GenerateSitRepMessage::Execute(const ScriptingContext& context) const {
             m_condition->Eval(context, condition_matches);
 
         // add empires that can see any condition-matching object
-        for (EmpireManager::iterator empire_it = Empires().begin();
-             empire_it != Empires().end(); ++empire_it)
-        {
-            int empire_id = empire_it->first;
-            for (Condition::ObjectSet::iterator obj_it = condition_matches.begin();
-                 obj_it != condition_matches.end(); ++obj_it)
-            {
-                if ((*obj_it)->GetVisibility(empire_id) >= VIS_BASIC_VISIBILITY) {
+        for (auto& empire_entry : Empires()) {
+            int empire_id = empire_entry.first;
+            for (auto& object : condition_matches) {
+                if (object->GetVisibility(empire_id) >= VIS_BASIC_VISIBILITY) {
                     recipient_empire_ids.insert(empire_id);
                     break;
                 }
@@ -3480,11 +3283,15 @@ void GenerateSitRepMessage::Execute(const ScriptingContext& context) const {
         // add no empires
         break;
 
+    case AFFIL_HUMAN:
+        // todo: implement this separately, though not high priority since it
+        // probably doesn't matter if AIs get an extra sitrep message meant for
+        // human eyes
     case AFFIL_ANY:
     default: {
         // add all empires
-        for (EmpireManager::const_iterator empire_it = Empires().begin(); empire_it != Empires().end(); ++empire_it)
-            recipient_empire_ids.insert(empire_it->first);
+        for (auto& empire_entry : Empires())
+            recipient_empire_ids.insert(empire_entry.first);
         break;
     }
     }
@@ -3492,111 +3299,106 @@ void GenerateSitRepMessage::Execute(const ScriptingContext& context) const {
     int sitrep_turn = CurrentTurn() + 1;
 
     // send to recipient empires
-    for (std::set<int>::const_iterator emp_it = recipient_empire_ids.begin();
-         emp_it != recipient_empire_ids.end(); ++emp_it)
-    {
-        Empire* empire = GetEmpire(*emp_it);
+    for (int empire_id : recipient_empire_ids) {
+        Empire* empire = GetEmpire(empire_id);
         if (!empire)
             continue;
-        empire->AddSitRepEntry(CreateSitRep(m_message_string, sitrep_turn, m_icon, parameter_tag_values, m_label, m_stringtable_lookup));
+        empire->AddSitRepEntry(CreateSitRep(m_message_string, sitrep_turn, m_icon,
+                                            parameter_tag_values, m_label, m_stringtable_lookup));
 
         // also inform of any ship designs recipients should know about
-        for (std::set<int>::const_iterator design_it = ship_design_ids_to_inform_receipits_of.begin();
-             design_it != ship_design_ids_to_inform_receipits_of.end(); ++design_it)
-        { GetUniverse().SetEmpireKnowledgeOfShipDesign(*design_it, *emp_it); }
+        for (int design_id : ship_design_ids_to_inform_receipits_of) {
+            GetUniverse().SetEmpireKnowledgeOfShipDesign(design_id, empire_id);
+        }
     }
 }
 
-std::string GenerateSitRepMessage::Description() const {
-    std::string empire_str;
-    if (m_recipient_empire_id) {
-        int empire_id = ALL_EMPIRES;
-        if (ValueRef::ConstantExpr(m_recipient_empire_id))
-            empire_id = m_recipient_empire_id->Eval();
-        if (const Empire* empire = GetEmpire(empire_id))
-            empire_str = empire->Name();
-        else
-            empire_str = m_recipient_empire_id->Description();
-    }
-
-    std::string condition_str;
-    if (m_condition)
-        condition_str = m_condition->Description();
-
-    // pick appropriate sitrep text...
-    std::string desc_template;
-    switch (m_affiliation) {
-    case AFFIL_ALLY:    desc_template = UserString("DESC_GENERATE_SITREP_ALLIES");  break;
-    case AFFIL_ENEMY:   desc_template = UserString("DESC_GENERATE_SITREP_ENEMIES"); break;
-    case AFFIL_CAN_SEE: desc_template = UserString("DESC_GENERATE_SITREP_CAN_SEE"); break;
-    case AFFIL_NONE:    desc_template = UserString("DESC_GENERATE_SITREP_NONE");    break;
-    case AFFIL_ANY:     desc_template = UserString("DESC_GENERATE_SITREP_ALL");     break;
-    case AFFIL_SELF:
-    default:
-        desc_template = UserString("DESC_GENERATE_SITREP");
-    }
-
-    return str(FlexibleFormat(desc_template) % empire_str % condition_str);
-}
-
-std::string GenerateSitRepMessage::Dump() const {
-    std::string retval = DumpIndent();
+std::string GenerateSitRepMessage::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs);
     retval += "GenerateSitRepMessage\n";
-    ++g_indent;
-    retval += DumpIndent() + "message = \"" + m_message_string + "\"" + " icon = " + m_icon + "\n";
+    retval += DumpIndent(ntabs+1) + "message = \"" + m_message_string + "\"" + " icon = " + m_icon + "\n";
 
     if (m_message_parameters.size() == 1) {
-        retval += DumpIndent() + "parameters = tag = " + m_message_parameters[0].first + " data = " + m_message_parameters[0].second->Dump() + "\n";
+        retval += DumpIndent(ntabs+1) + "parameters = tag = " + m_message_parameters[0].first + " data = " + m_message_parameters[0].second->Dump(ntabs+1) + "\n";
     } else if (!m_message_parameters.empty()) {
-        retval += DumpIndent() + "parameters = [ ";
-        for (unsigned int i = 0; i < m_message_parameters.size(); ++i) {
-            retval += " tag = " + m_message_parameters[i].first
-                   + " data = " + m_message_parameters[i].second->Dump()
+        retval += DumpIndent(ntabs+1) + "parameters = [ ";
+        for (const auto& entry : m_message_parameters) {
+            retval += " tag = " + entry.first
+                   + " data = " + entry.second->Dump(ntabs+1)
                    + " ";
         }
         retval += "]\n";
     }
 
-    retval += DumpIndent() + "affiliation = ";
+    retval += DumpIndent(ntabs+1) + "affiliation = ";
     switch (m_affiliation) {
     case AFFIL_SELF:    retval += "TheEmpire";  break;
     case AFFIL_ENEMY:   retval += "EnemyOf";    break;
     case AFFIL_ALLY:    retval += "AllyOf";     break;
     case AFFIL_ANY:     retval += "AnyEmpire";  break;
     case AFFIL_CAN_SEE: retval += "CanSee";     break;
+    case AFFIL_HUMAN:   retval += "Human";      break;
     default:            retval += "?";          break;
     }
 
     if (m_recipient_empire_id)
-        retval += "\n" + DumpIndent() + "empire = " + m_recipient_empire_id->Dump() + "\n";
+        retval += "\n" + DumpIndent(ntabs+1) + "empire = " + m_recipient_empire_id->Dump(ntabs+1) + "\n";
     if (m_condition)
-        retval += "\n" + DumpIndent() + "condition = " + m_condition->Dump() + "\n";
-    --g_indent;
+        retval += "\n" + DumpIndent(ntabs+1) + "condition = " + m_condition->Dump(ntabs+1) + "\n";
 
     return retval;
 }
 
 void GenerateSitRepMessage::SetTopLevelContent(const std::string& content_name) {
-    for (std::vector<std::pair<std::string, ValueRef::ValueRefBase<std::string>*> >::iterator it = m_message_parameters.begin();
-         it != m_message_parameters.end(); ++it)
-    { it->second->SetTopLevelContent(content_name); }
+    for (auto& entry : m_message_parameters) {
+        entry.second->SetTopLevelContent(content_name);
+    }
     if (m_recipient_empire_id)
         m_recipient_empire_id->SetTopLevelContent(content_name);
     if (m_condition)
         m_condition->SetTopLevelContent(content_name);
 }
 
+unsigned int GenerateSitRepMessage::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "GenerateSitRepMessage");
+    CheckSums::CheckSumCombine(retval, m_message_string);
+    CheckSums::CheckSumCombine(retval, m_icon);
+    CheckSums::CheckSumCombine(retval, m_message_parameters);
+    CheckSums::CheckSumCombine(retval, m_recipient_empire_id);
+    CheckSums::CheckSumCombine(retval, m_condition);
+    CheckSums::CheckSumCombine(retval, m_affiliation);
+    CheckSums::CheckSumCombine(retval, m_label);
+    CheckSums::CheckSumCombine(retval, m_stringtable_lookup);
+
+    TraceLogger() << "GetCheckSum(GenerateSitRepMessage): retval: " << retval;
+    return retval;
+}
+
+std::vector<std::pair<std::string, ValueRef::ValueRefBase<std::string>*>>
+GenerateSitRepMessage::MessageParameters() const {
+    std::vector<std::pair<std::string, ValueRef::ValueRefBase<std::string>*>> retval(m_message_parameters.size());
+    std::transform(m_message_parameters.begin(), m_message_parameters.end(), retval.begin(),
+                   [](const std::pair<std::string, std::unique_ptr<ValueRef::ValueRefBase<std::string>>>& xx) {
+                       return std::make_pair(xx.first, xx.second.get());
+                   });
+    return retval;
+}
 
 ///////////////////////////////////////////////////////////
 // SetOverlayTexture                                     //
 ///////////////////////////////////////////////////////////
+SetOverlayTexture::SetOverlayTexture(const std::string& texture,
+                                     std::unique_ptr<ValueRef::ValueRefBase<double>>&& size) :
+    m_texture(texture),
+    m_size(std::move(size))
+{}
+
 SetOverlayTexture::SetOverlayTexture(const std::string& texture, ValueRef::ValueRefBase<double>* size) :
     m_texture(texture),
     m_size(size)
 {}
-
-SetOverlayTexture::~SetOverlayTexture()
-{ delete m_size; }
 
 void SetOverlayTexture::Execute(const ScriptingContext& context) const {
     if (!context.effect_target)
@@ -3605,17 +3407,14 @@ void SetOverlayTexture::Execute(const ScriptingContext& context) const {
     if (m_size)
         size = m_size->Eval(context);
 
-    if (TemporaryPtr<System> system = boost::dynamic_pointer_cast<System>(context.effect_target))
+    if (auto system = std::dynamic_pointer_cast<System>(context.effect_target))
         system->SetOverlayTexture(m_texture, size);
 }
 
-std::string SetOverlayTexture::Description() const
-{ return UserString("DESC_SET_OVERLAY_TEXTURE"); }
-
-std::string SetOverlayTexture::Dump() const {
-    std::string retval = DumpIndent() + "SetOverlayTexture texture = " + m_texture;
+std::string SetOverlayTexture::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "SetOverlayTexture texture = " + m_texture;
     if (m_size)
-        retval += " size = " + m_size->Dump();
+        retval += " size = " + m_size->Dump(ntabs);
     retval += "\n";
     return retval;
 }
@@ -3623,6 +3422,17 @@ std::string SetOverlayTexture::Dump() const {
 void SetOverlayTexture::SetTopLevelContent(const std::string& content_name) {
     if (m_size)
         m_size->SetTopLevelContent(content_name);
+}
+
+unsigned int SetOverlayTexture::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetOverlayTexture");
+    CheckSums::CheckSumCombine(retval, m_texture);
+    CheckSums::CheckSumCombine(retval, m_size);
+
+    TraceLogger() << "GetCheckSum(SetOverlayTexture): retval: " << retval;
+    return retval;
 }
 
 
@@ -3636,97 +3446,372 @@ SetTexture::SetTexture(const std::string& texture) :
 void SetTexture::Execute(const ScriptingContext& context) const {
     if (!context.effect_target)
         return;
-    if (TemporaryPtr<Planet> planet = boost::dynamic_pointer_cast<Planet>(context.effect_target))
+    if (auto planet = std::dynamic_pointer_cast<Planet>(context.effect_target))
         planet->SetSurfaceTexture(m_texture);
 }
 
-std::string SetTexture::Description() const
-{ return UserString("DESC_SET_TEXTURE"); }
+std::string SetTexture::Dump(unsigned short ntabs) const
+{ return DumpIndent(ntabs) + "SetTexture texture = " + m_texture + "\n"; }
 
-std::string SetTexture::Dump() const
-{ return DumpIndent() + "SetTexture texture = " + m_texture + "\n"; }
+unsigned int SetTexture::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetTexture");
+    CheckSums::CheckSumCombine(retval, m_texture);
+
+    TraceLogger() << "GetCheckSum(SetTexture): retval: " << retval;
+    return retval;
+}
+
+
+///////////////////////////////////////////////////////////
+// SetVisibility                                         //
+///////////////////////////////////////////////////////////
+SetVisibility::SetVisibility(std::unique_ptr<ValueRef::ValueRefBase<Visibility>> vis,
+                             EmpireAffiliationType affiliation,
+                             std::unique_ptr<ValueRef::ValueRefBase<int>>&& empire_id,
+                             std::unique_ptr<Condition::ConditionBase>&& of_objects) :
+    m_vis(std::move(vis)),
+    m_empire_id(std::move(empire_id)),
+    m_affiliation(affiliation),
+    m_condition(std::move(of_objects))
+{}
+
+void SetVisibility::Execute(const ScriptingContext& context) const {
+    if (!context.effect_target)
+        return;
+
+    // Note: currently ignoring upgrade-only flag
+
+    if (!m_vis)
+        return; // nothing to evaluate!
+
+    int empire_id = ALL_EMPIRES;
+    if (m_empire_id)
+        empire_id = m_empire_id->Eval(context);
+
+    // whom to set visbility for?
+    std::set<int> empire_ids;
+    switch (m_affiliation) {
+    case AFFIL_SELF: {
+        // add just specified empire
+        if (empire_id != ALL_EMPIRES)
+            empire_ids.insert(empire_id);
+        break;
+    }
+
+    case AFFIL_ALLY: {
+        // add allies of specified empire
+        for (const auto& empire_entry : Empires()) {
+            if (empire_entry.first == empire_id || empire_id == ALL_EMPIRES)
+                continue;
+
+            DiplomaticStatus status = Empires().GetDiplomaticStatus(empire_id, empire_entry.first);
+            if (status == DIPLO_PEACE)
+                empire_ids.insert(empire_entry.first);
+        }
+        break;
+    }
+
+    case AFFIL_ENEMY: {
+        // add enemies of specified empire
+        for (const auto& empire_entry : Empires()) {
+            if (empire_entry.first == empire_id || empire_id == ALL_EMPIRES)
+                continue;
+
+            DiplomaticStatus status = Empires().GetDiplomaticStatus(empire_id, empire_entry.first);
+            if (status == DIPLO_WAR)
+                empire_ids.insert(empire_entry.first);
+        }
+        break;
+    }
+
+    case AFFIL_CAN_SEE:
+        // unsupported so far...
+    case AFFIL_HUMAN:
+        // unsupported so far...
+    case AFFIL_NONE:
+        // add no empires
+        break;
+
+    case AFFIL_ANY:
+    default: {
+        // add all empires
+        for (const auto& empire_entry : Empires())
+            empire_ids.insert(empire_entry.first);
+        break;
+    }
+    }
+
+    // what to set visibility of?
+    std::set<int> object_ids;
+    if (!m_condition) {
+        object_ids.insert(context.effect_target->ID());
+    } else {
+        Condition::ObjectSet condition_matches;
+        m_condition->Eval(context, condition_matches);
+        for (auto& object : condition_matches) {
+            object_ids.insert(object->ID());
+        }
+    }
+
+    int source_id = INVALID_OBJECT_ID;
+    if (context.source)
+        source_id = context.source->ID();
+
+    for (int emp_id : empire_ids) {
+        if (!GetEmpire(emp_id))
+            continue;
+        for (int obj_id : object_ids) {
+            // store source object id and ValueRef to evaluate to determine
+            // what visibility level to set at time of application
+            GetUniverse().SetEffectDerivedVisibility(emp_id, obj_id, source_id, m_vis.get());
+        }
+    }
+}
+
+std::string SetVisibility::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs);
+
+    retval += DumpIndent(ntabs) + "SetVisibility affiliation = ";
+    switch (m_affiliation) {
+    case AFFIL_SELF:    retval += "TheEmpire";  break;
+    case AFFIL_ENEMY:   retval += "EnemyOf";    break;
+    case AFFIL_ALLY:    retval += "AllyOf";     break;
+    case AFFIL_ANY:     retval += "AnyEmpire";  break;
+    case AFFIL_CAN_SEE: retval += "CanSee";     break;
+    case AFFIL_HUMAN:   retval += "Human";      break;
+    default:            retval += "?";          break;
+    }
+
+    if (m_empire_id)
+        retval += " empire = " + m_empire_id->Dump(ntabs);
+
+    if (m_vis)
+        retval += " visibility = " + m_vis->Dump(ntabs);
+
+    if (m_condition)
+        retval += " condition = " + m_condition->Dump(ntabs);
+
+    retval += "\n";
+    return retval;
+}
+
+void SetVisibility::SetTopLevelContent(const std::string& content_name) {
+    if (m_vis)
+        m_vis->SetTopLevelContent(content_name);
+    if (m_empire_id)
+        m_empire_id->SetTopLevelContent(content_name);
+    if (m_condition)
+        m_condition->SetTopLevelContent(content_name);
+}
+
+unsigned int SetVisibility::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "SetVisibility");
+    CheckSums::CheckSumCombine(retval, m_vis.get());
+    CheckSums::CheckSumCombine(retval, m_empire_id);
+    CheckSums::CheckSumCombine(retval, m_affiliation);
+    CheckSums::CheckSumCombine(retval, m_condition);
+
+    TraceLogger() << "GetCheckSum(SetVisibility): retval: " << retval;
+    return retval;
+}
 
 
 ///////////////////////////////////////////////////////////
 // Conditional                                           //
 ///////////////////////////////////////////////////////////
-Conditional::Conditional(Condition::ConditionBase* target_condition,
-                         const std::vector<EffectBase*>& true_effects,
-                         const std::vector<EffectBase*>& false_effects) :
-    m_target_condition(target_condition),
-    m_true_effects(true_effects),
-    m_false_effects(false_effects)
+Conditional::Conditional(std::unique_ptr<Condition::ConditionBase>&& target_condition,
+                         std::vector<std::unique_ptr<EffectBase>>&& true_effects,
+                         std::vector<std::unique_ptr<EffectBase>>&& false_effects) :
+    m_target_condition(std::move(target_condition)),
+    m_true_effects(std::move(true_effects)),
+    m_false_effects(std::move(false_effects))
 {}
 
 void Conditional::Execute(const ScriptingContext& context) const {
     if (!context.effect_target)
         return;
+
     if (!m_target_condition || m_target_condition->Eval(context, context.effect_target)) {
-        for (std::vector<EffectBase*>::const_iterator it = m_true_effects.begin(); it != m_true_effects.end(); ++it) {
-            if (*it)
-                (*it)->Execute(context);
+        for (auto& effect : m_true_effects) {
+            if (effect)
+                effect->Execute(context);
         }
     } else {
-        for (std::vector<EffectBase*>::const_iterator it = m_false_effects.begin(); it != m_false_effects.end(); ++it) {
-            if (*it)
-                (*it)->Execute(context);
+        for (auto& effect : m_false_effects) {
+            if (effect)
+                effect->Execute(context);
         }
     }
 }
 
-std::string Conditional::Description() const {
-    std::stringstream retval;
-    retval << str(FlexibleFormat(UserString("DESC_CONDITIONAL")) % m_target_condition->Description()) + "\n";
-    return retval.str();
+void Conditional::Execute(const ScriptingContext& context, const TargetSet& targets) const {
+    if (targets.empty())
+        return;
+
+    // apply sub-condition to target set to pick which to act on with which of sub-effects
+    const Condition::ObjectSet& potential_target_objects =
+        *reinterpret_cast<const Condition::ObjectSet*>(&targets);
+
+    Condition::ObjectSet matches = potential_target_objects;
+    Condition::ObjectSet non_matches;
+    if (m_target_condition)
+        m_target_condition->Eval(context, matches, non_matches, Condition::MATCHES);
+
+    if (!matches.empty() && !m_true_effects.empty()) {
+        Effect::TargetSet& match_targets = *reinterpret_cast<Effect::TargetSet*>(&matches);
+        for (auto& effect : m_true_effects) {
+            if (effect)
+                effect->Execute(context, match_targets);
+        }
+    }
+    if (!non_matches.empty() && !m_false_effects.empty()) {
+        Effect::TargetSet& non_match_targets = *reinterpret_cast<Effect::TargetSet*>(&non_matches);
+        for (auto& effect : m_false_effects) {
+            if (effect)
+                effect->Execute(context, non_match_targets);
+        }
+    }
 }
 
-std::string Conditional::Dump() const {
-    std::string retval = "If";
+void Conditional::Execute(const ScriptingContext& context,
+                          const TargetSet& targets,
+                          AccountingMap* accounting_map,
+                          const EffectCause& effect_cause,
+                          bool only_meter_effects,
+                          bool only_appearance_effects,
+                          bool include_empire_meter_effects,
+                          bool only_generate_sitrep_effects) const
+{
+    TraceLogger(effects) << "\n\nExecute Conditional effect: \n" << Dump();
+
+    // apply sub-condition to target set to pick which to act on with which of sub-effects
+    const Condition::ObjectSet& potential_target_objects =
+        *reinterpret_cast<const Condition::ObjectSet*>(&targets);
+    Condition::ObjectSet matches = potential_target_objects;
+    Condition::ObjectSet non_matches;
     if (m_target_condition)
-        retval += " condition = " + m_target_condition->Dump();
+        m_target_condition->Eval(context, matches, non_matches,
+                                 Condition::MATCHES);
+
+    // execute true and false effects to target matches and non-matches respectively
+    if (!matches.empty() && !m_true_effects.empty()) {
+        Effect::TargetSet& match_targets =
+            *reinterpret_cast<Effect::TargetSet*>(&matches);
+        for (const auto& effect : m_true_effects) {
+            effect->Execute(context, match_targets, accounting_map,
+                            effect_cause,
+                            only_meter_effects, only_appearance_effects,
+                            include_empire_meter_effects,
+                            only_generate_sitrep_effects);
+        }
+    }
+    if (!non_matches.empty() && !m_false_effects.empty()) {
+        Effect::TargetSet& non_match_targets =
+            *reinterpret_cast<Effect::TargetSet*>(&non_matches);
+        for (const auto& effect : m_false_effects) {
+            effect->Execute(context, non_match_targets, accounting_map,
+                            effect_cause,
+                            only_meter_effects, only_appearance_effects,
+                            include_empire_meter_effects,
+                            only_generate_sitrep_effects);
+        }
+    }
+}
+
+std::string Conditional::Dump(unsigned short ntabs) const {
+    std::string retval = DumpIndent(ntabs) + "If\n";
+    if (m_target_condition) {
+        retval += DumpIndent(ntabs+1) + "condition =\n";
+        retval += m_target_condition->Dump(ntabs+2);
+    }
 
     if (m_true_effects.size() == 1) {
-        retval += DumpIndent() + "effects =\n";
-        ++g_indent;
-        retval += m_true_effects[0]->Dump();
-        --g_indent;
+        retval += DumpIndent(ntabs+1) + "effects =\n";
+        retval += m_true_effects[0]->Dump(ntabs+2);
     } else {
-        retval += DumpIndent() + "effects = [\n";
-        ++g_indent;
-        for (unsigned int i = 0; i < m_true_effects.size(); ++i) {
-            retval += m_true_effects[i]->Dump();
+        retval += DumpIndent(ntabs+1) + "effects = [\n";
+        for (auto& effect : m_true_effects) {
+            retval += effect->Dump(ntabs+2);
         }
-        --g_indent;
-        retval += DumpIndent() + "]\n";
+        retval += DumpIndent(ntabs+1) + "]\n";
     }
 
     if (m_false_effects.empty()) {
     } else if (m_false_effects.size() == 1) {
-        retval += DumpIndent() + "else =\n";
-        ++g_indent;
-        retval += m_false_effects[0]->Dump();
-        --g_indent;
+        retval += DumpIndent(ntabs+1) + "else =\n";
+        retval += m_false_effects[0]->Dump(ntabs+2);
     } else {
-        retval += DumpIndent() + "else = [\n";
-        ++g_indent;
-        for (unsigned int i = 0; i < m_false_effects.size(); ++i) {
-            retval += m_false_effects[i]->Dump();
+        retval += DumpIndent(ntabs+1) + "else = [\n";
+        for (auto& effect : m_false_effects) {
+            retval += effect->Dump(ntabs+2);
         }
-        --g_indent;
-        retval += DumpIndent() + "]\n";
+        retval += DumpIndent(ntabs+1) + "]\n";
     }
 
     return retval;
 }
 
+bool Conditional::IsMeterEffect() const {
+    for (auto& effect : m_true_effects) {
+        if (effect->IsMeterEffect())
+            return true;
+    }
+    for (auto& effect : m_false_effects) {
+        if (effect->IsMeterEffect())
+            return true;
+    }
+    return false;
+}
+
+bool Conditional::IsAppearanceEffect() const {
+    for (auto& effect : m_true_effects) {
+        if (effect->IsAppearanceEffect())
+            return true;
+    }
+    for (auto& effect : m_false_effects) {
+        if (effect->IsAppearanceEffect())
+            return true;
+    }
+    return false;
+}
+
+bool Conditional::IsSitrepEffect() const {
+    for (auto& effect : m_true_effects) {
+        if (effect->IsSitrepEffect())
+            return true;
+    }
+    for (auto& effect : m_false_effects) {
+        if (effect->IsSitrepEffect())
+            return true;
+    }
+    return false;
+}
+
 void Conditional::SetTopLevelContent(const std::string& content_name) {
     if (m_target_condition)
         m_target_condition->SetTopLevelContent(content_name);
-    for (std::vector<EffectBase*>::iterator it = m_true_effects.begin(); it != m_true_effects.end(); ++it)
-        if (*it)
-            (*it)->SetTopLevelContent(content_name);
-    for (std::vector<EffectBase*>::iterator it = m_false_effects.begin(); it != m_false_effects.end(); ++it)
-        if (*it)
-            (*it)->SetTopLevelContent(content_name);
+    for (auto& effect : m_true_effects)
+        if (effect)
+            (effect)->SetTopLevelContent(content_name);
+    for (auto& effect : m_false_effects)
+        if (effect)
+            (effect)->SetTopLevelContent(content_name);
 }
 
+unsigned int Conditional::GetCheckSum() const {
+    unsigned int retval{0};
+
+    CheckSums::CheckSumCombine(retval, "Conditional");
+    CheckSums::CheckSumCombine(retval, m_target_condition);
+    CheckSums::CheckSumCombine(retval, m_true_effects);
+    CheckSums::CheckSumCombine(retval, m_false_effects);
+
+    TraceLogger() << "GetCheckSum(Conditional): retval: " << retval;
+    return retval;
+}
+
+} // namespace Effect

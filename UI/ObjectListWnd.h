@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _ObjectListWnd_h_
 #define _ObjectListWnd_h_
 
@@ -14,10 +13,11 @@ class ObjectListWnd : public CUIWnd {
 public:
     //! \name Structors //!@{
     ObjectListWnd(const std::string& config_name = "");
+    void CompleteConstruction() override;
     //!@}
 
     /** \name Mutators */ //@{
-    virtual void    SizeMove(const GG::Pt& ul, const GG::Pt& lr);
+    void            SizeMove(const GG::Pt& ul, const GG::Pt& lr) override;
     void            Refresh();
     //!@}
 
@@ -27,11 +27,13 @@ public:
     mutable boost::signals2::signal<void ()>    ClosingSignal;
 
 private:
+    void            CloseClicked() override;
+
     void            DoLayout();
 
     void            ObjectSelectionChanged(const GG::ListBox::SelectionSet& rows);
-    void            ObjectDoubleClicked(GG::ListBox::iterator it);
-    void            ObjectRightClicked(GG::ListBox::iterator it, const GG::Pt& pt);
+    void            ObjectDoubleClicked(GG::ListBox::iterator it, const GG::Pt& pt, const GG::Flags<GG::ModKey>& modkeys);
+    void            ObjectRightClicked(GG::ListBox::iterator it, const GG::Pt& pt, const GG::Flags<GG::ModKey>& modkeys);
     int             ObjectInRow(GG::ListBox::iterator it) const;
 
     void            SetSelectedObjects(std::set<int> sel_ids);
@@ -39,11 +41,10 @@ private:
 
     void            FilterClicked();
     void            CollapseExpandClicked();
-    virtual void    CloseClicked();
 
-    ObjectListBox*              m_list_box;
-    GG::Button*                 m_filter_button;
-    GG::Button*                 m_collapse_button;
+    std::shared_ptr<ObjectListBox>  m_list_box;
+    std::shared_ptr<GG::Button>     m_filter_button;
+    std::shared_ptr<GG::Button>     m_collapse_button;
 };
 
 #endif // _ObjectListWnd_h_

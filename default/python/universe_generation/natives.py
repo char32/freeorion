@@ -1,24 +1,15 @@
+import itertools
 import random
 
 import freeorion as fo
 
 import planets
-import statistics
+import universe_statistics
+import universe_tables
+
 
 natives_for_planet_type = {}
 planet_types_for_natives = {}
-
-
-def is_too_close_to_empire_home_systems(system, home_systems):
-    """
-    Checks if a system is too close to the player home systems.
-
-    Player home systems should be at least 2 jumps away.
-    """
-    for home_system in home_systems:
-        if fo.jump_distance(system, home_system) < 2:
-            return True
-    return False
 
 
 def generate_natives(native_freq, systems, empire_home_systems):
@@ -28,20 +19,21 @@ def generate_natives(native_freq, systems, empire_home_systems):
 
     # first, calculate the chance for natives on a planet based on the native frequency that has been passed
     # get the corresponding value for the specified natives frequency from the universe tables
-    inverse_native_chance = fo.native_frequency(native_freq)
-    # as the value in the universe table is higher for a lower frequency, we have to invert it
-    # exception: a value of 0 means no natives, in this case return immediately
-    if inverse_native_chance <= 0:
+    native_chance = universe_tables.NATIVE_FREQUENCY[native_freq]
+    # a value of 0 means no natives, in this case return immediately
+    if native_chance <= 0:
         return
-    native_chance = 1.0 / float(inverse_native_chance)
 
     # compile a list of planets where natives can be placed
     # select only planets sufficiently far away from player home systems
-    native_safe_planets = []  # list of planets safe for natives
-    for candidate in systems:
-        if not is_too_close_to_empire_home_systems(candidate, empire_home_systems):
-            # this system is sufficiently far away from all player homeworlds, so add it's planets to our list
-            native_safe_planets += fo.sys_get_planets(candidate)
+    # list of planets safe for natives
+    EMPIRE_TO_NATIVE_MIN_DIST = 2
+    empire_exclusions = set(itertools.chain.from_iterable(
+        fo.systems_within_jumps_unordered(EMPIRE_TO_NATIVE_MIN_DIST, [e])
+        for e in empire_home_systems))
+    native_safe_planets = set(itertools.chain.from_iterable(
+        [fo.sys_get_planets(s) for s in systems if s not in empire_exclusions]))
+
     print "Number of planets far enough from players for natives to be allowed:", len(native_safe_planets)
     # if there are no "native safe" planets at all, we can stop here
     if not native_safe_planets:
@@ -56,9 +48,9 @@ def generate_natives(native_freq, systems, empire_home_systems):
     # for which this planet type is a good environment
     # we will need this afterwards when picking natives for a planet
     natives_for_planet_type.clear()  # just to be safe
-    natives_for_planet_type.update( {planet_type: [] for planet_type in planets.planet_types} )
+    natives_for_planet_type.update({planet_type: [] for planet_type in planets.planet_types})
     planet_types_for_natives.clear()
-    planet_types_for_natives.update( {species: set() for species in native_species} )
+    planet_types_for_natives.update({species: set() for species in native_species})
     # iterate over all native species we got
     for species in native_species:
         # check the planet environment for all planet types for this species
@@ -77,12 +69,12 @@ def generate_natives(native_freq, systems, empire_home_systems):
         if not natives_for_planet_type[planet_type]:
             # no, continue with next planet
             continue
-        statistics.potential_native_planet_summary[planet_type] += 1
+        universe_statistics.potential_native_planet_summary[planet_type] += 1
         # make a "roll" against the chance for natives to determine if we shall place natives on this planet
         if random.random() > native_chance:
             # no, continue with next planet
             continue
-        statistics.settled_native_planet_summary[planet_type] += 1
+        universe_statistics.settled_native_planet_summary[planet_type] += 1
 
         # randomly pick one of the native species available for this planet type
         natives = random.choice(natives_for_planet_type[planet_type])
@@ -105,4 +97,4 @@ def generate_natives(native_freq, systems, empire_home_systems):
         print "Added native", natives, "to planet", fo.get_name(candidate)
 
         # increase the statistics counter for this native species, so a species summary can be dumped to the log later
-        statistics.species_summary[natives] += 1
+        universe_statistics.species_summary[natives] += 1

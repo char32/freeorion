@@ -41,7 +41,7 @@ namespace {
         std::string m_name;
     };
 
-    Y TabHeightFromFont(const boost::shared_ptr<Font>& font)
+    Y TabHeightFromFont(const std::shared_ptr<Font>& font)
     { return font->Lineskip() + 10; }
 }
 
@@ -54,20 +54,19 @@ const std::size_t OverlayWnd::NO_WND = std::numeric_limits<std::size_t>::max();
 OverlayWnd::OverlayWnd(X x, Y y, X w, Y h, Flags<WndFlag> flags) :
     Wnd(x, y, w, h, flags),
     m_current_wnd_index(NO_WND)
-{ SetLayout(new Layout(X0, Y0, w, h, 1, 1)); }
+{}
+
+void OverlayWnd::CompleteConstruction()
+{ SetLayout(Wnd::Create<Layout>(X0, Y0, Width(), Height(), 1, 1)); }
 
 OverlayWnd::~OverlayWnd()
-{
-    for (std::size_t i = 0; i < m_wnds.size(); ++i) {
-        delete m_wnds[i];
-    }
-}
+{}
 
 Pt OverlayWnd::MinUsableSize() const
 {
     Pt retval;
-    for (std::size_t i = 0; i < m_wnds.size(); ++i) {
-        Pt min_usable_size = m_wnds[i]->MinUsableSize();
+    for (auto& wnd : m_wnds) {
+        Pt min_usable_size = wnd->MinUsableSize();
         retval.x = std::max(retval.x, min_usable_size.x);
         retval.y = std::max(retval.y, min_usable_size.y);
     }
@@ -80,23 +79,20 @@ bool OverlayWnd::Empty() const
 std::size_t OverlayWnd::NumWnds() const
 { return m_wnds.size(); }
 
-Wnd* OverlayWnd::CurrentWnd() const
-{ return m_current_wnd_index == NO_WND ? 0 : m_wnds[m_current_wnd_index]; }
+std::shared_ptr<Wnd> OverlayWnd::CurrentWnd() const
+{ return m_current_wnd_index == NO_WND ? nullptr : m_wnds[m_current_wnd_index]; }
 
 std::size_t OverlayWnd::CurrentWndIndex() const
 { return m_current_wnd_index; }
 
-const std::vector<Wnd*>& OverlayWnd::Wnds() const
-{ return m_wnds; }
-
-std::size_t OverlayWnd::AddWnd(Wnd* wnd)
+std::size_t OverlayWnd::AddWnd(const std::shared_ptr<Wnd>& wnd)
 {
     std::size_t retval = m_wnds.size();
     InsertWnd(m_wnds.size(), wnd);
     return retval;
 }
 
-void OverlayWnd::InsertWnd(std::size_t index, Wnd* wnd)
+void OverlayWnd::InsertWnd(std::size_t index, const std::shared_ptr<Wnd>& wnd)
 {
     m_wnds.insert(m_wnds.begin() + index, wnd);
     if (m_current_wnd_index == NO_WND)
@@ -105,10 +101,10 @@ void OverlayWnd::InsertWnd(std::size_t index, Wnd* wnd)
 
 Wnd* OverlayWnd::RemoveWnd(std::size_t index)
 {
-    Wnd* retval = 0;
+    Wnd* retval = nullptr;
     if (index < m_wnds.size()) {
-        std::vector<Wnd*>::iterator it = m_wnds.begin() + index;
-        retval = *it;
+        auto it = m_wnds.begin() + index;
+        retval = it->get();
         m_wnds.erase(it);
         if (index == m_current_wnd_index)
             m_current_wnd_index = NO_WND;
@@ -118,12 +114,13 @@ Wnd* OverlayWnd::RemoveWnd(std::size_t index)
 
 Wnd* OverlayWnd::RemoveWnd(Wnd* wnd)
 {
-    Wnd* retval = 0;
-    std::vector<Wnd*>::iterator it = std::find(m_wnds.begin(), m_wnds.end(), wnd);
+    Wnd* retval = nullptr;
+    auto it = std::find_if(m_wnds.begin(), m_wnds.end(),
+                           [&wnd](const std::shared_ptr<Wnd>& x){ return (x.get() == wnd); });
     if (it != m_wnds.end()) {
         if (it - m_wnds.begin() == static_cast<std::ptrdiff_t>(m_current_wnd_index))
             m_current_wnd_index = NO_WND;
-        retval = *it;
+        retval = it->get();
         m_wnds.erase(it);
     }
     return retval;
@@ -132,13 +129,26 @@ Wnd* OverlayWnd::RemoveWnd(Wnd* wnd)
 void OverlayWnd::SetCurrentWnd(std::size_t index)
 {
     assert(index < m_wnds.size());
-    Wnd* old_current_wnd = CurrentWnd();
+    const auto& old_current_wnd = CurrentWnd();
     m_current_wnd_index = index;
-    Wnd* current_wnd = CurrentWnd();
+    const auto& current_wnd = CurrentWnd();
+    assert(current_wnd);
     if (current_wnd != old_current_wnd) {
-        Layout* layout = GetLayout();
-        layout->Remove(old_current_wnd);
+        GG::Pt ul = old_current_wnd ? old_current_wnd->UpperLeft() : current_wnd->UpperLeft();
+        GG::Pt lr = old_current_wnd ? old_current_wnd->LowerRight() : current_wnd->LowerRight();
+        current_wnd->SizeMove(ul, lr);
+
+        auto&& layout = GetLayout();
+        layout->Remove(old_current_wnd.get());
         layout->Add(current_wnd, 0, 0);
+
+        if (old_current_wnd)
+            old_current_wnd->SizeMove(ul, lr);
+
+        // Toggle the size to force layout to relayout even though size
+        // has not changed.
+        SizeMove(UpperLeft(), LowerRight() - GG::Pt(GG::X(1), GG::Y(1)));
+        SizeMove(UpperLeft(), LowerRight() + GG::Pt(GG::X(1), GG::Y(1)));
     }
 }
 
@@ -149,21 +159,25 @@ void OverlayWnd::SetCurrentWnd(std::size_t index)
 // static(s)
 const std::size_t TabWnd::NO_WND = std::numeric_limits<std::size_t>::max();
 
-TabWnd::TabWnd(X x, Y y, X w, Y h, const boost::shared_ptr<Font>& font, Clr color,
-               Clr text_color/* = CLR_BLACK*/, TabBarStyle style/* = TAB_BAR_ATTACHED*/) :
+TabWnd::TabWnd(X x, Y y, X w, Y h, const std::shared_ptr<Font>& font, Clr color,
+               Clr text_color/* = CLR_BLACK*/) :
     Wnd(x, y, w, h, INTERACTIVE),
-    m_tab_bar(GetStyleFactory()->NewTabBar(font, color, text_color, style)),
-    m_overlay(new OverlayWnd(X0, Y0, X1, Y1))
+    m_tab_bar(GetStyleFactory()->NewTabBar(font, color, text_color)),
+    m_overlay(Wnd::Create<OverlayWnd>(X0, Y0, X1, Y1))
+{}
+
+void TabWnd::CompleteConstruction()
 {
-    Layout* layout = new Layout(X0, Y0, w, h, 2, 1);
+    auto layout = Wnd::Create<Layout>(X0, Y0, Width(), Height(), 2, 1);
     layout->SetRowStretch(1, 1.0);
     layout->Add(m_tab_bar, 0, 0);
     layout->Add(m_overlay, 1, 0);
     SetLayout(layout);
-    Connect(m_tab_bar->TabChangedSignal, boost::bind(&TabWnd::TabChanged, this, _1, true));
+    m_tab_bar->TabChangedSignal.connect(
+        boost::bind(&TabWnd::TabChanged, this, _1, true));
 
     if (INSTRUMENT_ALL_SIGNALS)
-        Connect(WndChangedSignal, TabChangedEcho("TabWnd::WndChangedSignal"));
+        TabChangedSignal.connect(TabChangedEcho("TabWnd::TabChangedSignal"));
 }
 
 Pt TabWnd::MinUsableSize() const
@@ -182,22 +196,22 @@ std::size_t TabWnd::NumWnds() const
 { return m_tab_bar->NumTabs(); }
 
 Wnd* TabWnd::CurrentWnd() const
-{ return m_overlay->CurrentWnd(); }
+{ return m_overlay->CurrentWnd().get(); }
 
 std::size_t TabWnd::CurrentWndIndex() const
 { return m_tab_bar->CurrentTabIndex(); }
 
-std::size_t TabWnd::AddWnd(Wnd* wnd, const std::string& name)
+std::size_t TabWnd::AddWnd(const std::shared_ptr<Wnd>& wnd, const std::string& name)
 {
     std::size_t retval = m_named_wnds.size();
     InsertWnd(m_named_wnds.size(), wnd, name);
     return retval;
 }
 
-void TabWnd::InsertWnd(std::size_t index, Wnd* wnd, const std::string& name)
+void TabWnd::InsertWnd(std::size_t index, const std::shared_ptr<Wnd>& wnd, const std::string& name)
 {
     std::size_t old_tab = m_tab_bar->CurrentTabIndex();
-    m_named_wnds[name] = wnd;
+    m_named_wnds[name] = wnd.get();
     m_overlay->InsertWnd(index, wnd);
     m_tab_bar->InsertTab(index, name);
     GetLayout()->SetMinimumRowHeight(0, m_tab_bar->MinUsableSize().y + 2 * 5);
@@ -226,12 +240,6 @@ void TabWnd::SetCurrentWnd(std::size_t index)
     TabChanged(index, false);
 }
 
-const TabBar* TabWnd::GetTabBar() const
-{ return m_tab_bar; }
-
-const OverlayWnd* TabWnd::GetOverlayWnd() const
-{ return m_overlay; }
-
 const std::map<std::string, Wnd*>& TabWnd::WndNames() const
 { return m_named_wnds; }
 
@@ -240,7 +248,7 @@ void TabWnd::TabChanged(std::size_t index, bool signal)
     assert(index < m_named_wnds.size());
     m_overlay->SetCurrentWnd(index);
     if (signal)
-        WndChangedSignal(index);
+        TabChangedSignal(index);
 }
 
 
@@ -250,24 +258,25 @@ void TabWnd::TabChanged(std::size_t index, bool signal)
 // static(s)
 const std::size_t TabBar::NO_TAB = TabWnd::NO_WND;
 const X TabBar::BUTTON_WIDTH(10);
-
-TabBar::TabBar(const boost::shared_ptr<Font>& font, Clr color, Clr text_color/* = CLR_BLACK*/,
-               TabBarStyle style/* = TAB_BAR_ATTACHED*/, Flags<WndFlag> flags/* = INTERACTIVE*/) :
+TabBar::TabBar(const std::shared_ptr<Font>& font, Clr color, Clr text_color/* = CLR_BLACK*/,
+               Flags<WndFlag> flags/* = INTERACTIVE*/) :
     Control(X0, Y0, X1, TabHeightFromFont(font), flags),
-    m_tabs(0),
+    m_tabs(nullptr),
     m_font(font),
-    m_left_button(0),
-    m_right_button(0),
-    m_left_right_button_layout(new Layout(X0, Y0, X1, TabHeightFromFont(font), 1, 3)),
+    m_left_button(nullptr),
+    m_right_button(nullptr),
+    m_left_right_button_layout(Wnd::Create<Layout>(X0, Y0, X1, TabHeightFromFont(font), 1, 3)),
     m_text_color(text_color),
-    m_style(style),
     m_first_tab_shown(0)
 {
     SetColor(color);
+}
 
+void TabBar::CompleteConstruction()
+{
     SetChildClippingMode(ClipToClient);
 
-    boost::shared_ptr<StyleFactory> style_factory = GetStyleFactory();
+    const auto& style_factory = GetStyleFactory();
 
     m_tabs = style_factory->NewRadioButtonGroup(HORIZONTAL);
     m_tabs->ExpandButtons(true);
@@ -290,12 +299,15 @@ TabBar::TabBar(const boost::shared_ptr<Font>& font, Clr color, Clr text_color/* 
     AttachChild(m_tabs);
     AttachChild(m_left_right_button_layout);
 
-    Connect(m_tabs->ButtonChangedSignal, boost::bind(&TabBar::TabChanged, this, _1, true));
-    Connect(m_left_button->LeftClickedSignal, &TabBar::LeftClicked, this);
-    Connect(m_right_button->LeftClickedSignal, &TabBar::RightClicked, this);
+    m_tabs->ButtonChangedSignal.connect(
+        boost::bind(&TabBar::TabChanged, this, _1, true));
+    m_left_button->LeftPressedSignal.connect(
+        boost::bind(&TabBar::LeftClicked, this));
+    m_right_button->LeftPressedSignal.connect(
+        boost::bind(&TabBar::RightClicked, this));
 
     if (INSTRUMENT_ALL_SIGNALS)
-        Connect(TabChangedSignal, TabChangedEcho("TabBar::TabChangedSignal"));
+        TabChangedSignal.connect(TabChangedEcho("TabBar::TabChangedSignal"));
 
     DoLayout();
 }
@@ -303,8 +315,8 @@ TabBar::TabBar(const boost::shared_ptr<Font>& font, Clr color, Clr text_color/* 
 Pt TabBar::MinUsableSize() const
 {
     Y y(0);
-    for (std::size_t i = 0; i < m_tab_buttons.size(); ++i) {
-        Y button_min_y = m_tab_buttons[i]->MinUsableSize().y;
+    for (auto& button : m_tab_buttons) {
+        Y button_min_y = button->MinUsableSize().y;
         if (y < button_min_y)
             y = button_min_y;
     }
@@ -348,6 +360,7 @@ void TabBar::DoLayout()
 {
     m_tabs->Resize(Pt(m_tabs->Size().x, LowerRight().y - UpperLeft().y));
     m_left_right_button_layout->SizeMove(Pt(), LowerRight() - UpperLeft());
+    RecalcLeftRightButton();
 }
 
 void TabBar::Render()
@@ -363,24 +376,13 @@ std::size_t TabBar::AddTab(const std::string& name)
 void TabBar::InsertTab(std::size_t index, const std::string& name)
 {
     assert(index <= m_tab_buttons.size());
-    boost::shared_ptr<StyleFactory> style_factory = GetStyleFactory();
-    StateButton* button = style_factory->NewTabBarTab(name,
-                                                      m_font, FORMAT_CENTER, Color(),
-                                                      m_text_color, CLR_ZERO,
-                                                      m_style == TAB_BAR_ATTACHED ?
-                                                      SBSTYLE_3D_TOP_ATTACHED_TAB :
-                                                      SBSTYLE_3D_TOP_DETACHED_TAB);
-    button->InstallEventFilter(this);
+    const auto& style_factory = GetStyleFactory();
+    auto button = style_factory->NewTabBarTab(
+        name, m_font, FORMAT_CENTER, Color(), m_text_color);
+    button->InstallEventFilter(shared_from_this());
     m_tab_buttons.insert(m_tab_buttons.begin() + index, button);
     m_tabs->InsertButton(index, m_tab_buttons[index]);
-    if (Width() < m_tabs->Width()) {
-        m_left_right_button_layout->Show();
-        m_left_button->Disable(m_first_tab_shown == 0);
-        X right_side = m_left_right_button_layout->Visible() ?
-            m_left_button->Left() :
-            Right();
-        m_right_button->Disable(m_tab_buttons.back()->Right() <= right_side);
-    }
+    RecalcLeftRightButton();
     if (m_tabs->CheckedButton() == RadioButtonGroup::NO_BUTTON)
         SetCurrentTab(0);
 }
@@ -396,14 +398,25 @@ void TabBar::RemoveTab(const std::string& name)
     }
     assert(index < m_tab_buttons.size());
 
-    m_tab_buttons[index]->RemoveEventFilter(this);
-    m_tabs->RemoveButton(m_tab_buttons[index]);
-    delete m_tab_buttons[index];
+    m_tab_buttons[index]->RemoveEventFilter(shared_from_this());
+    m_tabs->RemoveButton(m_tab_buttons[index].get());
     m_tab_buttons.erase(m_tab_buttons.begin() + index);
-    if (m_tabs->Width() <= Width())
-        m_left_right_button_layout->Hide();
+    RecalcLeftRightButton();
     if (m_tabs->CheckedButton() == RadioButtonGroup::NO_BUTTON && !m_tab_buttons.empty())
         m_tabs->SetCheck(0);
+}
+
+void TabBar::RecalcLeftRightButton()
+{
+    if (m_left_button)
+        m_left_button->Disable(m_first_tab_shown == 0);
+    if (m_left_button && m_right_button && m_tab_buttons.size())
+        m_right_button->Disable(m_tab_buttons.back()->Right() <= m_left_button->Left());
+    if (Width() < m_tabs->Width() && !m_left_right_button_layout->Visible()) {
+        m_left_right_button_layout->Show();
+    }
+    if (m_tabs->Width() <= Width() && m_left_right_button_layout->Visible())
+        m_left_right_button_layout->Hide();
 }
 
 void TabBar::SetCurrentTab(std::size_t index)
@@ -413,10 +426,10 @@ void TabBar::SetCurrentTab(std::size_t index)
 }
 
 const Button* TabBar::LeftButton() const
-{ return m_left_button; }
+{ return m_left_button.get(); }
 
 const Button* TabBar::RightButton() const
-{ return m_right_button; }
+{ return m_right_button.get(); }
 
 void TabBar::DistinguishCurrentTab(const std::vector<StateButton*>& tab_buttons)
 { RaiseCurrentTabButton(); }
@@ -425,7 +438,10 @@ void TabBar::TabChanged(std::size_t index, bool signal)
 {
     if (index != RadioButtonGroup::NO_BUTTON) {
         BringTabIntoView(index);
-        DistinguishCurrentTab(m_tab_buttons);
+        std::vector<StateButton*> tab_buttons(m_tab_buttons.size());
+        std::transform(m_tab_buttons.begin(), m_tab_buttons.end(), tab_buttons.begin(),
+                       [](const std::shared_ptr<StateButton>& x){ return x.get(); });
+        DistinguishCurrentTab(tab_buttons);
         if (signal)
             TabChangedSignal(index);
     }
@@ -434,7 +450,9 @@ void TabBar::TabChanged(std::size_t index, bool signal)
 void TabBar::LeftClicked()
 {
     assert(0 < m_first_tab_shown);
-    m_tabs->OffsetMove(Pt(m_tab_buttons[m_first_tab_shown]->Left() - m_tab_buttons[m_first_tab_shown - 1]->Left(), Y0));
+    m_tabs->OffsetMove(Pt(m_tab_buttons[m_first_tab_shown]->Left() -
+                            m_tab_buttons[m_first_tab_shown - 1]->Left(),
+                          Y0));
     --m_first_tab_shown;
     m_left_button->Disable(m_first_tab_shown == 0);
     m_right_button->Disable(false);
@@ -443,7 +461,9 @@ void TabBar::LeftClicked()
 void TabBar::RightClicked()
 {
     assert(m_first_tab_shown < m_tab_buttons.size() - 1);
-    m_tabs->OffsetMove(Pt(m_tab_buttons[m_first_tab_shown]->Left() - m_tab_buttons[m_first_tab_shown + 1]->Left(), Y0));
+    m_tabs->OffsetMove(Pt(m_tab_buttons[m_first_tab_shown]->Left() -
+                            m_tab_buttons[m_first_tab_shown + 1]->Left(),
+                          Y0));
     ++m_first_tab_shown;
     X right_side = m_left_right_button_layout->Visible() ?
         m_left_button->Left() :
@@ -479,7 +499,7 @@ bool TabBar::EventFilter(Wnd* w, const WndEvent& event)
 {
     if (event.Type() == WndEvent::LButtonDown ||
         event.Type() == WndEvent::RButtonDown)
-    { MoveChildUp(m_left_right_button_layout); }
+    { MoveChildUp(m_left_right_button_layout.get()); }
     return false;
 }
 

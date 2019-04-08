@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _About_h_
 #define _About_h_
 
@@ -6,36 +5,30 @@
 #include "CUIWnd.h"
 
 //! This is a screen showing license and vision
-class About : public CUIWnd {
+class About final : public CUIWnd {
 public:
-//! \name Structors
-//!@{
+    //! \name Structors
+    //!@{
     About();
-    ~About();
-//!@}
+    //!@}
+    void CompleteConstruction() override;
 
-//! \name Mutators
-//!@{
-    virtual void KeyPress (GG::Key key, boost::uint32_t key_code_point, GG::Flags<GG::ModKey> mod_keys);
-//!@}
+    //! \name Mutators
+    //!@{
+    void KeyPress(GG::Key key, std::uint32_t key_code_point, GG::Flags<GG::ModKey> mod_keys) override;
+    //!@}
 
-//! \name Event Handlers
-//!@{
-    void OnDone();      //!< when 'Done' button is pressed
-    void OnLicense();   //!< when 'License' button is pressed
-    void OnVision();    //!< when 'Vision' button is pressed
-//!@}
+    void ShowLicense();
+    void ShowVision();
 
 private:
     void DoLayout();
 
-//! \name Controls
-//!@{
-    GG::Button*     m_done_btn;     //!< Done button
-    GG::Button*     m_license;      //!< License button
-    GG::Button*     m_vision;       //!< Vision button
-    GG::MultiEdit*  m_info;         //!< Displays the license or vision information
-    std::string     m_license_str;  //!< String containing the copyright license
+    std::shared_ptr<GG::Button>     m_done;         //!< Done button
+    std::shared_ptr<GG::Button>     m_license;      //!< License button
+    std::shared_ptr<GG::Button>     m_vision;       //!< Vision button
+    std::shared_ptr<GG::MultiEdit>  m_info;         //!< Displays the license or vision information
+    std::string                     m_license_str;  //!< String containing the copyright license
 };
 
 #endif // _About_h_

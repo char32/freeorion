@@ -1,33 +1,33 @@
 Polski
 
-#This is the Polish String Table file for FreeOrion
+# This is the Polish String Table file for FreeOrion
+#
+# Translated by: Łukasz "Cyber Killer" Korpalski http://digital.dharkness.info
+# Drop a line to cyber_killer at jabster.pl (email or xmpp) if this file needs urgent updating or there are errors in the translation
+# Translated by: Wojciech "Feagorn" Moch (feagorn at gmail point com)
+#
+# Notes: to avoid potential conflict with functional keys in other files, do not
+# make any stringtable keys beginning with "FUNCTIONAL_".
+# New Sitreps priorities should be added to
+# `default/customizations/common_user_customizations.txt`.
 
-#Translated by: Łukasz "Cyber Killer" Korpalski http://digital.dharkness.info
-#Drop a line to cyber_killer at jabster.pl (email or xmpp) if this file needs urgent updating or there are errors in the translation
-#Translated by: Wojciech "Feagorn" Moch (feagorn at gmail point com)
+# semi-randomly collected characters to force font code page loading
+# 肛門オーガズム
+# åřžßąłżęЗыдШит
+# 를와ẵừổ
+# جامعة
+# یای مجهو
 
-#Translators note: this translation assumes that the player is not a complete idiot and can understand simple, game-related English acronyms eg: FPS.
 
-#################
-# Common        #
-#################
-
-#Anyone can use these for basic buttons
-
-BROWSE_BTN
-Przeglądaj...
+##
+## Common phrases
+##
 
 CANCEL
 Anuluj
 
 DONE
 Gotowe
-
-CLOSE
-Zamknij
-
-LOAD
-Załaduj
 
 SAVE
 Zapisz
@@ -37,9 +37,6 @@ Otwórz
 
 OR
 lub
-
-AND
-i
 
 YES
 Tak
@@ -62,17 +59,15 @@ Wprowadź nową nazwę
 ERROR
 BŁĄD
 
-CHAT_WHISPER
-szept
-
-# used to generate names for new fleets when they are created
+# Name for a newly created general purpose fleet.
+# %1% represents a unique number.
 NEW_FLEET_NAME
 Nowa flota %1%
 
+# Name for a newly created general purpose fleet when no uniqe number could be
+# created.
 NEW_FLEET_NAME_NO_NUMBER
 Nowa flota
-
-# used to generate name for effect-created planets. %1% is the system name.
 
 NOT_APPLICABLE
 N.D.
@@ -83,9 +78,35 @@ Bombowiec
 INTERCEPTOR
 Myśliwiec przechwytujący
 
-##########################
-# Status Update Messages #
-##########################
+
+##
+## Major errors
+##
+
+
+##
+## Predefined Ship Designs (located in default/scripting/ship_designs/)
+##
+
+
+##
+## Monsters
+##
+
+
+##
+## Fields
+##
+
+
+##
+## Predefined starting fleets
+##
+
+
+##
+## Status update messages
+##
 
 SERVER_WONT_START
 Nie można uruchomić serwera.
@@ -96,27 +117,13 @@ Serwer nie odpowiada.
 SERVER_LOST
 Utracono połączenie z serwerem.
 
-SERVER_GAME_END
-Serwer przesłał wiadomość o zakończeniu gry. Pa pa.
-
 PLAYER_DISCONNECTED
 Gracz %1% utracił połączenie z serwerem.
 
-PLAYER_DEFEATED
-Zostałeś pokonany.
 
-EMPIRE_DEFEATED
-Imperium %1% już nie istnieje.
-
-UNKNOWN_EMPIRE
-Nieznane imperium
-
-LAST_OPPONENT_DEFEATED_VICTORY
-Twój ostatni przeciwnik został pokonany. Zwycięstwo!
-
-######################################
-# Command Line and OptionsDB Options #
-######################################
+##
+## Command-line and options database entries
+##
 
 COMMAND_LINE_USAGE
 '''Sposób użycia: '''
@@ -136,12 +143,6 @@ Wybiera ścieżkę dźwiękową odtwarzaną w tle.
 OPTIONS_DB_FULLSCREEN
 Uruchamia grę na pełnym ekranie.
 
-OPTIONS_DB_UI_CHAT_HIDE_INTERVAL
-Po tym czasie, w sekundach, okno rozmowy w trybie wielu graczy zniknie jeśli nic nowego nie będzie napisane. Wartość 0 oznacza, że okno nigdy nie zniknie.
-
-OPTIONS_DB_UI_CHAT_EDIT_HISTORY
-Liczba wiadomości przechowywanych w oknie historii rozmowy.
-
 OPTIONS_DB_GALAXY_MAP_GAS
 Rysowanie substnacji gazowych wokół systemów planetarnych w celu nadania kształtu galktyce. W starszych systemach może spowolnić rysowanie.
 
@@ -150,9 +151,6 @@ Rysowanie pól gwiazd wokół systemów planetarnych. W starszych systemach moż
 
 OPTIONS_DB_GALAXY_MAP_SCALE_LINE
 Pokaż linię skali dla odległości wszechświata na mapie galaktyki.
-
-OPTIONS_DB_OPTIMIZED_SYSTEM_RENDERING
-Do rysowania systemów planetarnych na pamie galaktyki używa funkcji OpenGL 1.5. Na starszych kartach graficznych może powodować kłopoty.
 
 OPTIONS_DB_STARLANE_THICKNESS
 Określa szerokość (w pikselach) rysowanych szlaków gwiezdnych.
@@ -190,9 +188,6 @@ Ustawia poziomą rozdzielczość (szerokość) okna aplikacji.
 OPTIONS_DB_APP_HEIGHT
 Ustawia pionową rozdzielczość (wysokość) okna aplikacji.
 
-OPTIONS_DB_COLOR_DEPTH
-Ustawia głębię kolorów ekranu, w bitach na piksel.
-
 OPTIONS_DB_SHOW_FPS
 Przełącza wyświetlanie ilości klatek na sekundę (FPS).
 
@@ -201,9 +196,6 @@ Włącza i wyłącza ograniczenie liczby klatek na sekundę. Wartość ogranicze
 
 OPTIONS_DB_MAX_FPS
 Ustala ograniczenie liczby klatek na sekundę. Ograniczenie to włączaje jest w opcji "Limit FPS".
-
-OPTIONS_DB_UI_SOUND_ENABLED
-Włącza i wyłącza dźwięki w interfejsie użytkownika.
 
 OPTIONS_DB_UI_SOUND_VOLUME
 Głośność (od 0 do 255) z jaką odtwarzane będą dźwięki w interfejsie użytkownika.
@@ -261,12 +253,6 @@ Ustala plik czcionki.
 
 OPTIONS_DB_UI_FONT_BOLD
 Ustala plik pogrubionej czcionki.
-
-OPTIONS_DB_UI_FONT_ITALIC
-Ustala plik pochylonej czcionki.
-
-OPTIONS_DB_UI_FONT_BOLD_ITALIC
-Ustala plik pogrubionej i pochylonej czcionki.
 
 OPTIONS_DB_UI_FONT_SIZE
 Ustala wielkość czcionki.
@@ -430,33 +416,16 @@ Ustala, którego poziomu lub wyższego wiadomości będą logowane (poziomy w ko
 OPTIONS_DB_STRINGTABLE_FILENAME
 Ustala nazwę pliku językowego.
 
-OPTIONS_DB_AUTOSAVE_SINGLE_PLAYER
-Jeśli włączone, gra będzie automatycznie zapisywana podczas gry jednoosobowej.
-
-OPTIONS_DB_AUTOSAVE_MULTIPLAYER
-Jeśli włączone, gra będzie automatycznie zapisywana podczas gry wieloosobowej.
-
 OPTIONS_DB_AUTOSAVE_TURNS
 Ustala ilość tur, które powinny minąć pomiędzy autozapisami gry.
 
 OPTIONS_DB_MUSIC_VOLUME
 Głośność odtwarzania muzyki (0 do 255).
 
-OPTIONS_DB_COMBAT_ENABLE_GLOW
-Przełącza efekty poświaty.
 
-OPTIONS_DB_COMBAT_ENABLE_SKYBOX
-Przełącza obraz nieba w tle.
-
-OPTIONS_DB_COMBAT_ENABLE_LENS_FLARE
-Przełacza efekty blasku soczewki.
-
-OPTIONS_DB_COMBAT_FILLED_SELECTION
-Używa wypełnionego efektu, w przeciwieństwie do efektu obramowania, na zaznaczonych obiektach.
-
-#################
-# File Dialog   #
-#################
+##
+## File dialog
+##
 
 FILE_DLG_FILES
 Plik(i):
@@ -464,18 +433,10 @@ Plik(i):
 FILE_DLG_FILE_TYPES
 Typ(y):
 
-FILE_DLG_MALFORMED_FILENAME
-Nieprawidłowa nazwa pliku.
-
 FILE_DLG_OVERWRITE_PROMPT
 '''%1% już istnieje.
 
 Nadpisać?'''
-
-FILE_DLG_INVALID_FILENAME
-'''"%1%"
-
-nie jest prawidłową nazwą pliku.'''
 
 FILE_DLG_FILENAME_IS_A_DIRECTORY
 '''"%1%"
@@ -490,9 +451,10 @@ nie istnieje.'''
 FILE_DLG_DEVICE_IS_NOT_READY
 Urządzenie nie jest gotowe.
 
-#################
-# Color Dialog  #
-#################
+
+##
+## Color selection dialog
+##
 
 COLOR_DLG_NEW
 Nowy
@@ -500,16 +462,13 @@ Nowy
 COLOR_DLG_OLD
 Stary
 
-#################
-# Intro Screen  #
-#################
 
-#Window title####
+##
+## Intro screen
+##
 
 INTRO_WINDOW_TITLE
 FreeOrion - Menu główne
-
-#Button names####
 
 INTRO_BTN_SINGLE_PLAYER
 Pojedynczy gracz
@@ -535,24 +494,16 @@ Twórcy
 INTRO_BTN_EXIT
 Wyjście
 
-#Error Messages####
-
 ERR_CONNECT_TIMED_OUT
 Przekroczono czas łączenia z serwerem.
 
-ERR_VERSION_MISMATCH
-Nie można połączyć się z serwerem, ponieważ klient używa innej wersji poniższych plików ustawień lub źródłowych:
 
-########################
-# Server Setup Screen  #
-########################
-
-#Window title####
+##
+## Server Setup Screen
+##
 
 SCONNECT_WINDOW_TITLE
 Połączenie z serwerem
-
-#Static labels####
 
 LAN_GAME_LABEL
 Gra w sieci LAN:
@@ -563,8 +514,6 @@ Gra w sieci Internet:
 PLAYER_NAME_LABEL
 Nazwa gracza
 
-#Button names####
-
 HOST_GAME_BN
 Utwórz nową grę
 
@@ -574,15 +523,13 @@ Dołącz do gry
 REFRESH_LIST_BN
 Odśwież listę
 
-########################
-# Multiplayer Lobby    #
-########################
+
+##
+## Multiplayer lobby
+##
 
 MPLOBBY_WINDOW_TITLE
 Ustawienia trybu wielu graczy
-
-MPLOBBY_HOST_ABORTED_GAME
-Gracz tworzący grę przerwał proces jej konfiguracji.
 
 MULTIPLAYER_GAME_START_CONDITIONS
 Wymagaj unikalnych nazw i kolorów imperiów
@@ -596,18 +543,13 @@ LOAD_GAME_BN
 START_GAME_BN
 Uruchom grę
 
-########################
-# Galaxy Setup Screen  #
-########################
 
-#Window title####
+##
+## Galaxy Setup Screen
+##
 
 GSETUP_WINDOW_TITLE
 Ustawienia galaktyki
-
-#Strings
-GSETUP_GRAPHICS_FILES
-Pliki graficzne
 
 GSETUP_EMPIRE_NAME
 Nazwa imperium
@@ -618,60 +560,80 @@ Kolor imperium
 GSETUP_NUMBER_AIS
 Liczba graczy komputerowych
 
-#Drop-down list labels and choices####
-
 GSETUP_STARS
 Liczba gwaizd
+
 GSETUP_SHAPE
 Kształt galaktyki
+
 GSETUP_AGE
 Wiek galaktyki
+
 GSETUP_STARLANE_FREQ
 Częstość szkalów gwiezdnych
+
 GSETUP_PLANET_DENSITY
 Gęstość występowania planet
+
 GSETUP_SPECIALS_FREQ
 Częstość występowania wyjątków
 
+# A galaxy shape to select when generating a universe.
 GSETUP_2ARM
 Spiralna dwuramienna
+
+# A galaxy shape to select when generating a universe.
 GSETUP_3ARM
 Spiralna trójramienna
+
+# A galaxy shape to select when generating a universe.
 GSETUP_4ARM
 Spiralna czteroramienna
+
+# A galaxy shape to select when generating a universe.
 GSETUP_CLUSTER
 Klaster
+
+# A galaxy shape to select when generating a universe.
 GSETUP_ELLIPTICAL
 Eliptyczna
+
+# A galaxy shape to select when generating a universe.
 GSETUP_RING
 Pierścieniowa
 
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_NONE
 Brak
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_LOW
 Niska
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_MEDIUM
 Średnia
+
+# Frequency value of starlanes, planets, specials, monsters and native species.
 GSETUP_HIGH
 Duża
 
+# A galaxy age to select when generating a universe.
 GSETUP_YOUNG
 Młoda
+
+# A galaxy age to select when generating a universe.
 GSETUP_MATURE
 Dojrzała
+
+# A galaxy age to select when generating a universe.
 GSETUP_ANCIENT
 Prastara
 
-#Error messages####
 
-GSETUP_ERR_NOEXIST
-nie istnieje.
-
-###########################
-# About Dialog            #
-###########################
-
-#License button text####
+##
+## About dialog
+##
 
 LICENSE
 Licencja
@@ -679,18 +641,16 @@ Licencja
 ABOUT_WINDOW_TITLE
 O FreeOrion
 
-CREDITS
-Podziękowania
-
 VISION
 Wizja
 
 FREEORION_VISION
 FreeOrion jest grą o otwartym kodzie źródłowym bazującą na grze Master of Orion. Jest to turowa gra strategiczna zbudowana w oparciu o klasyczny model '4X' zawierająca elementy rozwoju narodów podobne do znanych z gry Europa Universalis 2 oraz złożony mechanizm walki taktycznej. Przy modułowości projektu, model open-source pozwala na duży stopień personalizacji silnika gry i elementów historii przez społeczność. Ekipa FreeOriona ma na celu skonstruowanie żywego, oddychającego wszechświata w myśl modelu wielkiej kampanii.
 
-###########################
-# Game Menu               #
-###########################
+
+##
+## In-game menu
+##
 
 GAME_MENU_SAVE
 Zapisz grę
@@ -704,20 +664,24 @@ Zrezygnuj
 GAME_MENU_SAVE_FILES
 Pliki zapisanych gier
 
-###########################
-# Game Options            #
-###########################
+
+##
+## Save game dialog
+##
+
+
+##
+## Game options
+##
 
 OPTIONS_TITLE
 Opcje
 
-OPTIONS_MULTIPLAYER
-Mulitplayer
+##
+## Main map window
+##
 
-#################
-# Main Map      #
-#################
-
+# %1% current turn number.
 MAP_BTN_TURN_UPDATE
 Kolejka nr %1%
 
@@ -733,60 +697,220 @@ Produkcja
 MAP_BTN_DESIGN
 Projektowanie
 
-#################
-# SidePanel     #
-#################
 
-SIDE_PANEL
-Panel boczny
-
-SP_SYSTEM_PRODUCTION
-Produkcja w systemie
+##
+## Side panel/System information
+##
 
 INDUSTRY_CONSUMPTION
 Koncumpcja produkcji przemysłowej
+
 RESEARCH_CONSUMPTION
 Koncumpcja badań naukowych
+
 TRADE_CONSUMPTION
 Skuteczność handlu
 
-INTERSYSTEM_EXCHANGE_TOOLTIP
-Wymiana międzysystemowa
 IMPORT_EXPORT_TOOLTIP
 Import / Eksport
+
 RESOURCE_IMPORT
 Importowanie
+
 RESOURCE_EXPORT
 Dostępne do eksportowania
 
-##Planet Panel#############
+
+##
+## Side panel/Planet panel
+##
 
 PLANET_PANEL
 Panel planety
-PL_ASTEROID_BELT
-Pas asteroidów
-PL_UNINHABITED
-Niezamieszkała
-PL_SIZE
-Rozmiar
+
+# %1% size of the population this planet is colonized with.
+# %2% maximum population this planet can support.
 PL_COLONIZE
 Kolonizuj
 
-## Buildings Panel##########
 
-BP_INCOMPLETE_BUILDING_TOOLTIP
-'''%1% (niedokończone)
+##
+## Side panel/Resources panel
+##
 
-%2%'''
 
-## General Tooltips#########
+##
+## Side panel/Specials panel
+##
+
+
+##
+## Side panel/Buildings panel
+##
+
+
+##
+## General tooltips
+##
 
 TT_CHANGE
 Zmień
 
-#############################################################
-####               T E C H   T H E O R I E S             ####
-#############################################################
+
+##
+## Fleet window
+##
+
+
+##
+## Moderator
+##
+
+
+##
+## Diplomacy
+##
+
+
+##
+## TechTreeWnd
+##
+
+
+##
+## Production info panel
+##
+
+
+##
+## Research window
+##
+
+
+##
+## Build selector window
+##
+
+
+##
+## Production window
+##
+
+
+##
+## Design window
+##
+
+
+##
+## Statistics
+##
+
+
+##
+## Encyclopedia
+##
+
+
+##
+## Combat report
+##
+
+
+##
+## Encyclopedia article categories and short descriptions
+##
+
+
+##
+## Encyclopedia articles
+##
+
+
+##
+## Guides
+##
+
+
+##
+## Turn progress
+##
+
+
+##
+## Messages panel
+##
+
+
+##
+## Players list
+##
+
+
+##
+## Objects window
+##
+
+
+##
+## Objects columns
+##
+
+
+##
+## Filters dialog
+##
+
+
+##
+## Situation report
+##
+## Format: Ideally always start with Location: with ship/fleet names near the end.
+
+
+##
+## Victory/defeat
+##
+
+
+##
+## Random beginner hints
+##
+
+
+##
+## Species
+##
+
+
+##
+## Specials
+##
+
+
+##
+## Enumeration values
+##
+
+
+##
+## FOCS value references, effects & condition descriptions
+##
+
+
+##
+## FOCS condition descriptions
+##
+
+
+##
+## Technology categories
+##
+
+
+##
+## Technology theories
+##
 
 LRN_PHYS_BRAIN_DESC
 Struktury w mózgu i ich funkcje są ściśle określone. Procesy myślenia i pamięci okazują się być natury zarówno elektrochemicznej jak i kwantowej. Zrozumienie tych zjawisk pozwala na zintensyfikowanie pracy mózgu i osiągnięcie nowych granic wyobraźni i twórczości.
@@ -812,9 +936,31 @@ Mechanika czasu
 LRN_TIME_MECH_DESC
 Czym jest "teraz", "przyszłość", "przeszłość"? Paradoks bliźniąt w szczególnej teorii względności, teorii lub tunele czasoprzestrzenne sugerują wczesną formę "podróży w czasie". Bezpośrednie manipulowanie strumienia czasoprzestrzeni może być w pewnych warunkach wykorzystane i zwielokrotnione dając poczucie manipulacji strumieniem czasu. Co prawda nie można zmieniać przeszłości wszechświata który postrzegamy. Można jednak skrócić wieki lub wydłużyć chwilę na dowolną długość, będąc ograniczonym tylko przez dostęp do surowców, lub naszą cierpliwość ...
 
-#############################################################
-####                  B U I L D I N G S                  ####
-#############################################################
+
+##
+## Technology application
+##
+
+SHP_DEUTERIUM_TANK
+Zbiornik deuterium
+
+SHP_DEUTERIUM_TANK_DESC
+Nieznacznie zwiększa zasięg okrętu powiększając jego zasoby paliwa.
+
+SHP_ANTIMATTER_TANK
+Zbiornik antymaterii
+
+SHP_ANTIMATTER_TANK_DESC
+Zwiększa zasięg okrętu powiększając jego zasoby paliwa.
+
+##
+## Technology refinement
+##
+
+
+##
+## Buildings
+##
 
 BLD_OBSERVATORY
 Obserwatorium
@@ -825,9 +971,15 @@ BLD_OBSERVATORY_DESC
 Dodaje +10 do współczynnika Wykrywanie na wszystkich zaprzyjaźnionych planetach znajdujących się w odległości nie większej niż 200.
 Na planecie, na której wybudowano obserwatorium współczynnik Ukrywanie zmniejsza się o 10.'''
 
-#############################################################
-####                 S H I P   P A R T S                 ####
-#############################################################
+
+##
+## Hull and ship part description templates
+##
+
+
+##
+## Ship parts
+##
 
 SR_ION_CANNON
 Działo jonowe
@@ -846,18 +998,6 @@ Radar aktywny
 
 DT_DETECTOR_2_DESC
 Średnia skuteczność wykrywania, niestety bardzo ułatwia też wykrycie okręty, na którym jest zamontowany.
-
-FU_DEUTERIUM_TANK
-Zbiornik deuterium
-
-FU_DEUTERIUM_TANK_DESC
-Nieznacznie zwiększa zasięg okrętu powiększając jego zasoby paliwa. Masywny i wrażliwy na ogień przeciwnika.
-
-FU_ANTIMATTER_TANK
-Zbiornik antymaterii
-
-FU_ANTIMATTER_TANK_DESC
-Zwiększa zasięg okrętu powiększając jego zasoby paliwa. Zwarty, o niewielkiem masie.
 
 ST_CLOAK_1
 Tłumik elektromagnetyczny
@@ -889,3 +1029,60 @@ Krioniczna kapsuła kolonizacyjna.
 CO_SUSPEND_ANIM_POD_DESC
 W trakcie podróży kolonizacyjnej osadnicy utrzymywani są w stanie obniżonego metabolizmu, dzięki czemu nie ma konieczności ich żywienia, a to z kolei zwiększa liczbę osadników przenoszonych przez jeden okręt.
 
+
+##
+## Ship hulls
+##
+
+
+##
+## Buildings macros
+##
+
+
+##
+## Tech macros
+##
+
+
+##
+## Growth macros
+##
+
+
+##
+## Species picks
+##
+
+
+##
+## Accounting labels
+##
+
+
+##
+## Tags
+##
+
+
+##
+## AI strings
+##
+
+
+##
+## AI diplomacy strings and lists
+##
+
+
+##
+## Hotkey names and descriptions
+##
+
+
+##
+## Name lists
+##
+
+#include "../content_specific_parameters.txt"
+#include "../customizations/common_user_customizations.txt"

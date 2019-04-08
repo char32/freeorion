@@ -1,10 +1,11 @@
-#include "Label.h"
 #include "Parse.h"
+
 #include "ParseImpl.h"
 
 #include "../universe/Encyclopedia.h"
 
 #include <boost/spirit/include/phoenix.hpp>
+
 
 #define DEBUG_PARSERS 0
 
@@ -16,43 +17,46 @@ namespace std {
 #endif
 
 namespace {
-    struct insert_ {
-#if BOOST_VERSION < 105600
-        template <typename Arg1, typename Arg2> // Phoenix v2
-        struct result
-        { typedef void type; };
-#else
-        typedef void result_type;
-#endif
+    using ArticleMap = Encyclopedia::ArticleMap;
 
-        void operator()(Encyclopedia& enc, const EncyclopediaArticle& article) const
-        { enc.articles[article.category].push_back(article); }
+    struct insert_ {
+        typedef void result_type;
+
+        void operator()(ArticleMap& articles, const EncyclopediaArticle& article) const
+        { articles[article.category].push_back(article); }
     };
     const boost::phoenix::function<insert_> insert;
 
-    struct rules {
-        rules() {
-            const parse::lexer& tok = parse::lexer::instance();
+    using start_rule_payload = ArticleMap;
+    using start_rule_signature = void(start_rule_payload&);
+
+    struct grammar : public parse::detail::grammar<start_rule_signature> {
+        grammar(const parse::lexer& tok,
+                const std::string& filename,
+                const parse::text_iterator& first, const parse::text_iterator& last) :
+            grammar::base_type(start)
+        {
+            namespace phoenix = boost::phoenix;
+            namespace qi = boost::spirit::qi;
+
+            using phoenix::construct;
 
             qi::_1_type _1;
             qi::_2_type _2;
             qi::_3_type _3;
             qi::_4_type _4;
-            qi::_a_type _a;
-            qi::_b_type _b;
-            qi::_c_type _c;
-            qi::_d_type _d;
+            qi::_5_type _5;
             qi::_r1_type _r1;
-            using phoenix::construct;
+            qi::omit_type omit_;
 
             article
-                =    tok.Article_
-                >    parse::label(Name_token)                > tok.string [ _a = _1 ]
-                >    parse::label(Category_token)            > tok.string [ _b = _1 ]
-                >    parse::label(Short_Description_token)   > tok.string [ _c = _1 ]
-                >    parse::label(Description_token)         > tok.string [ _d = _1 ]
-                >    parse::label(Icon_token)                > tok.string
-                    [ insert(_r1, construct<EncyclopediaArticle>(_a, _b, _c, _d, _1)) ]
+                =  ( omit_[tok.Article_]
+                >    label(tok.Name_)                > tok.string
+                >    label(tok.Category_)            > tok.string
+                >    label(tok.Short_Description_)   > tok.string
+                >    label(tok.Description_)         > tok.string
+                >    label(tok.Icon_)                > tok.string )
+                    [ insert(_r1, construct<EncyclopediaArticle>(_1, _2, _3, _4, _5)) ]
                 ;
 
             start
@@ -65,34 +69,29 @@ namespace {
             debug(article);
 #endif
 
-            qi::on_error<qi::fail>(start, parse::report_error(_1, _2, _3, _4));
+            qi::on_error<qi::fail>(start, parse::report_error(filename, first, last, _1, _2, _3, _4));
         }
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (Encyclopedia&),
-            qi::locals<
-                std::string,
-                std::string,
-                std::string,
-                std::string
-            >,
-            parse::skipper_type
-        > strings_rule;
+        using  strings_rule = parse::detail::rule<void (ArticleMap&)>;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (Encyclopedia&),
-            parse::skipper_type
-        > start_rule;
+        using start_rule = parse::detail::rule<start_rule_signature>;
 
-
+        parse::detail::Labeller label;
         strings_rule    article;
         start_rule      start;
     };
 }
 
 namespace parse {
-    bool encyclopedia_articles(const boost::filesystem::path& path, Encyclopedia& enc)
-    { return detail::parse_file<rules, Encyclopedia>(path, enc); }
+    ArticleMap encyclopedia_articles(const boost::filesystem::path& path) {
+        const lexer lexer;
+        std::vector<boost::filesystem::path> file_list = ListScripts(path);
+
+        ArticleMap articles;
+        for (const boost::filesystem::path& file : file_list) {
+            /*auto success =*/ detail::parse_file<grammar, ArticleMap>(lexer, file, articles);
+        }
+
+        return articles;
+    }
 }

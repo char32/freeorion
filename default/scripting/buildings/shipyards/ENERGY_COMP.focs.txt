@@ -1,0 +1,29 @@
+BuildingType
+    name = "BLD_SHIPYARD_ENRG_COMP"
+    description = "BLD_SHIPYARD_ENRG_COMP_DESC"
+    buildcost = 200 * [[BUILDING_COST_MULTIPLIER]]
+    buildtime = 5
+    tags = "ORBITAL"
+    location = And [
+        Planet
+        Not Contains Building name = "BLD_SHIPYARD_ENRG_COMP"
+        [[LOCATION_ALLOW_ENQUEUE_IF_PREREQ_ENQUEUED(BLD_SHIPYARD_BASE)]]
+        Or [
+            Star type = [White Blue BlackHole]
+            Enqueued type = Building name = "BLD_ART_BLACK_HOLE"
+            ContainedBy And [
+                Star type = Red
+                Contains And [
+                    Planet
+                    OwnedBy empire = Source.Owner
+                    Enqueued type = Building name = "BLD_ART_BLACK_HOLE"
+                ]
+            ]
+        ]
+        OwnedBy empire = Source.Owner
+    ]
+    EnqueueLocation = [[ENQUEUE_BUILD_ONE_PER_PLANET]]
+    icon = "icons/building/shipyard-10.png"
+
+#include "/scripting/common/enqueue.macros"
+#include "/scripting/common/base_prod.macros"

@@ -1,0 +1,63 @@
+Tech
+    name = "GRO_ENERGY_META"
+    description = "GRO_ENERGY_META_DESC"
+    short_description = "VARIOUS_SHORT_DESC"
+    category = "GROWTH_CATEGORY"
+    researchcost = 200 * [[TECH_COST_MULTIPLIER]]
+    researchturns = 15
+    tags = [ "PEDIA_GROWTH_CATEGORY" ]
+    prerequisites = [
+        "GRO_CYBORG"
+        "LRN_EVERYTHING"
+        "GRO_TRANSORG_SENT"
+    ]
+    effectsgroups = [
+        EffectsGroup
+            scope = And [
+                Ship
+                OwnedBy empire = Source.Owner
+            ]
+            effects = SetMaxFuel value = Value + 2
+
+        EffectsGroup
+            scope = And [
+                PopulationCenter
+                OwnedBy empire = Source.Owner
+            ]
+            stackinggroup = "DEFENSE_NET_STACK_GM"
+            priority = [[LATE_PRIORITY]]
+            effects = SetMaxDefense value = Value + 10 accountinglabel = "GRO_ENERGY_META"
+
+        EffectsGroup
+            scope = And [
+                Planet
+                OwnedBy empire = Source.Owner
+            ]
+            stackinggroup = "PLANET_SHIELDS_STACK_GEM"
+            priority = [[LATE_PRIORITY]]
+            effects = SetMaxShield value = Value + 50 accountinglabel = "GRO_ENERGY_META"
+
+        EffectsGroup
+            scope = And [
+                ProductionCenter
+                OwnedBy empire = Source.Owner
+                Focus type = "FOCUS_INDUSTRY"
+
+            ]
+            priority = [[EARLY_PRIORITY]]
+            effects = SetTargetIndustry value = Value + Target.Population * 1.0 * [[INDUSTRY_PER_POP]]
+
+        EffectsGroup
+            scope = And [
+                ProductionCenter
+                OwnedBy empire = Source.Owner
+                Focus type = "FOCUS_RESEARCH"
+
+            ]
+            priority = [[EARLY_PRIORITY]]
+            effects = SetTargetResearch value = Value  + Target.Population * 2.5 * [[RESEARCH_PER_POP]]
+    ]
+    graphic = "icons/tech/pure-energy_metabolism.png"
+
+#include "/scripting/common/base_prod.macros"
+#include "/scripting/common/priorities.macros"

@@ -1,3 +1,28 @@
+/* GG is a GUI for SDL and OpenGL.
+
+   Copyright (C) 2006, 2008-2009 T. Zachary Laine
+
+   This library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Lesser General Public License
+   as published by the Free Software Foundation; either version 2.1
+   of the License, or (at your option) any later version.
+
+   This library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public
+   License along with this library; if not, write to the Free
+   Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+   02111-1307 USA
+
+   If you do not wish to comply with the terms of the LGPL please
+   contact the author as other terms are available for a fee.
+
+   Zach Laine
+   whatwasthataddress@gmail.com */
+
 #include <GG/Timer.h>
 
 #include <GG/GUI.h>
@@ -23,7 +48,7 @@ Timer::Timer() :
 {
     GUI::GetGUI()->RegisterTimer(*this);
     if (INSTRUMENT_ALL_SIGNALS)
-        ::GG::Connect(FiredSignal, &FiredSignalEcho);
+        FiredSignal.connect(&FiredSignalEcho);
 }
 
 Timer::Timer(unsigned int interval, unsigned int start_time/* = 0*/) :
@@ -33,11 +58,14 @@ Timer::Timer(unsigned int interval, unsigned int start_time/* = 0*/) :
 {
     GUI::GetGUI()->RegisterTimer(*this);
     if (INSTRUMENT_ALL_SIGNALS)
-        ::GG::Connect(FiredSignal, &FiredSignalEcho);
+        FiredSignal.connect(&FiredSignalEcho);
 }
 
 Timer::~Timer()
-{ GUI::GetGUI()->RemoveTimer(*this); }
+{
+    if (auto gui = GUI::GetGUI())
+        gui->RemoveTimer(*this);
+}
 
 unsigned int Timer::Interval() const
 { return m_interval; }
@@ -54,7 +82,8 @@ void Timer::SetInterval(unsigned int interval)
 void Timer::Connect(Wnd* wnd)
 {
     Disconnect(wnd);
-    m_wnd_connections[wnd] = GG::Connect(FiredSignal, &Wnd::TimerFiring, wnd);
+    m_wnd_connections[wnd] = FiredSignal.connect(
+        boost::bind(&Wnd::TimerFiring, wnd, _1, _2));
 }
 
 void Timer::Disconnect(Wnd* wnd)

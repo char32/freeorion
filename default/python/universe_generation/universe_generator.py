@@ -1,3 +1,8 @@
+from common.configure_logging import redirect_logging_to_freeorion_logger
+
+# Logging is redirected before other imports so that import errors appear in log files.
+redirect_logging_to_freeorion_logger()
+
 import random
 
 import freeorion as fo
@@ -11,7 +16,48 @@ from natives import generate_natives
 from monsters import generate_monsters
 from specials import distribute_specials
 from util import int_hash, seed_rng, report_error, error_list
-import statistics
+from universe_tables import MAX_JUMPS_BETWEEN_SYSTEMS, MAX_STARLANE_LENGTH
+import universe_statistics
+
+from common.handlers import init_handlers
+from common.listeners import listener
+from common.option_tools import parse_config
+parse_config(fo.get_options_db_option_str("ai-config"), fo.get_user_config_dir())
+init_handlers(fo.get_options_db_option_str("ai-config"), None)
+
+
+class PyGalaxySetupData:
+    """
+    Class used to store and manage a copy of the galaxy setup data provided by the FreeOrion interface.
+    This data can then be modified when needed during the universe generation process, without having to
+    change the original data structure.
+    """
+    def __init__(self, galaxy_setup_data):
+        self.seed = galaxy_setup_data.seed
+        self.size = galaxy_setup_data.size
+        self.shape = galaxy_setup_data.shape
+        self.age = galaxy_setup_data.age
+        self.starlane_frequency = galaxy_setup_data.starlaneFrequency
+        self.planet_density = galaxy_setup_data.planetDensity
+        self.specials_frequency = galaxy_setup_data.specialsFrequency
+        self.monster_frequency = galaxy_setup_data.monsterFrequency
+        self.native_frequency = galaxy_setup_data.nativeFrequency
+        self.max_ai_aggression = galaxy_setup_data.maxAIAggression
+        self.game_uid = galaxy_setup_data.gameUID
+
+    def dump(self):
+        print "Galaxy Setup Data:"
+        print "...Seed:", self.seed
+        print "...Size:", self.size
+        print "...Shape:", self.shape
+        print "...Age:", self.age
+        print "...Starlane Frequency:", self.starlane_frequency
+        print "...Planet Density:", self.planet_density
+        print "...Specials Frequency:", self.specials_frequency
+        print "...Monster Frequency:", self.monster_frequency
+        print "...Native Frequency:", self.native_frequency
+        print "...Max AI Aggression:", self.max_ai_aggression
+        print "...Game UID:", self.game_uid
 
 
 def error_report():
@@ -21,6 +67,7 @@ def error_report():
     return error_list
 
 
+@listener
 def create_universe(psd_map):
     """
     Main universe generation function invoked from C++ code.
@@ -28,7 +75,8 @@ def create_universe(psd_map):
     print "Python Universe Generator"
 
     # fetch universe and player setup data
-    gsd = fo.get_galaxy_setup_data()
+    gsd = PyGalaxySetupData(fo.get_galaxy_setup_data())
+    gsd.dump()
     total_players = len(psd_map)
 
     # initialize RNG
@@ -40,15 +88,15 @@ def create_universe(psd_map):
 
     # make sure there are enough systems for the given number of players
     print "Universe creation requested with %d systems for %d players" % (gsd.size, total_players)
-    size = max(gsd.size, (total_players * 3))
-    if size > gsd.size:
-        # gsd.size = size
+    min_size = total_players * 3
+    if min_size > gsd.size:
+        gsd.size = min_size
         print "Too few systems for the requested number of players, number of systems adjusted accordingly"
-    print "Creating universe with %d systems for %d players" % (size, total_players)
+    print "Creating universe with %d systems for %d players" % (gsd.size, total_players)
 
     # calculate star system positions
     seed_rng(seed_pool.pop())
-    system_positions = calc_star_system_positions(gsd.shape, size)
+    system_positions = calc_star_system_positions(gsd)
     size = len(system_positions)
     print gsd.shape, "Star system positions calculated, final number of systems:", size
 
@@ -59,12 +107,12 @@ def create_universe(psd_map):
 
     # generate Starlanes
     seed_rng(seed_pool.pop())
-    fo.generate_starlanes(gsd.starlaneFrequency)
+    fo.generate_starlanes(MAX_JUMPS_BETWEEN_SYSTEMS[gsd.starlane_frequency], MAX_STARLANE_LENGTH)
     print "Starlanes generated"
 
     print "Compile list of home systems..."
     seed_rng(seed_pool.pop())
-    home_systems = compile_home_system_list(total_players, systems)
+    home_systems = compile_home_system_list(total_players, systems, gsd)
     if not home_systems:
         err_msg = "Python create_universe: couldn't get any home systems, ABORTING!"
         report_error(err_msg)
@@ -94,30 +142,32 @@ def create_universe(psd_map):
 
     print "Generating Natives"
     seed_rng(seed_pool.pop())
-    generate_natives(gsd.nativeFrequency, systems, home_systems)
+    generate_natives(gsd.native_frequency, systems, home_systems)
 
     print "Generating Space Monsters"
     seed_rng(seed_pool.pop())
-    generate_monsters(gsd.monsterFrequency, systems)
+    generate_monsters(gsd.monster_frequency, systems)
 
     print "Distributing Starting Specials"
     seed_rng(seed_pool.pop())
-    distribute_specials(gsd.specialsFrequency, fo.get_all_objects())
+    distribute_specials(gsd.specials_frequency, fo.get_all_objects())
 
     # finally, write some statistics to the log file
     print "############################################################"
     print "##             Universe generation statistics             ##"
     print "############################################################"
-    statistics.log_planet_count_dist(systems)
+    universe_statistics.log_planet_count_dist(systems)
     print "############################################################"
-    statistics.log_planet_type_summary(systems)
+    universe_statistics.log_planet_type_summary(systems)
     print "############################################################"
-    statistics.log_species_summary()
+    universe_statistics.log_species_summary(gsd.native_frequency)
     print "############################################################"
-    statistics.log_monsters_summary()
+    universe_statistics.log_monsters_summary(gsd.monster_frequency)
     print "############################################################"
-    statistics.log_specials_summary()
+    universe_statistics.log_specials_summary()
     print "############################################################"
+    universe_statistics.log_systems()
+    universe_statistics.log_planets()
 
     if error_list:
         print "Python Universe Generator completed with errors"

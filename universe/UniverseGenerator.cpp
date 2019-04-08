@@ -4,7 +4,8 @@
 #include "../util/Random.h"
 #include "../util/i18n.h"
 #include "../util/Logger.h"
-#include "../parse/Parse.h"
+#include "../util/MultiplayerCommon.h"
+#include "../util/GameRules.h"
 #include "../Empire/Empire.h"
 #include "../Empire/EmpireManager.h"
 
@@ -12,349 +13,17 @@
 #include "System.h"
 #include "Species.h"
 #include "ValueRef.h"
+#include "Enums.h"
 
+#include <limits>
 
-DataTableMap& UniverseDataTables() {
-    static DataTableMap map;
-    if (map.empty())
-        LoadDataTables((GetResourceDir() / "universe_tables.txt").string(), map);
-    return map;
+namespace {
+    DeclareThreadSafeLogger(effects);
 }
 
 //////////////////////////////////////////
 //  Universe Setup Functions            //
 //////////////////////////////////////////
-
-namespace {
-    const double        PI                          = 3.141592653589793;
-    const int           MAX_ATTEMPTS_PLACE_SYSTEM   = 100;
-
-    double CalcNewPosNearestNeighbour(double x, double y, const std::vector<SystemPosition>& positions)
-    {
-        if (positions.size() == 0) // means that we are placing the first star, return a max val to not reject placement
-            return 1e6;
-
-        unsigned int j;
-        double lowest_dist=  (positions[0].x  - x ) * (positions[0].x  - x ) 
-            + (positions[0].y - y) * (positions[0].y - y),distance=0.0;
-
-        for (j = 1; j < positions.size(); ++j) {
-            distance =  (positions[j].x  - x ) * (positions[j].x  - x ) 
-                + (positions[j].y - y) * (positions[j].y - y);
-            if(lowest_dist>distance)
-                lowest_dist = distance;
-        }
-        return lowest_dist;
-    }
-}
-
-double CalcTypicalUniverseWidth(int size)
-{ return (1000.0 / std::sqrt(150.0)) * std::sqrt(static_cast<double>(size)); }
-
-void SpiralGalaxyCalcPositions(std::vector<SystemPosition>& positions,
-                               unsigned int arms, unsigned int stars, double width, double height)
-{
-    double arm_offset     = RandDouble(0.0,2.0*PI);
-    double arm_angle      = 2.0*PI / arms;
-    double arm_spread     = 0.3 * PI / arms;
-    double arm_length     = 1.5 * PI;
-    double center         = 0.25;
-    double x,y;
-
-    int i, attempts;
-
-    GaussianDistType  random_gaussian = GaussianDist(0.0, arm_spread);
-    SmallIntDistType  random_arm      = SmallIntDist(0  , arms);
-    DoubleDistType    random_angle    = DoubleDist  (0.0, 2.0*PI);
-    DoubleDistType    random_radius   = DoubleDist  (0.0, 1.0);
-
-    for (i = 0, attempts = 0; i < static_cast<int>(stars) && attempts < MAX_ATTEMPTS_PLACE_SYSTEM; ++i, ++attempts) {
-        double radius = random_radius();
-
-        if (radius < center) {
-            double angle = random_angle();
-            x = radius * cos( arm_offset + angle );
-            y = radius * sin( arm_offset + angle );
-        } else {
-            double arm    = static_cast<double>(random_arm()) * arm_angle;
-            double angle  = random_gaussian();
-            
-            x = radius * cos( arm_offset + arm + angle + radius * arm_length );
-            y = radius * sin( arm_offset + arm + angle + radius * arm_length );
-        }
-
-        x = (x + 1) * width / 2.0;
-        y = (y + 1) * height / 2.0;
-
-        if (x < 0 || width <= x || y < 0 || height <= y)
-            continue;
-
-        // See if new star is too close to any existing star.
-        double lowest_dist = CalcNewPosNearestNeighbour(x, y, positions);
-
-        // If so, we try again or give up.
-        if (lowest_dist < MIN_SYSTEM_SEPARATION * MIN_SYSTEM_SEPARATION) {
-            if (attempts < MAX_ATTEMPTS_PLACE_SYSTEM - 1) {
-                --i; //try again for same star
-            } else {
-                attempts=0; //give up on this star, move on to next
-                DebugLogger() << "Giving up on placing star "<< i <<" with lowest dist squared " << lowest_dist;
-            }
-            continue;
-        }
-
-        // Add the new star location.
-        positions.push_back(SystemPosition(x, y));
-
-        // Note that attempts is reset for every star.
-        attempts = 0;
-    }
-}
-
-void EllipticalGalaxyCalcPositions(std::vector<SystemPosition>& positions,
-                                   unsigned int stars, double width, double height)
-{
-    const double ellipse_width_vs_height = RandDouble(0.4, 0.6);
-    const double rotation = RandDouble(0.0, PI),
-    rotation_sin = std::sin(rotation),
-    rotation_cos = std::cos(rotation);
-    const double gap_constant = 0.95;
-    const double gap_size = 1.0 - gap_constant * gap_constant * gap_constant;
-
-    // Random number generators.
-    DoubleDistType radius_dist = DoubleDist(0.0, gap_constant);
-    DoubleDistType random_angle  = DoubleDist(0.0, 2.0 * PI);
-
-    // Used to give up when failing to place a star too often.
-    int attempts = 0;
-
-    // For each attempt to place a star...
-    for (unsigned int i = 0; i < stars && attempts < MAX_ATTEMPTS_PLACE_SYSTEM; ++i, ++attempts){
-        double radius = radius_dist();
-        // Adjust for bigger density near center and create gap.
-        radius = radius * radius * radius + gap_size;
-        double angle  = random_angle();
-
-        // Rotate for individual angle and apply elliptical shape.
-        double x1 = radius * std::cos(angle);
-        double y1 = radius * std::sin(angle) * ellipse_width_vs_height;
-
-        // Rotate for ellipse angle.
-        double x = x1 * rotation_cos - y1 * rotation_sin;
-        double y = x1 * rotation_sin + y1 * rotation_cos;
-
-        // Move from [-1.0, 1.0] universe coordinates.
-        x = (x + 1.0) * width / 2.0;
-        y = (y + 1.0) * height / 2.0;
-
-        // Discard stars that are outside boundaries (due to possible rounding errors).
-        if (x < 0 || x >= width || y < 0 || y >= height)
-            continue;
-
-        // See if new star is too close to any existing star.
-        double lowest_dist = CalcNewPosNearestNeighbour(x, y, positions);
-
-        // If so, we try again or give up.
-        if (lowest_dist < MIN_SYSTEM_SEPARATION * MIN_SYSTEM_SEPARATION) {
-            if (attempts < MAX_ATTEMPTS_PLACE_SYSTEM - 1) {
-                --i; //try again for same star
-            } else {
-                attempts=0; //give up on this star, move on to next
-                DebugLogger() << "Giving up on placing star "<< i <<" with lowest dist squared " << lowest_dist;
-            }
-            continue;
-        }
-
-        // Add the new star location.
-        positions.push_back(SystemPosition(x, y));
-
-        // Note that attempts is reset for every star.
-        attempts = 0;
-    }
-}
-
-void ClusterGalaxyCalcPositions(std::vector<SystemPosition>& positions, unsigned int clusters,
-                                unsigned int stars, double width, double height)
-{
-    if (stars < 1) {
-        ErrorLogger() << "ClusterGalaxyCalcPositions requested for 0 stars";
-        return;
-    }
-    if (clusters < 1) {
-        ErrorLogger() << "ClusterGalaxyCalcPositions requested for 0 clusters. defaulting to 1";
-        clusters = 1;
-    }
-
-
-    // probability of systems which don't belong to a cluster
-    const double system_noise = 0.15;
-    double ellipse_width_vs_height = RandDouble(0.2,0.5);
-    // first innermost pair hold cluster position, second innermost pair stores help values for cluster rotation (sin,cos)
-    std::vector<std::pair<std::pair<double, double>, std::pair<double, double> > > clusters_position;
-    unsigned int i,j,attempts;
-
-    DoubleDistType random_zero_to_one = DoubleDist(0.0, 1.0);
-    DoubleDistType random_angle = DoubleDist(0.0, 2.0*PI);
-
-    for (i = 0, attempts = 0;
-         i < clusters && static_cast<int>(attempts) < MAX_ATTEMPTS_PLACE_SYSTEM;
-         i++, attempts++)
-    {
-        // prevent cluster position near borders (and on border)
-        double x = ((random_zero_to_one()*2.0 - 1.0) / (clusters + 1.0))*clusters;
-        double y = ((random_zero_to_one()*2.0 - 1.0) / (clusters + 1.0))*clusters;
-
-
-        // ensure all clusters have a min separation to each other (search isn't opimized, not worth the effort)
-        for (j = 0; j < clusters_position.size(); j++) {
-            if ((clusters_position[j].first.first - x)*(clusters_position[j].first.first - x)+ (clusters_position[j].first.second - y)*(clusters_position[j].first.second - y)
-                < (2.0/clusters))
-                break;
-        }
-        if (j < clusters_position.size()) {
-            i--;
-            continue;
-        }
-
-        attempts = 0;
-        double rotation = RandDouble(0.0,PI);
-        clusters_position.push_back(std::pair<std::pair<double,double>,std::pair<double,double> >(std::pair<double,double>(x,y),std::pair<double,double>(sin(rotation),cos(rotation))));
-    }
-
-    for (i = 0, attempts = 0; i < stars && attempts<100; i++, attempts++) {
-        double x,y;
-        if (random_zero_to_one() < system_noise) {
-            x = random_zero_to_one() * 2.0 - 1.0;
-            y = random_zero_to_one() * 2.0 - 1.0;
-        } else {
-            short  cluster = i % clusters_position.size();
-            double radius  = random_zero_to_one();
-            double angle   = random_angle();
-            double x1, y1;
-
-            x1 = radius * cos(angle);
-            y1 = radius * sin(angle)*ellipse_width_vs_height;
-
-            x = x1*clusters_position[cluster].second.second + y1*clusters_position[cluster].second.first;
-            y =-x1*clusters_position[cluster].second.first  + y1*clusters_position[cluster].second.second;
-
-            x = x/sqrt((double)clusters) + clusters_position[cluster].first.first;
-            y = y/sqrt((double)clusters) + clusters_position[cluster].first.second;
-        }
-        x = (x+1)*width /2.0;
-        y = (y+1)*height/2.0;
-
-        if (x<0 || width<=x || y<0 || height<=y)
-            continue;
-
-        // See if new star is too close to any existing star.
-        double lowest_dist = CalcNewPosNearestNeighbour(x, y, positions);
-
-        // If so, we try again or give up.
-        if (lowest_dist < MIN_SYSTEM_SEPARATION * MIN_SYSTEM_SEPARATION) {
-            if (attempts < MAX_ATTEMPTS_PLACE_SYSTEM - 1) {
-                --i; //try again for same star
-            } else {
-                attempts=0; //give up on this star, move on to next
-                DebugLogger() << "Giving up on placing star "<< i <<" with lowest dist squared " << lowest_dist;
-            }
-            continue;
-        }
-
-        // Add the new star location.
-        positions.push_back(SystemPosition(x, y));
-
-        // Note that attempts is reset for every star.
-        attempts = 0;
-    }
-}
-
-void RingGalaxyCalcPositions(std::vector<SystemPosition>& positions, unsigned int stars,
-                             double width, double height)
-{
-    double RING_WIDTH = width / 4.0;
-    double RING_RADIUS = (width - RING_WIDTH) / 2.0;
-
-    DoubleDistType   theta_dist = DoubleDist(0.0, 2.0 * PI);
-    GaussianDistType radius_dist = GaussianDist(RING_RADIUS, RING_WIDTH / 3.0);
-
-    for (unsigned int i = 0, attempts = 0; i < stars && static_cast<int>(attempts) < MAX_ATTEMPTS_PLACE_SYSTEM; ++i, ++attempts) {
-        double theta = theta_dist();
-        double radius = radius_dist();
-
-        double x = width / 2.0 + radius * std::cos(theta);
-        double y = height / 2.0 + radius * std::sin(theta);
-
-        if (x < 0 || width <= x || y < 0 || height <= y)
-            continue;
-
-        // See if new star is too close to any existing star.
-        double lowest_dist=CalcNewPosNearestNeighbour(x, y,positions);
-
-        // If so, we try again or give up.
-        if (lowest_dist < MIN_SYSTEM_SEPARATION * MIN_SYSTEM_SEPARATION) {
-            if (attempts < MAX_ATTEMPTS_PLACE_SYSTEM - 1) {
-                --i; //try again for same star
-            } else {
-                attempts=0; //give up on this star, move on to next
-                DebugLogger() << "Giving up on placing star "<< i <<" with lowest dist squared " << lowest_dist;
-            }
-            continue;
-        }
-
-        // Add the new star location.
-        positions.push_back(SystemPosition(x, y));
-
-        // Note that attempts is reset for every star.
-        attempts = 0;
-    }
-}
-
-void IrregularGalaxyPositions(std::vector<SystemPosition>& positions, unsigned int stars,
-                              double width, double height)
-{
-    DebugLogger() << "IrregularGalaxyPositions";
-
-    unsigned int positions_placed = 0;
-    for (unsigned int i = 0, attempts = 0; i < stars && static_cast<int>(attempts) < MAX_ATTEMPTS_PLACE_SYSTEM; ++i, ++attempts) {
-
-        double x = width * RandZeroToOne();
-        double y = height * RandZeroToOne();
-
-        DebugLogger() << "... potential position: (" << x << ", " << y << ")";
-
-        // reject positions outside of galaxy: minimum 0, maximum height or width.  shouldn't be a problem,
-        // but I'm copying this from one of the other generation functions and figure it might as well remain
-        if (x < 0 || width <= x || y < 0 || height <= y)
-            continue;
-
-        // See if new star is too close to any existing star.
-        double lowest_dist = CalcNewPosNearestNeighbour(x, y, positions);
-
-        // If so, we try again or give up.
-        if (lowest_dist < MIN_SYSTEM_SEPARATION * MIN_SYSTEM_SEPARATION) {
-            if (attempts < MAX_ATTEMPTS_PLACE_SYSTEM - 1) {
-                --i; //try again for same star
-            } else {
-                attempts=0; //give up on this star, move on to next
-                DebugLogger() << "Giving up on placing star "<< i <<" with lowest dist squared " << lowest_dist;
-            }
-            continue;
-        }
-
-        // Add the new star location.
-        positions.push_back(SystemPosition(x, y));
-
-        DebugLogger() << "... added system at (" << x << ", " << y << ") after " << attempts << " attempts";
-
-        positions_placed++;
-
-        // Note that attempts is reset for every star.
-        attempts = 0;
-    }
-    DebugLogger() << "... placed " << positions_placed << " systems";
-}
-
 
 namespace Delauney {
     /** simple 2D point.  would have used array of systems, but System
@@ -396,9 +65,11 @@ namespace Delauney {
     class DTTriangle {
     public:
         DTTriangle();
-        DTTriangle(int vert1, int vert2, int vert3, std::vector<Delauney::DTPoint> &points);
+        DTTriangle(int vert1, int vert2, int vert3,
+                   const std::vector<Delauney::DTPoint> &points);
 
-        bool                    PointInCircumCircle(Delauney::DTPoint &p);  ///< determines whether a specified point is within the circumcircle of the triangle
+        ///< determines whether a specified point is within the circumcircle of the triangle
+        bool PointInCircumCircle(const Delauney::DTPoint &p);
         const std::vector<int>& Verts() {return verts;}
 
     private:
@@ -407,29 +78,26 @@ namespace Delauney {
         double              radius2;    ///< radius of circumcircle squared
     };
 
-    DTTriangle::DTTriangle(int vert1, int vert2, int vert3, std::vector<Delauney::DTPoint>& points) {
-        double a, Sx, Sy, b;
-        double x1, x2, x3, y1, y2, y3;
-
+    DTTriangle::DTTriangle(int vert1, int vert2, int vert3,
+                           const std::vector<Delauney::DTPoint>& points)
+    {
         if (vert1 == vert2 || vert1 == vert3 || vert2 == vert3)
             throw std::runtime_error("Attempted to create Triangle with two of the same vertex indices.");
 
-        verts = std::vector<int>(3);
-
         // record indices of vertices of triangle
-        verts[0] = vert1;
-        verts[1] = vert2;
-        verts[2] = vert3;
+        verts = {vert1, vert2, vert3};
 
         // extract position info for vertices
-        x1 = points[vert1].x;
-        x2 = points[vert2].x;
-        x3 = points[vert3].x;
-        y1 = points[vert1].y;
-        y2 = points[vert2].y;
-        y3 = points[vert3].y;
+        const double& x1 = points[vert1].x;
+        const double& x2 = points[vert2].x;
+        const double& x3 = points[vert3].x;
+        const double& y1 = points[vert1].y;
+        const double& y2 = points[vert2].y;
+        const double& y3 = points[vert3].y;
 
         // calculate circumcircle and circumcentre of triangle
+        double a, Sx, Sy, b;
+
         a = x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2);
 
         Sx = 0.5 * ((x1 * x1 + y1 * y1) * (y2 - y3) +
@@ -455,17 +123,14 @@ namespace Delauney {
     };
 
     DTTriangle::DTTriangle() :
-        verts(3, 0),
-        centre(0.0, 0.0),
-        radius2(0.0)
+        verts{0, 0, 0},
+        centre{0.0, 0.0},
+        radius2{0.0}
     {};
 
-    bool DTTriangle::PointInCircumCircle(Delauney::DTPoint &p) {
-        double vectX, vectY;
-
-        vectX = p.x - centre.x;
-        vectY = p.y - centre.y;
-
+    bool DTTriangle::PointInCircumCircle(const Delauney::DTPoint &p) {
+        double vectX = p.x - centre.x;
+        double vectY = p.y - centre.y;
         if (vectX*vectX + vectY*vectY < radius2)
             return true;
         return false;
@@ -473,133 +138,152 @@ namespace Delauney {
 
 
 
-    /** runs a Delauney Triangulation routine on a set of 2D points extracted
-      * from an array of systems returns the list of triangles produced */
-    std::list<Delauney::DTTriangle>* DelauneyTriangulate(std::vector<TemporaryPtr<System> > &systems) {
-
-        int n, c, theSize, num, num2; // loop counters, storage for retreived size of a vector, temp storage
-        std::list<Delauney::DTTriangle>::iterator itCur, itEnd;
-        std::list<Delauney::SortValInt>::iterator itCur2, itEnd2;
-        // vector of x and y positions of stars
-        std::vector<Delauney::DTPoint> points;
-        // pointer to main list of triangles algorithm works with.
-        std::list<Delauney::DTTriangle> *triList;
-        // list of indices in vector of points extracted from removed triangles that need to be retriangulated
-        std::list<Delauney::SortValInt> pointNumList;
-        double vx, vy, mag;  // vector components, magnitude
-
+    /** Runs a Delauney Triangulation on a set of 2D points corresponding
+      * to the locations of the systems in \a systems_vec */
+    std::list<Delauney::DTTriangle> DelauneyTriangulate(
+        const std::vector<std::shared_ptr<System>> &systems_vec)
+    {
         // ensure a useful list of systems was passed...
-        if (systems.empty())
-            throw std::runtime_error("Attempted to run Delauney Triangulation on empty array of systems");
-
-        // extract systems positions, and store in vector.  Can't use actual systems data since
-        // systems have position limitations which would interfere with algorithm
-        theSize = static_cast<int>(systems.size());
-        for (n = 0; n < theSize; n++) {
-            points.push_back(Delauney::DTPoint(systems[n]->X(), systems[n]->Y()));
+        if (systems_vec.empty()) {
+            ErrorLogger() << "Attempted to run Delauney Triangulation on empty array of systems";
+            return std::list<Delauney::DTTriangle>();
         }
 
-        // add points for covering triangle.  the point positions should be big enough to form a triangle
-        // that encloses all the systems of the galaxy (or at least one whose circumcircle covers all points)
-        points.push_back(Delauney::DTPoint(-1.0, -1.0));
-        points.push_back(Delauney::DTPoint(2.0 * (GetUniverse().UniverseWidth() + 1.0), -1.0));
-        points.push_back(Delauney::DTPoint(-1.0, 2.0 * (GetUniverse().UniverseWidth() + 1.0)));
 
-        // initialize triList.  algorithm adds and removes triangles from this list, and the resulting
-        // list is returned (so should be deleted externally)
-        triList = new std::list<Delauney::DTTriangle>;
+        // extract systems positions from system objects.
+        std::vector<Delauney::DTPoint> points_vec;
+        points_vec.reserve(systems_vec.size() + 3);
+        for (auto& system : systems_vec)
+            points_vec.push_back({system->X(), system->Y()});
 
+        // entries in points_vec correspond to entries in \a systems_vec
+        // so that the index of an item in systems_vec will have a
+        // corresponding points at that index in points_vec
+
+
+        // add points for covering triangle. the point positions should be big
+        // enough to form a triangle that encloses all the points in points_vec
+        // (or at least one whose circumcircle covers all points)
+        points_vec.push_back({-1.0, -1.0});
+        points_vec.push_back({2.0 * (GetUniverse().UniverseWidth() + 1.0), -1.0});
+        points_vec.push_back({-1.0, 2.0 * (GetUniverse().UniverseWidth() + 1.0)});
+
+
+        // initialize triangle_list.
         // add last three points into the first triangle, the "covering triangle"
-        theSize = static_cast<int>(points.size());
-        triList->push_front(Delauney::DTTriangle(theSize-1, theSize-2, theSize-3, points));
+        std::list<Delauney::DTTriangle> triangle_list;
+        int num_points_in_vec = points_vec.size();
+        triangle_list.push_front({num_points_in_vec - 1, num_points_in_vec - 2,
+                                  num_points_in_vec - 3, points_vec});
 
-        // loop through "real" points (from systems, not the last three added to make the covering triangle)
-        for (n = 0; n < theSize - 3; n++) {
-            pointNumList.clear();
+        if (points_vec.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+            ErrorLogger() << "Attempted to run Delauney Triangulation on " << points_vec.size()
+                          << " points.  The limit is " << std::numeric_limits<int>::max();
+            return std::list<Delauney::DTTriangle>();
+        }
 
-            // check each triangle in list, to see if the new point lies in its circumcircle.  if so, delete
-            // the triangle and add its vertices to a list 
-            itCur = triList->begin();
-            itEnd = triList->end();
-            while (itCur != itEnd) {
+        // loop through points generated from systems, excluding the final
+        // 3 points added for the covering triangle
+        for (std::size_t n = 0; n < points_vec.size() - 3; n++) {
+            // list of indices in vector of points extracted from removed
+            // triangles that need to be retriangulated
+            std::list<Delauney::SortValInt> point_idx_list;
+
+            const auto& cur_point = points_vec.at(n);
+
+            // check each triangle to see if the current point lies in its
+            // circumcircle.  if so, delete the triangle and add its vertices to a list
+            auto cur_tri_it = triangle_list.begin();
+            while (cur_tri_it != triangle_list.end()) {
                 // get current triangle
-                Delauney::DTTriangle& tri = *itCur;
+                Delauney::DTTriangle& tri = *cur_tri_it;
 
-                // check if point to be added to triangulation is within the circumcircle for the current triangle
-                if (tri.PointInCircumCircle(points[n])) {
-                    // if so, insert the triangle's vertices' indices into the list.  add in sorted position
-                    // based on angle of direction to current point n being inserted.  don't add if doing
-                    // so would duplicate an index already in the list
-                    for (c = 0; c < 3; c++) {
-                        num = (tri.Verts())[c];  // store "current point"
-
-                        // get sorting value to order points clockwise circumferentially around point n
-                        // vector from point n to current point
-                        vx = points[num].x - points[n].x;
-                        vy = points[num].y - points[n].y;
-                        mag = sqrt(vx*vx + vy*vy);
-                        // normalize
-                        vx /= mag;
-                        vy /= mag;
-                        // dot product with (0, 1) is vy, magnitude of cross product is vx
-                        // this gives a range of "sortValue" from -2 to 2, around the circle
-                        if (vx >= 0) mag = vy + 1; else mag = -vy - 1;
-                        // sorting value in "mag"
-
-                        // iterate through list, finding insert spot and verifying uniqueness (or add if list is empty)
-                        itCur2 = pointNumList.begin();
-                        itEnd2 = pointNumList.end();
-                        if (itCur2 == itEnd2) {
-                            // list is empty
-                            pointNumList.push_back(Delauney::SortValInt(num, mag));
-                        } else {
-                            while (itCur2 != itEnd2) {
-                                if (itCur2->num == num) 
-                                    break;
-                                if (itCur2->sortVal > mag) {
-                                    pointNumList.insert(itCur2, Delauney::SortValInt(num, mag));
-                                    break;
-                                }
-                                itCur2++;
-                            }
-                            if (itCur2 == itEnd2) {
-                                // point wasn't added, so should go at end
-                                pointNumList.push_back(Delauney::SortValInt(num, mag));
-                            }
-                        }
-                    } // end for c
-
-                    // remove current triangle from list of triangles
-                    itCur = triList->erase(itCur);
-                } else {
-                    // point not in circumcircle for this triangle
-                    // to go next triangle in list
-                    ++itCur;
+                // check if point to be added to triangulation is within the
+                // circumcircle for the current triangle
+                if (!tri.PointInCircumCircle(cur_point)) {
+                    // point not in circumcircle for this triangle.
+                    // go next triangle in list
+                    ++cur_tri_it;
+                    continue;
                 }
+
+                // point is in circumcircle for this triangle.
+                // insert the triangle's vertices' indices into the
+                // list.  add in sorted position based on angle of direction
+                // to current point n being inserted.  don't add if doing so
+                // would duplicate an index already in the list
+                for (int tri_vert_idx : tri.Verts()) {
+
+                    // get sorting value to order points clockwise
+                    // circumferentially around point n
+
+                    // vector from point n to current point
+                    double vx = points_vec[tri_vert_idx].x - points_vec[n].x;
+                    double vy = points_vec[tri_vert_idx].y - points_vec[n].y;
+                    double mag = std::sqrt(vx*vx + vy*vy);
+                    // normalize
+                    vx /= mag;
+                    vy /= mag;
+
+                    // dot product with (0, 1) is vy, magnitude of cross
+                    // product is vx this gives a range of "sort value"
+                    // from -2 to 2, around the circle
+                    double sort_value = (vx >= 0) ? (vy + 1) : (-vy - 1);
+
+                    // iterate through list, finding insert spot and
+                    // verifying uniqueness (or add if list is empty)
+                    auto idx_list_it = point_idx_list.begin();
+                    if (idx_list_it == point_idx_list.end()) {
+                        // list is empty
+                        point_idx_list.push_back({tri_vert_idx, sort_value});
+
+                    } else {
+                        while (idx_list_it != point_idx_list.end()) {
+                            if (idx_list_it->num == tri_vert_idx)
+                                break;
+                            if (idx_list_it->sortVal > sort_value) {
+                                point_idx_list.insert(idx_list_it, {tri_vert_idx, sort_value});
+                                break;
+                            }
+                            ++idx_list_it;
+                        }
+                        if (idx_list_it == point_idx_list.end()) {
+                            // point wasn't added, so should go at end
+                            point_idx_list.push_back({tri_vert_idx, sort_value});
+                        }
+                    }
+                } // end for c
+
+                // remove current triangle from list of triangles
+                cur_tri_it = triangle_list.erase(cur_tri_it);
             } // end while
 
-            // go through list of points, making new triangles out of them
-            itCur2 = pointNumList.begin();
-            itEnd2 = pointNumList.end();
-            assert(itCur2 != itEnd2);
 
             // add triangle for last and first points and n
-            triList->push_front(Delauney::DTTriangle(n, (pointNumList.front()).num, (pointNumList.back()).num, points));
+            triangle_list.push_front(
+                {static_cast<int>(n), (point_idx_list.front()).num, (point_idx_list.back()).num, points_vec});
 
-            num = itCur2->num;
-            ++itCur2;
-            while (itCur2 != itEnd2) {
-                num2 = num;
-                num = itCur2->num;
 
-                triList->push_front(Delauney::DTTriangle(n, num2, num, points));
+            // go through list of points, making new triangles out of them
+            auto idx_list_it = point_idx_list.begin();
+            int num = idx_list_it->num;
+            ++idx_list_it;
+            while (idx_list_it != point_idx_list.end()) {
+                int num2 = num;
+                num = idx_list_it->num;
 
-                ++itCur2;
+                triangle_list.push_front({static_cast<int>(n), num2, num, points_vec});
+
+                ++idx_list_it;
             } // end while
 
         } // end for
-        return triList;
-    } // end function
+
+        DebugLogger() << "DelauneyTriangulate generated list of "
+                      << triangle_list.size() << " triangles";
+
+        return triangle_list;
+    }
 }
 
 ////////////////////////////////////////
@@ -612,115 +296,19 @@ const std::string& FleetPlan::Name() const {
         return m_name;
 }
 
-//////////////////////
-// FleetPlanManager //
-//////////////////////
 namespace {
-    class FleetPlanManager {
-    public:
-        typedef std::vector<FleetPlan*>::const_iterator iterator;
-        virtual ~FleetPlanManager();
-        iterator    begin() const   { return m_plans.begin(); }
-        iterator    end() const     { return m_plans.end(); }
-        /** returns the instance of this singleton class; you should use the
-          * free function GetFleetPlanManager() instead */
-        static const FleetPlanManager& GetFleetPlanManager();
-    private:
-        FleetPlanManager();
-        std::vector<FleetPlan*>     m_plans;
-        static FleetPlanManager*    s_instance;
-    };
-    // static(s)
-    FleetPlanManager* FleetPlanManager::s_instance = 0;
-
-    const FleetPlanManager& FleetPlanManager::GetFleetPlanManager() {
-        static FleetPlanManager manager;
-        return manager;
+    int IntSetMapSizeCount(const std::map<int, std::set<int>>& in) {
+        int retval{0};
+        for (const auto& entry : in)
+            retval += entry.second.size();
+        return retval;
     }
 
-    FleetPlanManager::FleetPlanManager() {
-        if (s_instance)
-            throw std::runtime_error("Attempted to create more than one FleetPlanManager.");
-
-        s_instance = this;
-
-        DebugLogger() << "Initializing FleetPlanManager";
-
-        parse::fleet_plans(GetResourceDir() / "starting_fleets.txt", m_plans);
-
-#ifdef OUTPUT_PLANS_LIST
-        DebugLogger() << "Starting Fleet Plans:";
-        for (iterator it = begin(); it != end(); ++it)
-            DebugLogger() << " ... " << (*it)->Name();
-#endif
-    }
-
-    FleetPlanManager::~FleetPlanManager() {
-        for (std::vector<FleetPlan*>::iterator it = m_plans.begin(); it != m_plans.end(); ++it)
-            delete *it;
-        m_plans.clear();
-    }
-};
-
-/////////////////////////////
-// MonsterFleetPlanManager //
-/////////////////////////////
-namespace {
-    class MonsterFleetPlanManager {
-    public:
-        typedef std::vector<MonsterFleetPlan*>::const_iterator iterator;
-        virtual ~MonsterFleetPlanManager();
-        iterator    begin() const       { return m_plans.begin(); }
-        iterator    end() const         { return m_plans.end(); }
-        int         NumMonsters() const { return m_plans.size(); }
-        /** returns the instance of this singleton class; you should use the
-          * free function MonsterFleetPlanManager() instead */
-        static const MonsterFleetPlanManager& GetMonsterFleetPlanManager();
-    private:
-        MonsterFleetPlanManager();
-        std::vector<MonsterFleetPlan*>     m_plans;
-        static MonsterFleetPlanManager*    s_instance;
-    };
-    // static(s)
-    MonsterFleetPlanManager* MonsterFleetPlanManager::s_instance = 0;
-
-    const MonsterFleetPlanManager& MonsterFleetPlanManager::GetMonsterFleetPlanManager() {
-        static MonsterFleetPlanManager manager;
-        return manager;
-    }
-
-    MonsterFleetPlanManager::MonsterFleetPlanManager() {
-        if (s_instance)
-            throw std::runtime_error("Attempted to create more than one MonsterFleetPlanManager.");
-
-        s_instance = this;
-
-        DebugLogger() << "Initializing MonsterFleetPlanManager";
-
-        parse::monster_fleet_plans(GetResourceDir() / "space_monster_spawn_fleets.txt", m_plans);
-
-//#ifdef OUTPUT_PLANS_LIST
-        DebugLogger() << "Starting Monster Fleet Plans:";
-        for (iterator it = begin(); it != end(); ++it)
-            DebugLogger() << " ... " << (*it)->Name() << " spawn rate: " << (*it)->SpawnRate() << " spawn limit: " << (*it)->SpawnLimit();
-//#endif
-    }
-
-    MonsterFleetPlanManager::~MonsterFleetPlanManager() {
-        for (std::vector<MonsterFleetPlan*>::iterator it = m_plans.begin(); it != m_plans.end(); ++it)
-            delete *it;
-        m_plans.clear();
-    }
-
-    /** returns the singleton fleet plan manager */
-    const MonsterFleetPlanManager& GetMonsterFleetPlanManager()
-    { return MonsterFleetPlanManager::GetMonsterFleetPlanManager(); }
-};
-
-namespace {
     /** Used by GenerateStarlanes.  Determines if two systems are connected by
       * maxLaneJumps or less edges on graph. */
-    bool ConnectedWithin(int system1, int system2, int maxLaneJumps, std::vector<std::set<int> >& laneSetArray) {
+    bool ConnectedWithin(int system1, int system2, int maxLaneJumps,
+                         const std::map<int, std::set<int>>& system_lanes)
+    {
         // list of indices of systems that are accessible from previously visited systems.
         // when a new system is found to be accessible, it is added to the back of the
         // list.  the list is iterated through from front to back to find systems
@@ -738,41 +326,44 @@ namespace {
         // size of the vector and the time to intialize would be too much)
         std::map<int, int> accessibleSystemsMap;
 
-        // system currently being investigated, destination of a starlane origination at curSys
-        int curSys, curLaneDest;
+        // system currently being investigated, destination of a starlane origination at cur_sys_id
+        int cur_sys_id, curLaneDest;
         // "depth" level in tree of system currently being investigated
         int curDepth;
 
-        // iterators to set of starlanes, in graph, for the current system    
+        // iterators to set of starlanes, in graph, for the current system
         std::set<int>::iterator curSysLanesSetIter, curSysLanesSetEnd;
 
         // check for simple cases for quick termination
         if (system1 == system2) return true; // system is always connected to itself
         if (0 == maxLaneJumps) return false; // no system is connected to any other system by less than 1 jump
-        if (0 == (laneSetArray[system1]).size()) return false; // no lanes out of start system
-        if (0 == (laneSetArray[system2]).size()) return false; // no lanes into destination system
-        if (system1 >= static_cast<int>(laneSetArray.size()) || system2 >= static_cast<int>(laneSetArray.size())) return false; // out of range
-        if (system1 < 0 || system2 < 0) return false; // out of range
+
+        if (!system_lanes.count(system1)) return false;     // start system not in lanes map
+        if (!system_lanes.count(system2)) return false;     // destination system not in lanes map
+
+        if (system_lanes.at(system1).empty()) return false; // no lanes out of start system
+        if (system_lanes.at(system2).empty()) return false; // no lanes out of destination system
+
 
         // add starting system to list and set of accessible systems
         accessibleSystemsList.push_back(system1);
-        accessibleSystemsMap.insert(std::pair<int, int>(system1, 0));
+        accessibleSystemsMap.insert({system1, 0});
 
         // loop through visited systems
         sysListIter = accessibleSystemsList.begin();
         sysListEnd = accessibleSystemsList.end();
         while (sysListIter != sysListEnd) {
-            curSys = *sysListIter;
+            cur_sys_id = *sysListIter;
 
-            // check that iteration hasn't reached maxLaneJumps levels deep, which would 
+            // check that iteration hasn't reached maxLaneJumps levels deep, which would
             // mean that system2 isn't within maxLaneJumps starlane jumps of system1
-            curDepth = (*accessibleSystemsMap.find(curSys)).second;
+            curDepth = (*accessibleSystemsMap.find(cur_sys_id)).second;
 
             if (curDepth >= maxLaneJumps) return false;
 
             // get set of starlanes for this system
-            curSysLanesSetIter = (laneSetArray[curSys]).begin();
-            curSysLanesSetEnd = (laneSetArray[curSys]).end();
+            curSysLanesSetIter = system_lanes.at(cur_sys_id).begin();
+            curSysLanesSetEnd = system_lanes.at(cur_sys_id).end();
 
             // add starlanes accessible from this system to list and set of accessible starlanes
             // (and check for the goal starlane)
@@ -780,444 +371,440 @@ namespace {
                 curLaneDest = *curSysLanesSetIter;
 
                 // check if curLaneDest has been added to the map of accessible systems
-                if (0 == accessibleSystemsMap.count(curLaneDest)) {
-
+                if (!accessibleSystemsMap.count(curLaneDest)) {
                     // check for goal
                     if (curLaneDest == system2) return true;
 
                     // add curLaneDest to accessible systems list and map
                     accessibleSystemsList.push_back(curLaneDest);
-                    accessibleSystemsMap.insert(std::pair<int, int>(curLaneDest, curDepth + 1));
-                   }
-
-                curSysLanesSetIter++;
+                    accessibleSystemsMap.insert({curLaneDest, curDepth + 1});
+                }
+                ++curSysLanesSetIter;
             }
-
-            sysListIter++;
+            ++sysListIter;
         }
         return false; // default
     }
 
     /** Removes lanes from passed graph that are angularly too close to
       * each other. */
-    void CullAngularlyTooCloseLanes(double maxLaneUVectDotProd, std::vector<std::set<int> >& laneSetArray,
-                                    std::vector<TemporaryPtr<System> > &systems)
+    void CullAngularlyTooCloseLanes(double max_lane_uvect_dot_product,
+                                    std::map<int, std::set<int>>& system_lanes,
+                                    const std::map<int, std::shared_ptr<System>>& systems)
     {
-        // start and end systems of a new lane being considered, and end points of lanes that already exist with that
-        // start at the start or destination of the new lane
-        int curSys, dest1, dest2;
-
-        // geometry stuff... points componenets, vector componenets dot product & magnitudes of vectors
-        double startX, startY, vectX1, vectX2, vectY1, vectY2, dotProd, mag1, mag2;
         // 2 component vector and vect + magnitude typedefs
-
         typedef std::pair<double, double> VectTypeQQ;
         typedef std::pair<VectTypeQQ, double> VectAndMagTypeQQ;
-        typedef std::pair<int, VectAndMagTypeQQ> MapInsertableTypeQQ;
 
-        std::map<int, VectAndMagTypeQQ> laneVectsMap;  // componenets of vectors of lanes of current system, indexed by destination system number
-        std::map<int, VectAndMagTypeQQ>::iterator laneVectsMapIter;
+        std::set<std::pair<int, int>> lanesToRemoveSet;  // start and end stars of lanes to be removed in final step...
 
-        VectTypeQQ tempVect;
-        VectAndMagTypeQQ tempVectAndMag;
-
-        // iterators to go through sets of lanes in array
-        std::set<int>::iterator laneSetIter1, laneSetIter2, laneSetEnd;
-
-        std::set<std::pair<int, int> > lanesToRemoveSet;  // start and end stars of lanes to be removed in final step...
-        std::set<std::pair<int, int> >::iterator lanesToRemoveIter, lanesToRemoveEnd;
-        std::pair<int, int> lane1, lane2;
-
-        int curNumLanes;
-
-        int numSys = systems.size();
         // make sure data is consistent
-        if (static_cast<int>(laneSetArray.size()) != numSys) {
+        if (system_lanes.size() != systems.size()) {
             ErrorLogger() << "CullAngularlyTooCloseLanes got different size vectors of lane sets and systems.  Doing nothing.";
             return;
         }
 
-        if (numSys < 3) return;  // nothing worth doing for less than three systems
+        if (systems.size() < 3) return;  // nothing worth doing for less than three systems
 
         //DebugLogger() << "Culling Too Close Angularly Lanes";
 
         // loop through systems
-        for (curSys = 0; curSys < numSys; curSys++) {
+        for (const auto& entry : systems) {
+            // can't have pairs of lanes departing from a system if that system
+            // has less than two lanes
+            if (system_lanes.at(entry.first).size() < 2)
+                continue;
+
             // get position of current system (for use in calculated vectors)
-            startX = systems[curSys]->X();
-            startY = systems[curSys]->Y();
+            auto startX = entry.second->X();
+            auto startY = entry.second->Y();
+            auto cur_sys_id = entry.first;
 
-            // get number of starlanes current system has
-            curNumLanes = laneSetArray[curSys].size();
+            /** componenets of vectors of lanes of current system, indexed by destination system number */
+            std::map<int, VectAndMagTypeQQ> laneVectsMap;
 
-            // can't have pairs of lanes with less than two lanes...
-            if (curNumLanes > 1) {
+            // get unit vectors for all lanes of this system
+            auto laneSetIter1 = system_lanes[cur_sys_id].begin();
+            while (laneSetIter1 != system_lanes[cur_sys_id].end()) {
+                // get destination for this lane
+                auto dest1 = *laneSetIter1;
+                // get vector to this lane destination
+                auto vectX1 = systems.at(dest1)->X() - startX;
+                auto vectY1 = systems.at(dest1)->Y() - startY;
+                // normalize
+                auto mag1 = std::sqrt(vectX1 * vectX1 + vectY1 * vectY1);
+                vectX1 /= mag1;
+                vectY1 /= mag1;
 
-                // remove any old lane Vector Data
-                laneVectsMap.clear();
+                // store lane in map of lane vectors
+                laneVectsMap.insert({dest1, {{vectX1, vectY1}, mag1}});
 
-                // get unit vectors for all lanes of this system
-                laneSetIter1 = laneSetArray[curSys].begin();
-                laneSetEnd = laneSetArray[curSys].end();
-                while (laneSetIter1 != laneSetEnd) {
-                    // get destination for this lane
-                    dest1 = *laneSetIter1;
-                    // get vector to this lane destination
-                    vectX1 = systems[dest1]->X() - startX;
-                    vectY1 = systems[dest1]->Y() - startY;
-                    // normalize
-                    mag1 = std::sqrt(vectX1 * vectX1 + vectY1 * vectY1);
-                    vectX1 /= mag1;
-                    vectY1 /= mag1;
+                ++laneSetIter1;
+            }
 
-                    // store lane in map of lane vectors
-                    tempVect = VectTypeQQ(vectX1, vectY1);
-                    tempVectAndMag = VectAndMagTypeQQ(tempVect, mag1);
-                    laneVectsMap.insert( MapInsertableTypeQQ(dest1, tempVectAndMag) );
+            // iterate through lanes of cur_sys_id
+            laneSetIter1 = system_lanes[cur_sys_id].begin();
+            ++laneSetIter1;  // start at second, since iterators are used in pairs, and starting both at the first wouldn't be a valid pair
+            while (laneSetIter1 != system_lanes[cur_sys_id].end()) {
+                // get destination of current starlane
+                auto dest1 = *laneSetIter1;
 
-                    laneSetIter1++;
+                std::pair<int, int> lane1;
+                if (cur_sys_id < dest1)
+                    lane1 = {cur_sys_id, dest1};
+                else
+                    lane1 = {dest1, cur_sys_id};
+
+                // check if this lane has already been added to the set of lanes to remove
+                if (lanesToRemoveSet.count(lane1)) {
+                    ++laneSetIter1;
+                    continue;
                 }
 
-                // iterate through lanes of curSys
-                laneSetIter1 = laneSetArray[curSys].begin();
-                laneSetIter1++;  // start at second, since iterators are used in pairs, and starting both at the first wouldn't be a valid pair
-                while (laneSetIter1 != laneSetEnd) {
-                    // get destination of current starlane
-                    dest1 = *laneSetIter1;
+                // extract data on starlane vector...
+                auto laneVectsMapIter = laneVectsMap.find(dest1);
+                assert(laneVectsMapIter != laneVectsMap.end());
+                auto tempVectAndMag = laneVectsMapIter->second;
+                auto tempVect = tempVectAndMag.first;
+                auto vectX1 = tempVect.first;
+                auto vectY1 = tempVect.second;
+                auto mag1 = tempVectAndMag.second;
 
-                    if (curSys < dest1) 
-                        lane1 = std::pair<int, int>(curSys, dest1);
+                // iterate through other lanes of cur_sys_id, in order
+                // to get all possible pairs of lanes
+                auto laneSetIter2 = system_lanes[cur_sys_id].begin();
+                while (laneSetIter2 != laneSetIter1) {
+                    auto dest2 = *laneSetIter2;
+
+                    std::pair<int, int> lane2;
+                    if (cur_sys_id < dest2)
+                        lane2 = {cur_sys_id, dest2};
                     else
-                        lane1 = std::pair<int, int>(dest1, curSys);
+                        lane2 = {dest2, cur_sys_id};
 
-                    // check if this lane has already been added to the set of lanes to remove
-                    if (0 == lanesToRemoveSet.count(lane1)) {
+                    // check if this lane has already been added to the
+                    // set of lanes to remove
+                    if (lanesToRemoveSet.count(lane2)) {
+                        ++laneSetIter2;
+                        continue;
+                    }
 
-                        // extract data on starlane vector...
-                        laneVectsMapIter = laneVectsMap.find(dest1);
-                        assert(laneVectsMapIter != laneVectsMap.end());
-                        tempVectAndMag = laneVectsMapIter->second;
-                        tempVect = tempVectAndMag.first;
-                        vectX1 = tempVect.first;
-                        vectY1 = tempVect.second;
-                        mag1 = tempVectAndMag.second;
+                    // extract data on starlane vector...
+                    laneVectsMapIter = laneVectsMap.find(dest2);
+                    assert(laneVectsMapIter != laneVectsMap.end());
+                    tempVectAndMag = laneVectsMapIter->second;
+                    tempVect = tempVectAndMag.first;
+                    auto vectX2 = tempVect.first;
+                    auto vectY2 = tempVect.second;
+                    auto mag2 = tempVectAndMag.second;
 
-                        // iterate through other lanes of curSys, in order to get all possible pairs of lanes
-                        laneSetIter2 = laneSetArray[curSys].begin();
-                        while (laneSetIter2 != laneSetIter1) {
-                            dest2 = *laneSetIter2;
+                    // find dot product
+                    auto dotProd = vectX1 * vectX2 + vectY1 * vectY2;
 
-                            if (curSys < dest2) 
-                                lane2 = std::pair<int, int>(curSys, dest2);
-                            else
-                                lane2 = std::pair<int, int>(dest2, curSys);
-
-                            // check if this lane has already been added to the set of lanes to remove
-                            if (0 == lanesToRemoveSet.count(lane2)) {
-
-                                // extract data on starlane vector...
-                                laneVectsMapIter = laneVectsMap.find(dest2);
-                                assert(laneVectsMapIter != laneVectsMap.end());
-                                tempVectAndMag = laneVectsMapIter->second;
-                                tempVect = tempVectAndMag.first;
-                                vectX2 = tempVect.first;
-                                vectY2 = tempVect.second;
-                                mag2 = tempVectAndMag.second;
-
-                                // find dot product
-                                dotProd = vectX1 * vectX2 + vectY1 * vectY2;
-
-                                // if dotProd is big enough, then lanes are too close angularly
-                                // thus one needs to be removed.
-                                if (dotProd > maxLaneUVectDotProd) {
-
-                                     // preferentially remove the longer lane
-                                    if (mag1 > mag2) {
-                                        lanesToRemoveSet.insert(lane1);
-                                        break;  // don't need to check any more lanes against lane1, since lane1 has been removed
-                                    } else {
-                                        lanesToRemoveSet.insert(lane2);
-                                    }
-                                }
-                            }
-
-                            laneSetIter2++;
+                    // if dotProd is big enough, then lanes are too close angularly
+                    // thus one needs to be removed.
+                    if (dotProd > max_lane_uvect_dot_product) {
+                        // preferentially remove the longer lane
+                        if (mag1 > mag2) {
+                            lanesToRemoveSet.insert(lane1);
+                            break;  // don't need to check any more lanes against lane1, since lane1 has been removed
+                        } else {
+                            lanesToRemoveSet.insert(lane2);
                         }
                     }
 
-                    laneSetIter1++;
+                    ++laneSetIter2;
                 }
+
+                ++laneSetIter1;
             }
         }
 
         // iterate through set of lanes to remove, and remove them in turn...
-        lanesToRemoveIter = lanesToRemoveSet.begin();
-        lanesToRemoveEnd = lanesToRemoveSet.end();
-        while (lanesToRemoveIter != lanesToRemoveEnd) {
-            lane1 = *lanesToRemoveIter;
+        auto lanes_to_remove_it = lanesToRemoveSet.begin();
+        auto lanes_to_remove_end = lanesToRemoveSet.end();
+        while (lanes_to_remove_it != lanes_to_remove_end) {
+            auto lane1 = *lanes_to_remove_it;
 
-            laneSetArray[lane1.first].erase(lane1.second);
-            laneSetArray[lane1.second].erase(lane1.first);
+            system_lanes[lane1.first].erase(lane1.second);
+            system_lanes[lane1.second].erase(lane1.first);
 
             // check that removing lane hasn't disconnected systems
-            if (!ConnectedWithin(lane1.first, lane1.second, numSys, laneSetArray)) {
+            if (!ConnectedWithin(lane1.first, lane1.second, systems.size(), system_lanes)) {
                 // they aren't connected... reconnect them
-                laneSetArray[lane1.first].insert(lane1.second);
-                laneSetArray[lane1.second].insert(lane1.first);
+                system_lanes[lane1.first].insert(lane1.second);
+                system_lanes[lane1.second].insert(lane1.first);
             }
 
-            lanesToRemoveIter++;
+            ++lanes_to_remove_it;
         }
     }
 
     /** Removes lanes from passed graph that are angularly too close to
       * each other. */
-    void CullTooLongLanes(double maxLaneLength, std::vector<std::set<int> >& laneSetArray,
-                          std::vector<TemporaryPtr<System> > &systems)
+    void CullTooLongLanes(double max_lane_length,
+                          std::map<int, std::set<int>>& system_lanes,
+                          const std::map<int, std::shared_ptr<System>>& systems)
     {
-        // start and end systems of a new lane being considered, and end points of lanes that already exist with that start
-        // at the start or destination of the new lane
-        int curSys, dest;
-
-        // geometry stuff... points components, vector componenets
-        double startX, startY, vectX, vectY;
-
-        // iterators to go through sets of lanes in array
-        std::set<int>::iterator laneSetIter, laneSetEnd;
-
+        DebugLogger() << "CullTooLongLanes max lane length: " << max_lane_length
+                      << "  potential lanes: " << IntSetMapSizeCount(system_lanes)
+                      << "  systems: " << systems.size();
         // map, indexed by lane length, of start and end stars of lanes to be removed
-        std::multimap<double, std::pair<int, int>, std::greater<double> > lanesToRemoveMap;
-        std::multimap<double, std::pair<int, int>, std::greater<double> >::iterator lanesToRemoveIter, lanesToRemoveEnd;
-        std::pair<int, int> lane;
-        typedef std::pair<double, std::pair<int, int> > MapInsertableTypeQQ;
+        std::multimap<double, std::pair<int, int>, std::greater<double>> lanes_to_remove;
 
-        int numSys = systems.size();
         // make sure data is consistent
-        if (static_cast<int>(laneSetArray.size()) != numSys) {
+        if (system_lanes.size() != systems.size())
             return;
-        }
-
-        if (numSys < 2) return;  // nothing worth doing for less than two systems (no lanes!)
+        // nothing worth doing for less than two systems (no lanes!)
+        if (systems.size() < 2)
+            return;
 
         // get squared max lane lenth, so as to eliminate the need to take square roots of lane lenths...
-        double maxLaneLength2 = maxLaneLength*maxLaneLength;
+        double max_lane_length2 = max_lane_length*max_lane_length;
 
         // loop through systems
-        for (curSys = 0; curSys < numSys; curSys++) {
-            // get position of current system (for use in calculating vector)
-            startX = systems[curSys]->X();
-            startY = systems[curSys]->Y();
+        for (const auto& system_entry : systems) {
+            int cur_sys_id = system_entry.first;
+            const auto& cur_system = system_entry.second;
 
-            // iterate through all lanes in system, checking lengths and marking to be removed if necessary
-            laneSetIter = laneSetArray[curSys].begin();
-            laneSetEnd = laneSetArray[curSys].end();
-            while (laneSetIter != laneSetEnd) {
+            // get position of current system (for use in calculating vector)
+            double startX = cur_system->X();
+            double startY = cur_system->Y();
+
+            // iterate through all lanes in system, checking lengths and
+            // marking to be removed if necessary
+            auto lane_it = system_lanes[cur_sys_id].begin();
+            auto lane_end = system_lanes[cur_sys_id].end();
+            while (lane_it != lane_end) {
                 // get destination for this lane
-                dest = *laneSetIter;
+                int dest_sys_id = *lane_it;
                 // convert start and end into ordered pair to represent lane
-                if (curSys < dest) 
-                    lane = std::pair<int, int>(curSys, dest);
+                std::pair<int, int> lane;
+                if (cur_sys_id < dest_sys_id)
+                    lane = {cur_sys_id, dest_sys_id};
                 else
-                    lane = std::pair<int, int>(dest, curSys);
+                    lane = {dest_sys_id, cur_sys_id};
 
                 // get vector to this lane destination
-                vectX = systems[dest]->X() - startX;
-                vectY = systems[dest]->Y() - startY;
+                const auto& dest_system = systems.at(dest_sys_id);
+                auto vectX = dest_system->X() - startX;
+                auto vectY = dest_system->Y() - startY;
 
                 // compare magnitude of vector to max allowed
-                double laneLength2 = vectX*vectX + vectY*vectY;
-                if (laneLength2 > maxLaneLength2) {
+                double lane_length2 = vectX*vectX + vectY*vectY;
+                if (lane_length2 > max_lane_length2) {
                     // lane is too long!  mark it to be removed
-                    lanesToRemoveMap.insert( MapInsertableTypeQQ(laneLength2, lane) );
-                } 
+                    TraceLogger() << "CullTooLongLanes wants to remove lane of length "
+                                  << std::sqrt(lane_length2)
+                                  << " between systems with ids: "
+                                  << cur_sys_id << " and " << dest_sys_id;
+                    lanes_to_remove.insert({lane_length2, lane});
+                }
 
-                laneSetIter++;
+                ++lane_it;
             }
         }
+
+        DebugLogger() << "CullTooLongLanes identified " << lanes_to_remove.size()
+                      << " long lanes to possibly remove";
 
         // Iterate through set of lanes to remove, and remove them in turn.  Since lanes were inserted in the map indexed by
         // their length, iteration starting with begin starts with the longest lane first, then moves through the lanes as
         // they get shorter, ensuring that the longest lanes are removed first.
-        lanesToRemoveIter = lanesToRemoveMap.begin();
-        lanesToRemoveEnd = lanesToRemoveMap.end();
-        while (lanesToRemoveIter != lanesToRemoveEnd) {
-            lane = lanesToRemoveIter->second;
+        auto lanes_to_remove_it = lanes_to_remove.begin();
+        while (lanes_to_remove_it != lanes_to_remove.end()) {
+            auto lane = lanes_to_remove_it->second;
 
             // ensure the lane still exists
-            if (laneSetArray[lane.first].count(lane.second) > 0 &&
-                laneSetArray[lane.second].count(lane.first) > 0) {
-
+            if (system_lanes[lane.first].count(lane.second) > 0 &&
+                system_lanes[lane.second].count(lane.first) > 0)
+            {
                 // remove lane
-                laneSetArray[lane.first].erase(lane.second);
-                laneSetArray[lane.second].erase(lane.first);
+                system_lanes[lane.first].erase(lane.second);
+                system_lanes[lane.second].erase(lane.first);
 
                 // if removing lane has disconnected systems, reconnect them
-                if (!ConnectedWithin(lane.first, lane.second, numSys, laneSetArray)) {
-                    laneSetArray[lane.first].insert(lane.second);
-                    laneSetArray[lane.second].insert(lane.first);
+                if (!ConnectedWithin(lane.first, lane.second, systems.size(), system_lanes)) {
+                    system_lanes[lane.first].insert(lane.second);
+                    system_lanes[lane.second].insert(lane.first);
+                    TraceLogger() << "CullTooLongLanes can't remove lane between systems with ids: "
+                                  << lane.first << " and " << lane.second
+                                  << " because they would then be disconnected (more than "
+                                  << systems.size() << " jumps apart)";
+                } else {
+                    TraceLogger() << "CullTooLongLanes removing lane between systems with ids: "
+                                  << lane.first << " and " << lane.second;
                 }
             }
-            lanesToRemoveIter++;
+            ++lanes_to_remove_it;
         }
+
+        DebugLogger() << "CullTooLongLanes left with " << IntSetMapSizeCount(system_lanes)
+                      << " lanes";
     }
 }
 
-void GenerateStarlanes(GalaxySetupOption freq) {
-    if (freq == GALAXY_SETUP_NONE)
-        return;
+void GenerateStarlanes(int max_jumps_between_systems, int max_starlane_length) {
+    DebugLogger() << "GenerateStarlanes  max jumps b/w sys: " << max_jumps_between_systems
+                  << "  max lane length: " << max_starlane_length;
 
-    int numSys, s1, s2, s3; // numbers of systems, indices in vec_sys
-    int n; // loop counter
-
-    std::vector<int> triVerts;  // indices of stars that form vertices of a triangle
+    std::vector<int> triangle_vertices;  // indices of stars that form vertices of a triangle
 
     // array of set to store final, included starlanes for each star
-    std::vector<std::set<int> > laneSetArray;
+    std::map<int, std::set<int>> system_lanes;
 
-    // array of set to store possible starlanes for each star, as extracted form triangulation
-    std::vector<std::set<int> > potentialLaneSetArray;
-
-    // iterators for traversing lists of starlanes
-    std::set<int>::iterator laneSetIter, laneSetEnd, laneSetIter2, laneSetEnd2;
+    // array of set to store possible starlanes for each star,
+    // as extracted form triangulation
+    std::map<int, std::set<int>> potential_system_lanes;
 
     // get systems
-    std::vector<TemporaryPtr<System> > sys_vec = Objects().FindObjects<System>();
-    numSys = sys_vec.size();  // (actually = number of systems + 1)
+    auto sys_vec = Objects().FindObjects<System>();
+    std::map<int, std::shared_ptr<System>> sys_map;
+    std::transform(sys_vec.begin(), sys_vec.end(), std::inserter(sys_map, sys_map.end()),
+                   [](const std::shared_ptr<System>& p) { return std::make_pair(p->ID(), p); });
 
-    // pass systems to Delauney Triangulation routine, getting array of triangles back
-    std::list<Delauney::DTTriangle>* triList = Delauney::DelauneyTriangulate(sys_vec);
-    if (!triList ||triList->empty()) {
-        ErrorLogger() << "Got no list or blank list of triangles from Triangulation.";
-        return;
-    }
-
-    Delauney::DTTriangle tri;
-
-    // convert passed StarlaneFrequency freq into maximum number of starlane jumps between systems that are
-    // "adjacent" in the delauney triangulation.  (separated by a single potential starlane).
-    // these numbers can be tweaked
-    int maxJumpsBetweenSystems = UniverseDataTables()["MaxJumpsBetweenSystems"][0][freq];
-
-    // initialize arrays...
-    potentialLaneSetArray.resize(numSys);
-    for (n = 0; n < numSys; n++) {
-        potentialLaneSetArray[n].clear();
-    }
-    laneSetArray.resize(numSys);
-    for (n = 0; n < numSys; n++) {
-        laneSetArray[n].clear();
-    }
-
-    // extract triangles from list, add edges to sets of potential starlanes for each star (in array)
-    while (!triList->empty()) {
-        tri = triList->front();
-
-        triVerts = tri.Verts();
-        s1 = triVerts[0];
-        s2 = triVerts[1];
-        s3 = triVerts[2];
-
-        // add starlanes to list of potential starlanes for each star, making sure each pair involves
-        // only stars that actually exist.  triangle generation uses three extra points which don't
-        // represent actual systems and which need to be weeded out here.
-        if ((s1 >= 0) && (s2 >= 0) && (s3 >= 0)) {
-            if ((s1 < numSys) && (s2 < numSys)) {
-                potentialLaneSetArray[s1].insert(s2);
-                potentialLaneSetArray[s2].insert(s1);
-            }
-            if ((s1 < numSys) && (s3 < numSys)) {
-                potentialLaneSetArray[s1].insert(s3);
-                potentialLaneSetArray[s3].insert(s1);
-            }
-            if ((s2 < numSys) && (s3 < numSys)) {
-                potentialLaneSetArray[s2].insert(s3);
-                potentialLaneSetArray[s3].insert(s2);
+    // generate lanes
+    if (GetGameRules().Get<bool>("RULE_STARLANES_EVERYWHERE")) {
+        // if the lanes everywhere rules is true, add starlanes to every star
+        // to every other star...
+        for (const auto& sys1 : sys_vec) {
+            for (const auto& sys2 : sys_vec) {
+                if (sys1->ID() == sys2->ID())
+                    continue;
+                potential_system_lanes[sys1->ID()].insert(sys2->ID());
             }
         }
+        DebugLogger() << "Generated " << IntSetMapSizeCount(potential_system_lanes) << " potential starlanes between all system pairs";
+        CullTooLongLanes(max_starlane_length, potential_system_lanes, sys_map);
+        DebugLogger() << "Left with " << IntSetMapSizeCount(potential_system_lanes) << " potential starlanes after length culling";
+        system_lanes = potential_system_lanes;
 
-        triList->pop_front();
-    }
+    } else {
+        // pass systems to Delauney Triangulation routine, getting array of triangles back
+        auto triangle_list = Delauney::DelauneyTriangulate(sys_vec);
+        if (triangle_list.empty()) {
+            ErrorLogger() << "Got blank list of triangles from Triangulation.";
+            return;
+        }
 
-    // cleanup
-    delete triList;
+        // extract triangles from list, add edges to sets of potential starlanes
+        // for each star (in array)
+        while (!triangle_list.empty()) {
+            auto tri = triangle_list.front();
 
-    //DebugLogger() << "Extracted Potential Starlanes from Triangulation";
+            // extract indices for the corners of the triangles, which should
+            // correspond to indices in sys_vec, except that there can also be
+            // indices up to sys_vec.size() + 2, which correspond to extra points
+            // used by the algorithm
+            triangle_vertices = tri.Verts();
+            int s1 = triangle_vertices[0];
+            int s2 = triangle_vertices[1];
+            int s3 = triangle_vertices[2];
 
-    double maxStarlaneLength = UniverseDataTables()["MaxStarlaneLength"][0][0];
-    CullTooLongLanes(maxStarlaneLength, potentialLaneSetArray, sys_vec);
-
-    CullAngularlyTooCloseLanes(0.98, potentialLaneSetArray, sys_vec);
-
-    //DebugLogger() << "Culled Agularly Too Close Lanes";
-
-    laneSetArray = potentialLaneSetArray;
-
-    // attempt removing lanes, but don't do so if it would make the systems
-    // the lane connects too far apart
-    for (n = 0; n < numSys; ++n) {
-        laneSetIter = potentialLaneSetArray[n].begin();
-
-        while (laneSetIter != potentialLaneSetArray[n].end()) {
-            s1 = *laneSetIter;
-
-            // try removing lane
-            laneSetArray[n].erase(s1);
-            laneSetArray[s1].erase(n);
-
-            if (!ConnectedWithin(n, s1, maxJumpsBetweenSystems, laneSetArray)) {
-                // lane removal was a bad idea.  restore it
-                laneSetArray[n].insert(s1);
-                laneSetArray[s1].insert(n);
+            if (s1 < 0 || s2 < 0 || s3 < 0) {
+                ErrorLogger() << "Got negative vector indices from DelauneyTriangulate!";
+                triangle_list.pop_front();
+                continue;
             }
 
-            laneSetIter++;
-        } // end while
+            // get system ids for ends of lanes from the sys_vec indices
+            int sys1_id = INVALID_OBJECT_ID;
+            if (static_cast<std::size_t>(s1) < sys_vec.size())
+                sys1_id = sys_vec.at(s1)->ID();
+            int sys2_id = INVALID_OBJECT_ID;
+            if (static_cast<std::size_t>(s2) < sys_vec.size())
+                sys2_id = sys_vec.at(s2)->ID();
+            int sys3_id = INVALID_OBJECT_ID;
+            if (static_cast<std::size_t>(s3) < sys_vec.size())
+                sys3_id = sys_vec.at(s3)->ID();
+
+
+            // add starlanes to list of potential starlanes for each star,
+            // making sure each pair involves only valid indices into sys_vec
+            if (sys1_id != INVALID_OBJECT_ID && sys2_id != INVALID_OBJECT_ID) {
+                potential_system_lanes[sys1_id].insert(sys2_id);
+                potential_system_lanes[sys2_id].insert(sys1_id);
+            }
+            if (sys2_id != INVALID_OBJECT_ID && sys3_id != INVALID_OBJECT_ID) {
+                potential_system_lanes[sys2_id].insert(sys3_id);
+                potential_system_lanes[sys3_id].insert(sys2_id);
+            }
+            if (sys3_id != INVALID_OBJECT_ID && sys1_id != INVALID_OBJECT_ID) {
+                potential_system_lanes[sys3_id].insert(sys1_id);
+                potential_system_lanes[sys1_id].insert(sys3_id);
+            }
+
+            triangle_list.pop_front();
+        }
+
+        DebugLogger() << "Extracted " << IntSetMapSizeCount(potential_system_lanes) << " potential starlanes from triangulation";
+        CullTooLongLanes(max_starlane_length, potential_system_lanes, sys_map);
+        DebugLogger() << "Left with " << IntSetMapSizeCount(potential_system_lanes) << " potential starlanes after length culling";
+        CullAngularlyTooCloseLanes(0.98, potential_system_lanes, sys_map);
+        DebugLogger() << "Left with " << IntSetMapSizeCount(potential_system_lanes) << " potential starlanes after angular culling";
+
+        system_lanes = potential_system_lanes;
+
+        // attempt removing lanes, but don't do so if it would make the systems
+        // the lane connects too far apart
+        for (auto& sys_lanes_pair : potential_system_lanes) {
+            auto sys1_id = sys_lanes_pair.first;
+            for (auto& sys2_id : sys_lanes_pair.second) {
+                // TODO: skip cases where sys2 < sys1 since these should already
+                //       have been handled by previous loop iterations, since
+                //       all lanes should exist in both directions
+
+                // try removing lane
+                system_lanes[sys1_id].erase(sys2_id);
+                system_lanes[sys2_id].erase(sys1_id);
+
+                if (!ConnectedWithin(sys1_id, sys2_id, max_jumps_between_systems, system_lanes)) {
+                    // lane removal was a bad idea.  restore it
+                    system_lanes[sys1_id].insert(sys2_id);
+                    system_lanes[sys2_id].insert(sys1_id);
+                }
+            }
+        }
     }
 
     // add the starlane to the stars
-    for (n = 0; n < numSys; ++n) {
-        const std::set<int>& lanes = laneSetArray[n];
-        for (std::set<int>::const_iterator it = lanes.begin(); it != lanes.end(); ++it)
-            sys_vec[n]->AddStarlane(sys_vec[*it]->ID()); // System::AddStarlane() expects a system ID
+    for (auto& sys : Objects().FindObjects<System>()) {
+        const auto& sys_lanes = system_lanes[sys->ID()];
+        for (auto& lane_end_id : sys_lanes)
+            sys->AddStarlane(lane_end_id);
     }
-    
+
     DebugLogger() << "Initializing System Graph";
     GetUniverse().InitializeSystemGraph();
 }
 
 void SetActiveMetersToTargetMaxCurrentValues(ObjectMap& object_map) {
-    std::map<MeterType, MeterType> meters;
-    meters[METER_POPULATION] =   METER_TARGET_POPULATION;
-    meters[METER_INDUSTRY] =     METER_TARGET_INDUSTRY;
-    meters[METER_RESEARCH] =     METER_TARGET_RESEARCH;
-    meters[METER_TRADE] =        METER_TARGET_TRADE;
-    meters[METER_CONSTRUCTION] = METER_TARGET_CONSTRUCTION;
-    meters[METER_HAPPINESS] =    METER_TARGET_HAPPINESS;
-    meters[METER_FUEL] =         METER_MAX_FUEL;
-    meters[METER_SHIELD] =       METER_MAX_SHIELD;
-    meters[METER_STRUCTURE] =    METER_MAX_STRUCTURE;
-    meters[METER_DEFENSE] =      METER_MAX_DEFENSE;
-    meters[METER_TROOPS] =       METER_MAX_TROOPS;
-    meters[METER_SUPPLY] =       METER_MAX_SUPPLY;
-
+    TraceLogger(effects) << "SetActiveMetersToTargetMaxCurrentValues";
     // check for each pair of meter types.  if both exist, set active
     // meter current value equal to target meter current value.
-    for (ObjectMap::iterator<> it = object_map.begin(); it != object_map.end(); ++it) {
-        for (std::map<MeterType, MeterType>::const_iterator meter_it = meters.begin(); meter_it != meters.end(); ++meter_it)
-            if (Meter* meter = it->GetMeter(meter_it->first))
-                if (Meter* targetmax_meter = it->GetMeter(meter_it->second))
+    for (const auto& object : object_map) {
+        TraceLogger(effects) << "  object: " << object->Name() << " (" << object->ID() << ")";
+        for (auto& entry : AssociatedMeterTypes()) {
+            if (Meter* meter = object->GetMeter(entry.first)) {
+                if (Meter* targetmax_meter = object->GetMeter(entry.second)) {
+                    TraceLogger(effects) << "    meter: " << boost::lexical_cast<std::string>(entry.first)
+                                         << "  before: " << meter->Current()
+                                         << "  set to: " << targetmax_meter->Current();
                     meter->SetCurrent(targetmax_meter->Current());
+                }
+            }
+        }
     }
 }
 
 void SetNativePopulationValues(ObjectMap& object_map) {
-    for (ObjectMap::iterator<> it = object_map.begin(); it != object_map.end(); ++it) {
-        Meter* meter = it->GetMeter(METER_POPULATION);
-        Meter* targetmax_meter = it->GetMeter(METER_TARGET_POPULATION);
+    for (const auto& object : object_map) {
+        Meter* meter = object->GetMeter(METER_POPULATION);
+        Meter* targetmax_meter = object->GetMeter(METER_TARGET_POPULATION);
         // only applies to unowned planets
-        if (meter && targetmax_meter && it->Unowned()) {
+        if (meter && targetmax_meter && object->Unowned()) {
             double r = RandZeroToOne();
-            double factor = (0.1<r)?r:0.1;
+            double factor = (0.1 < r) ? r : 0.1;
             meter->SetCurrent(targetmax_meter->Current() * factor);
         }
     }
@@ -1225,24 +812,23 @@ void SetNativePopulationValues(ObjectMap& object_map) {
 
 bool SetEmpireHomeworld(Empire* empire, int planet_id, std::string species_name) {
     // get home planet and system, check if they exist
-    TemporaryPtr<Planet> home_planet = GetPlanet(planet_id);
-    TemporaryPtr<System> home_system;
+    auto home_planet = GetPlanet(planet_id);
+    std::shared_ptr<System> home_system;
     if (home_planet)
         home_system = GetSystem(home_planet->SystemID());
     if (!home_planet || !home_system) {
-        ErrorLogger() << "UniverseGenerator::SetEmpireHomeworld: couldn't get homeworld or system for empire" << empire->EmpireID();
+        ErrorLogger() << "SetEmpireHomeworld: couldn't get homeworld or system for empire" << empire->EmpireID();
         return false;
     }
 
-    DebugLogger() << "UniverseGenerator::SetEmpireHomeworld: setting " << home_system->ID()
-                           << " (planet " <<  home_planet->ID()
-                           << ") to be home system for empire " << empire->EmpireID();
+    DebugLogger() << "SetEmpireHomeworld: setting system " << home_system->ID()
+                  << " (planet " <<  home_planet->ID() << ") to be home system for empire " << empire->EmpireID();
 
     // get species, check if it exists
     Species* species = GetSpeciesManager().GetSpecies(species_name);
     if (!species) {
-        ErrorLogger() << "UniverseGenerator::SetEmpireHomeworld: couldn't get species \""
-                               << species_name << "\" to set with homeworld id " << home_planet->ID();
+        ErrorLogger() << "SetEmpireHomeworld: couldn't get species \""
+                      << species_name << "\" to set with homeworld id " << home_planet->ID();
         return false;
     }
 
@@ -1252,12 +838,15 @@ bool SetEmpireHomeworld(Empire* empire, int planet_id, std::string species_name)
         // invert map from planet type to environments to map from
         // environments to type, sorted by environment
         std::map<PlanetEnvironment, PlanetType> sept;
-        for (std::map<PlanetType, PlanetEnvironment>::const_iterator it = spte.begin(); it != spte.end(); ++it)
-            sept[it->second] = it->first;
+        for (const auto& entry : spte)
+            sept[entry.second] = entry.first;
         // assuming enum values are ordered in increasing goodness...
         PlanetType preferred_planet_type = sept.rbegin()->second;
 
+        // both the current as well as the original type need to be set to the preferred type
         home_planet->SetType(preferred_planet_type);
+        home_planet->SetOriginalType(preferred_planet_type);
+        // set planet size according to planet type
         if (preferred_planet_type == PT_ASTEROIDS)
             home_planet->SetSize(SZ_ASTEROIDS);
         else if (preferred_planet_type == PT_GASGIANT)
@@ -1279,25 +868,24 @@ void InitEmpires(const std::map<int, PlayerSetupData>& player_setup_data)
     DebugLogger() << "Initializing " << player_setup_data.size() << " empires";
 
     // copy empire colour table, so that individual colours can be removed after they're used
-    std::vector<GG::Clr> colors = EmpireColors();
+    auto colors = EmpireColors();
 
     // create empire objects and do some basic initilization for each player
-    int player_i = 0;
-    for (std::map<int, PlayerSetupData>::const_iterator setup_data_it = player_setup_data.begin();
-         setup_data_it != player_setup_data.end(); ++setup_data_it, ++player_i)
-    {
-        int         player_id =     setup_data_it->first;
+    for (const auto& entry : player_setup_data) {
+        int         player_id =     entry.first;
         if (player_id == Networking::INVALID_PLAYER_ID)
-            ErrorLogger() << "Universe::InitEmpires player id (" << player_id << ") is invalid";
+            ErrorLogger() << "InitEmpires player id (" << player_id << ") is invalid";
+
         // use player ID for empire ID so that the calling code can get the
         // correct empire for each player ID  in player_setup_data
         int         empire_id =     player_id;
-        std::string player_name =   setup_data_it->second.m_player_name;
-        GG::Clr     empire_colour = setup_data_it->second.m_empire_color;
+        std::string player_name =   entry.second.m_player_name;
+        GG::Clr     empire_colour = entry.second.m_empire_color;
+        bool        authenticated = entry.second.m_authenticated;
 
         // validate or generate empire colour
         // ensure no other empire gets auto-assigned this colour automatically
-        std::vector<GG::Clr>::iterator color_it = std::find(colors.begin(), colors.end(), empire_colour);
+        auto color_it = std::find(colors.begin(), colors.end(), empire_colour);
         if (color_it != colors.end())
             colors.erase(color_it);
 
@@ -1315,13 +903,13 @@ void InitEmpires(const std::map<int, PlayerSetupData>& player_setup_data)
         }
 
         // set generic default empire name
-        std::string empire_name = UserString("EMPIRE") + boost::lexical_cast<std::string>(empire_id);
+        std::string empire_name = UserString("EMPIRE") + std::to_string(empire_id);
 
         DebugLogger() << "Universe::InitEmpires creating new empire" << " with ID: " << empire_id
-                               << " for player: " << player_name << " (with player id: " << player_id << ")";
+                      << " for player: " << player_name << " (with player id: " << player_id << ")";
 
         // create new Empire object through empire manager
-        Empires().CreateEmpire(empire_id, empire_name, player_name, empire_colour);
+        Empires().CreateEmpire(empire_id, empire_name, player_name, empire_colour, authenticated);
     }
 
     Empires().ResetDiplomacy();

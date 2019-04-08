@@ -33,6 +33,8 @@
 
 #include <GG/GUI.h>
 
+#include <chrono>
+
 
 namespace GG {
 
@@ -42,11 +44,11 @@ namespace GG {
     consistency. */
 struct GG_API EventPumpState
 {
-    EventPumpState(); ///< Default ctor.
+    EventPumpState();
 
-    unsigned int last_FPS_time;    ///< The last time an FPS calculation was done.
-    unsigned int last_frame_time;  ///< The time of the last frame rendered.
-    unsigned int most_recent_time; ///< The time recorded on the previous iteration of the event pump loop.
+    std::chrono::high_resolution_clock::time_point last_FPS_time;    ///< The last time an FPS calculation was done.
+    std::chrono::high_resolution_clock::time_point last_frame_time;  ///< The time of the last frame rendered.
+    std::chrono::high_resolution_clock::time_point most_recent_time; ///< The time recorded on the previous iteration of the event pump loop.
     std::size_t  frames;           ///< The number of frames rendered since \a last_frame_time.
 };
 
@@ -120,7 +122,8 @@ while ( ... ) {
 class GG_API EventPump : public EventPumpBase
 {
 public:
-    virtual ~EventPump() {} ///< virtual dtor
+    virtual ~EventPump()
+    {}
 
     /** Cycles through event-handling and rendering, calling
         GUI::HandleSystemEvents() and then EventPumpBase::LoopBody(). */
@@ -134,8 +137,9 @@ public:
 class GG_API ModalEventPump : public EventPump
 {
 public:
-    ModalEventPump(const bool& done); ///< Basic ctor.
-    virtual void operator()();
+    ModalEventPump(const bool& done);
+
+    void operator()() override;
 
 protected:
     /** Returns true iff the constructor parameter \a done is true. */

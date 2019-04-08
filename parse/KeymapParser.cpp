@@ -1,15 +1,18 @@
-#include "Label.h"
 #include "Parse.h"
+
 #include "ParseImpl.h"
 
+#include "../util/Directories.h"
+
 #include <boost/spirit/include/phoenix.hpp>
+
 
 #define DEBUG_PARSERS 0
 
 #if DEBUG_PARSERS
 namespace std {
     inline ostream& operator<<(ostream& os, const std::map<int, int>&) { return os; 
-    inline ostream& operator<<(ostream& os, const std::map<std::string, std::map<int, int> >&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::map<std::string, std::map<int, int>>&) { return os; }
 }
 #endif
 
@@ -18,13 +21,7 @@ namespace {
     typedef std::map<std::string, Keymap>   NamedKeymaps;
 
     struct insert_key_pair_ {
-#if BOOST_VERSION < 105600
-        template <typename Arg1, typename Arg2> // Phoenix v2
-        struct result
-        { typedef void type; };
-#else
         typedef void result_type;
-#endif
 
         void operator()(Keymap& keymap, const Keymap::value_type& key_id_pair) const {
             keymap[key_id_pair.first] = key_id_pair.second;
@@ -34,45 +31,50 @@ namespace {
     const boost::phoenix::function<insert_key_pair_> insert_key_pair;
 
     struct insert_key_map_ {
-#if BOOST_VERSION < 105600
-        template <typename Arg1, typename Arg2> // Phoenix v2
-        struct result
-        { typedef void type; };
-#else
         typedef void result_type;
-#endif
 
-        void operator()(NamedKeymaps& named_keymaps, const NamedKeymaps::value_type& name_keymap) const {
+        void operator()(NamedKeymaps& named_keymaps,
+                        const NamedKeymaps::value_type& name_keymap) const
+        {
             named_keymaps[name_keymap.first] = name_keymap.second;
             //std::cout << "inserted keymap: " << name_keymap.first << std::endl;
         }
     };
     const boost::phoenix::function<insert_key_map_> insert_key_map;
 
-    struct rules {
-        rules() {
-            const parse::lexer& tok = parse::lexer::instance();
+    using start_rule_payload = NamedKeymaps;
+    using start_rule_signature = void(start_rule_payload&);
+
+    struct grammar : public parse::detail::grammar<start_rule_signature> {
+        grammar(const parse::lexer& tok,
+                const std::string& filename,
+                const parse::text_iterator& first, const parse::text_iterator& last) :
+            grammar::base_type(start)
+        {
+            namespace phoenix = boost::phoenix;
+            namespace qi = boost::spirit::qi;
+
+            using phoenix::construct;
 
             qi::_1_type _1;
             qi::_2_type _2;
             qi::_3_type _3;
             qi::_4_type _4;
             qi::_a_type _a;
-            qi::_b_type _b;
             qi::_r1_type _r1;
-            using phoenix::construct;
+            qi::omit_type omit_;
 
             int_pair
-                =   tok.int_ [ _a = _1 ] >> tok.int_ [ _b = _1 ]
-                    [ insert_key_pair(_r1, construct<Keymap::value_type>(_a, _b)) ]
+                =   (tok.int_ >> tok.int_)
+                    [ insert_key_pair(_r1, construct<Keymap::value_type>(_1, _2)) ]
                 ;
 
             keymap
-                =   tok.Keymap_
-                >   parse::label(Name_token) > tok.string [ _a = _1 ]
-                >   parse::label(Keys_token)
-                >   ( '[' > *(int_pair(_b)) > ']' )
-                    [ insert_key_map(_r1, construct<NamedKeymaps::value_type>(_a, _b)) ]
+                = ( omit_[tok.Keymap_]
+                >   label(tok.Name_) > tok.string
+                >   label(tok.Keys_)
+                >   ( '[' > *(int_pair(_a)) > ']' )
+                  ) [ insert_key_map(_r1, construct<NamedKeymaps::value_type>(_1, _a)) ]
                 ;
 
             start
@@ -87,29 +89,19 @@ namespace {
             debug(article);
 #endif
 
-            qi::on_error<qi::fail>(start, parse::report_error(_1, _2, _3, _4));
+            qi::on_error<qi::fail>(start, parse::report_error(filename, first, last, _1, _2, _3, _4));
         }
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (Keymap&),
-            qi::locals<int, int>,
-            parse::skipper_type
-        > int_pair_rule;
+        using int_pair_rule = parse::detail::rule<void (Keymap&)>;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
+        using keymap_rule = parse::detail::rule<
             void (NamedKeymaps&),
-            qi::locals<std::string, Keymap>,
-            parse::skipper_type
-        > keymap_rule;
+            boost::spirit::qi::locals<Keymap>
+        >;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (NamedKeymaps&),
-            parse::skipper_type
-        > start_rule;
+        using start_rule = parse::detail::rule<start_rule_signature>;
 
+        parse::detail::Labeller label;
         int_pair_rule   int_pair;
         keymap_rule     keymap;
         start_rule      start;
@@ -117,6 +109,10 @@ namespace {
 }
 
 namespace parse {
-    bool keymaps(const boost::filesystem::path& path, NamedKeymaps& nkm)
-    { return detail::parse_file<rules, NamedKeymaps>(path, nkm); }
+    NamedKeymaps keymaps(const boost::filesystem::path& path) {
+        const lexer lexer;
+        NamedKeymaps nkm;
+        /*auto success =*/ detail::parse_file<grammar, NamedKeymaps>(lexer, path, nkm);
+        return nkm;
+    }
 }

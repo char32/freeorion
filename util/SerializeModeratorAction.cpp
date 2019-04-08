@@ -5,7 +5,6 @@
 #include "Serialize.ipp"
 
 
-// exports for boost serialization of polymorphic ModeratorAction hierarchy
 BOOST_CLASS_EXPORT(Moderator::DestroyUniverseObject)
 BOOST_CLASS_EXPORT(Moderator::SetOwner)
 BOOST_CLASS_EXPORT(Moderator::AddStarlane)

@@ -1,234 +1,60 @@
 #include "EnumParser.h"
 
+#include "../universe/Enums.h"
+
 
 namespace qi = boost::spirit::qi;
 
 #define DEBUG_PARSERS 0
 
 namespace {
-    qi::_1_type _1;
     qi::_val_type _val;
 }
 
 namespace parse {
-    template <>
-    enum_parser_rule<PlanetSize>::type& enum_parser<PlanetSize>()
+    empire_affiliation_enum_grammar::empire_affiliation_enum_grammar(const parse::lexer& tok) :
+        empire_affiliation_enum_grammar::base_type(rule, "empire_affiliation_enum_grammar")
     {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<PlanetSize>::type retval
-            =   tok.Tiny_       [ _val = SZ_TINY ]
-            |   tok.Small_      [ _val = SZ_SMALL ]
-            |   tok.Medium_     [ _val = SZ_MEDIUM ]
-            |   tok.Large_      [ _val = SZ_LARGE ]
-            |   tok.Huge_       [ _val = SZ_HUGE ]
-            |   tok.Asteroids_  [ _val = SZ_ASTEROIDS ]
-            |   tok.GasGiant_   [ _val = SZ_GASGIANT ]
-            ;
-        static bool once = true;
-        if (once) {
-            retval.name("PlanetSize");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
-    }
-
-    template <>
-    enum_parser_rule<PlanetType>::type& enum_parser<PlanetType>()
-    {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<PlanetType>::type retval
-            =   tok.Swamp_      [ _val = PT_SWAMP ]
-            |   tok.Toxic_      [ _val = PT_TOXIC ]
-            |   tok.Inferno_    [ _val = PT_INFERNO ]
-            |   tok.Radiated_   [ _val = PT_RADIATED ]
-            |   tok.Barren_     [ _val = PT_BARREN ]
-            |   tok.Tundra_     [ _val = PT_TUNDRA ]
-            |   tok.Desert_     [ _val = PT_DESERT ]
-            |   tok.Terran_     [ _val = PT_TERRAN ]
-            |   tok.Ocean_      [ _val = PT_OCEAN ]
-            |   tok.Asteroids_  [ _val = PT_ASTEROIDS ]
-            |   tok.GasGiant_   [ _val = PT_GASGIANT ]
-            ;
-        static bool once = true;
-        if (once) {
-            retval.name("PlanetType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
-    }
-
-    template <>
-    enum_parser_rule<PlanetEnvironment>::type& enum_parser<PlanetEnvironment>()
-    {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<PlanetEnvironment>::type retval
-            =   tok.Uninhabitable_  [ _val = PE_UNINHABITABLE ]
-            |   tok.Hostile_        [ _val = PE_HOSTILE ]
-            |   tok.Poor_           [ _val = PE_POOR ]
-            |   tok.Adequate_       [ _val = PE_ADEQUATE ]
-            |   tok.Good_           [ _val = PE_GOOD ]
-            ;
-        static bool once = true;
-        if (once) {
-            retval.name("PlanetEnvironment");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
-    }
-
-    template <>
-    enum_parser_rule<UniverseObjectType>::type& enum_parser<UniverseObjectType>()
-    {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<UniverseObjectType>::type retval
-            =   tok.Building_           [ _val = OBJ_BUILDING ]
-            |   tok.Ship_               [ _val = OBJ_SHIP ]
-            |   tok.Fleet_              [ _val = OBJ_FLEET ]
-            |   tok.Planet_             [ _val = OBJ_PLANET ]
-            |   tok.PopulationCenter_   [ _val = OBJ_POP_CENTER ]
-            |   tok.ProductionCenter_   [ _val = OBJ_PROD_CENTER ]
-            |   tok.System_             [ _val = OBJ_SYSTEM ]
-            |   tok.Field_              [ _val = OBJ_FIELD ]
-            ;
-        static bool once = true;
-        if (once) {
-            retval.name("UniverseObjectType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
-    }
-
-    template <>
-    enum_parser_rule<StarType>::type& enum_parser<StarType>()
-    {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<StarType>::type retval
-            =   tok.Blue_           [ _val = STAR_BLUE ]
-            |   tok.White_          [ _val = STAR_WHITE ]
-            |   tok.Yellow_         [ _val = STAR_YELLOW ]
-            |   tok.Orange_         [ _val = STAR_ORANGE ]
-            |   tok.Red_            [ _val = STAR_RED ]
-            |   tok.Neutron_        [ _val = STAR_NEUTRON ]
-            |   tok.BlackHole_      [ _val = STAR_BLACK ]
-            |   tok.NoStar_         [ _val = STAR_NONE ]
-            ;
-        static bool once = true;
-        if (once) {
-            retval.name("StarType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
-    }
-
-    template <>
-    enum_parser_rule<EmpireAffiliationType>::type& enum_parser<EmpireAffiliationType>()
-    {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<EmpireAffiliationType>::type retval
+        rule
             =   tok.TheEmpire_  [ _val = AFFIL_SELF ]
             |   tok.EnemyOf_    [ _val = AFFIL_ENEMY ]
             |   tok.AllyOf_     [ _val = AFFIL_ALLY ]
             |   tok.AnyEmpire_  [ _val = AFFIL_ANY ]
             |   tok.None_       [ _val = AFFIL_NONE ]
             |   tok.CanSee_     [ _val = AFFIL_CAN_SEE ]
+            |   tok.Human_      [ _val = AFFIL_HUMAN ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("EmpireAffiliationType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 
-    template <>
-    enum_parser_rule<UnlockableItemType>::type& enum_parser<UnlockableItemType>()
+    unlockable_item_enum_grammar::unlockable_item_enum_grammar(const parse::lexer& tok) :
+        unlockable_item_enum_grammar::base_type(rule, "unlockable_item_enum_grammar")
     {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<UnlockableItemType>::type retval
+        rule
             =   tok.Building_       [ _val = UIT_BUILDING ]
             |   tok.ShipPart_       [ _val = UIT_SHIP_PART ]
             |   tok.ShipHull_       [ _val = UIT_SHIP_HULL ]
             |   tok.ShipDesign_     [ _val = UIT_SHIP_DESIGN ]
             |   tok.Tech_           [ _val = UIT_TECH ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("UnlockableItemType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 
-    template <>
-    enum_parser_rule<TechType>::type& enum_parser<TechType>()
+    ship_slot_enum_grammar::ship_slot_enum_grammar(const parse::lexer& tok) :
+        ship_slot_enum_grammar::base_type(rule, "ship_slot_enum_grammar")
     {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<TechType>::type retval
-            =   tok.Theory_         [ _val = TT_THEORY ]
-            |   tok.Application_    [ _val = TT_APPLICATION ]
-            |   tok.Refinement_     [ _val = TT_REFINEMENT ]
-            ;
-        static bool once = true;
-        if (once) {
-            retval.name("TechType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
-    }
-
-    template <>
-    enum_parser_rule<ShipSlotType>::type& enum_parser<ShipSlotType>()
-    {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<ShipSlotType>::type retval
+        rule
             =   tok.External_   [ _val = SL_EXTERNAL ]
             |   tok.Internal_   [ _val = SL_INTERNAL ]
             |   tok.Core_       [ _val = SL_CORE ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("ShipSlotType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 
-    template <>
-    enum_parser_rule<ShipPartClass>::type& enum_parser<ShipPartClass>()
+    ship_part_class_enum_grammar::ship_part_class_enum_grammar(const parse::lexer& tok) :
+        ship_part_class_enum_grammar::base_type(rule, "ship_part_class_enum_grammar")
     {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<ShipPartClass>::type retval
-            =   tok.ShortRange_         [ _val = PC_SHORT_RANGE ]
-            |   tok.Missiles_           [ _val = PC_MISSILES ]
-            |   tok.Fighters_           [ _val = PC_FIGHTERS ]
-            |   tok.PointDefense_       [ _val = PC_POINT_DEFENSE ]
+        rule
+            =   tok.ShortRange_         [ _val = PC_DIRECT_WEAPON ]
+            |   tok.FighterBay_         [ _val = PC_FIGHTER_BAY ]
+            |   tok.FighterHangar_      [ _val = PC_FIGHTER_HANGAR ]
             |   tok.Shield_             [ _val = PC_SHIELD ]
             |   tok.Armour_             [ _val = PC_ARMOUR ]
             |   tok.Troops_             [ _val = PC_TROOPS ]
@@ -242,44 +68,24 @@ namespace parse {
             |   tok.Research_           [ _val = PC_RESEARCH ]
             |   tok.Industry_           [ _val = PC_INDUSTRY ]
             |   tok.Trade_              [ _val = PC_TRADE ]
-            |   tok.ProductionLocation_ [ _val = PC_PRODICTION_LOCATION ]
+            |   tok.ProductionLocation_ [ _val = PC_PRODUCTION_LOCATION ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("ShipPartClass");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 
-    template <>
-    enum_parser_rule<CaptureResult>::type& enum_parser<CaptureResult>()
+    capture_result_enum_grammar::capture_result_enum_grammar(const parse::lexer& tok) :
+        capture_result_enum_grammar::base_type(rule, "capture_result_enum_grammar")
     {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<CaptureResult>::type retval
+        rule
             =   tok.Capture_            [ _val = CR_CAPTURE ]
             |   tok.Retain_             [ _val = CR_RETAIN ]
             |   tok.Destroy_            [ _val = CR_DESTROY ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("CaptureResult");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 
-    template <>
-    enum_parser_rule<ValueRef::StatisticType>::type& enum_parser<ValueRef::StatisticType>()
+    statistic_enum_grammar::statistic_enum_grammar(const parse::lexer& tok) :
+        statistic_enum_grammar::base_type(rule, "statistic_enum_grammar")
     {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<ValueRef::StatisticType>::type retval
+        rule
             =   tok.CountUnique_    [ _val = ValueRef::UNIQUE_COUNT ]
             |   tok.Count_          [ _val = ValueRef::COUNT ]
             |   tok.If_             [ _val = ValueRef::IF ]
@@ -293,88 +99,67 @@ namespace parse {
             |   tok.StDev_          [ _val = ValueRef::STDEV ]
             |   tok.Product_        [ _val = ValueRef::PRODUCT ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("StatisticType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 
-    enum_parser_rule<MeterType>::type& non_ship_part_meter_type_enum() {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<MeterType>::type retval
+    non_ship_part_meter_enum_grammar::non_ship_part_meter_enum_grammar(const parse::lexer& tok) :
+        non_ship_part_meter_enum_grammar::base_type(rule, "non_ship_part_meter_enum_grammar")
+    {
+        rule
             =   tok.TargetConstruction_     [ _val = METER_TARGET_CONSTRUCTION ]
             |   tok.TargetIndustry_         [ _val = METER_TARGET_INDUSTRY ]
             |   tok.TargetPopulation_       [ _val = METER_TARGET_POPULATION ]
             |   tok.TargetResearch_         [ _val = METER_TARGET_RESEARCH ]
             |   tok.TargetTrade_            [ _val = METER_TARGET_TRADE ]
             |   tok.TargetHappiness_        [ _val = METER_TARGET_HAPPINESS ]
+            |   tok.MaxDefense_             [ _val = METER_MAX_DEFENSE ]
+            |   tok.MaxFuel_                [ _val = METER_MAX_FUEL ]
+            |   tok.MaxShield_              [ _val = METER_MAX_SHIELD ]
+            |   tok.MaxStructure_           [ _val = METER_MAX_STRUCTURE ]
+            |   tok.MaxTroops_              [ _val = METER_MAX_TROOPS ]
+            |   tok.MaxSupply_              [ _val = METER_MAX_SUPPLY ]
+            |   tok.MaxStockpile_           [ _val = METER_MAX_STOCKPILE ]
 
-            |    tok.MaxDefense_            [ _val = METER_MAX_DEFENSE ]
-            |    tok.MaxFuel_               [ _val = METER_MAX_FUEL ]
-            |    tok.MaxShield_             [ _val = METER_MAX_SHIELD ]
-            |    tok.MaxStructure_          [ _val = METER_MAX_STRUCTURE ]
-            |    tok.MaxTroops_             [ _val = METER_MAX_TROOPS ]
-            |    tok.MaxSupply_             [ _val = METER_MAX_SUPPLY ]
+            |   tok.Construction_           [ _val = METER_CONSTRUCTION ]
+            |   tok.Industry_               [ _val = METER_INDUSTRY ]
+            |   tok.Population_             [ _val = METER_POPULATION ]
+            |   tok.Research_               [ _val = METER_RESEARCH ]
+            |   tok.Trade_                  [ _val = METER_TRADE ]
+            |   tok.Happiness_              [ _val = METER_HAPPINESS ]
 
-            |    tok.Construction_          [ _val = METER_CONSTRUCTION ]
-            |    tok.Industry_              [ _val = METER_INDUSTRY ]
-            |    tok.Population_            [ _val = METER_POPULATION ]
-            |    tok.Research_              [ _val = METER_RESEARCH ]
-            |    tok.Trade_                 [ _val = METER_TRADE ]
-            |    tok.Happiness_             [ _val = METER_HAPPINESS ]
+            |   tok.Defense_                [ _val = METER_DEFENSE ]
+            |   tok.Fuel_                   [ _val = METER_FUEL ]
+            |   tok.Shield_                 [ _val = METER_SHIELD ]
+            |   tok.Structure_              [ _val = METER_STRUCTURE ]
+            |   tok.Troops_                 [ _val = METER_TROOPS ]
+            |   tok.Supply_                 [ _val = METER_SUPPLY ]
+            |   tok.Stockpile_              [ _val = METER_STOCKPILE ]
 
-            |    tok.Defense_               [ _val = METER_DEFENSE ]
-            |    tok.Fuel_                  [ _val = METER_FUEL ]
-            |    tok.Shield_                [ _val = METER_SHIELD ]
-            |    tok.Structure_             [ _val = METER_STRUCTURE ]
-            |    tok.Troops_                [ _val = METER_TROOPS ]
-            |    tok.Supply_                [ _val = METER_SUPPLY ]
+            |   tok.RebelTroops_            [ _val = METER_REBEL_TROOPS ]
+            |   tok.Stealth_                [ _val = METER_STEALTH ]
+            |   tok.Detection_              [ _val = METER_DETECTION ]
+            |   tok.Speed_                  [ _val = METER_SPEED ]
 
-            |    tok.RebelTroops_           [ _val = METER_REBEL_TROOPS ]
-            |    tok.Stealth_               [ _val = METER_STEALTH ]
-            |    tok.Detection_             [ _val = METER_DETECTION ]
-            |    tok.Speed_                 [ _val = METER_SPEED ]
-
-            |    tok.Size_                  [ _val = METER_SIZE ]
+            |   tok.Size_                   [ _val = METER_SIZE ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("non-ship-part MeterType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 
-    enum_parser_rule<MeterType>::type& ship_part_meter_type_enum() {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<MeterType>::type retval
+    ship_part_meter_enum_grammar::ship_part_meter_enum_grammar(const parse::lexer& tok) :
+        ship_part_meter_enum_grammar::base_type(rule, "ship_part_meter_enum_grammar")
+    {
+        rule
             =   tok.MaxCapacity_            [ _val = METER_MAX_CAPACITY ]
             |   tok.MaxDamage_              [ _val = METER_MAX_CAPACITY ]
             |   tok.Capacity_               [ _val = METER_CAPACITY ]
             |   tok.Damage_                 [ _val = METER_CAPACITY ]
+            |   tok.SecondaryStat_          [ _val = METER_SECONDARY_STAT ]
+            |   tok.MaxSecondaryStat_       [ _val = METER_MAX_SECONDARY_STAT ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("ship-part MeterType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 
-    enum_parser_rule<MeterType>::type& set_non_ship_part_meter_type_enum() {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<MeterType>::type retval
+    set_non_ship_part_meter_enum_grammar::set_non_ship_part_meter_enum_grammar(const parse::lexer& tok) :
+        set_non_ship_part_meter_enum_grammar::base_type(rule, "set_non_ship_part_meter_enum_grammar")
+    {
+        rule
             =   tok.SetTargetConstruction_  [ _val = METER_TARGET_CONSTRUCTION ]
             |   tok.SetTargetIndustry_      [ _val = METER_TARGET_INDUSTRY ]
             |   tok.SetTargetPopulation_    [ _val = METER_TARGET_POPULATION ]
@@ -388,6 +173,7 @@ namespace parse {
             |   tok.SetMaxStructure_        [ _val = METER_MAX_STRUCTURE ]
             |   tok.SetMaxTroops_           [ _val = METER_MAX_TROOPS ]
             |   tok.SetMaxSupply_           [ _val = METER_MAX_SUPPLY ]
+            |   tok.SetMaxStockpile_        [ _val = METER_MAX_STOCKPILE ]
 
             |   tok.SetConstruction_        [ _val = METER_CONSTRUCTION ]
             |   tok.SetIndustry_            [ _val = METER_INDUSTRY ]
@@ -402,6 +188,7 @@ namespace parse {
             |   tok.SetStructure_           [ _val = METER_STRUCTURE ]
             |   tok.SetTroops_              [ _val = METER_TROOPS ]
             |   tok.SetSupply_              [ _val = METER_SUPPLY ]
+            |   tok.SetStockpile_           [ _val = METER_STOCKPILE ]
 
             |   tok.SetRebelTroops_         [ _val = METER_REBEL_TROOPS ]
             |   tok.SetStealth_             [ _val = METER_STEALTH ]
@@ -410,34 +197,18 @@ namespace parse {
 
             |   tok.SetSize_                [ _val = METER_SIZE ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("non-ship-part MeterType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 
-    enum_parser_rule<MeterType>::type& set_ship_part_meter_type_enum()
+    set_ship_part_meter_enum_grammar::set_ship_part_meter_enum_grammar(const parse::lexer& tok) :
+        set_ship_part_meter_enum_grammar::base_type(rule, "set_ship_part_meter_enum_grammar")
     {
-        const parse::lexer& tok = parse::lexer::instance();
-        static enum_parser_rule<MeterType>::type retval
+        rule
             =   tok.SetMaxCapacity_         [ _val = METER_MAX_CAPACITY ]
             |   tok.SetMaxDamage_           [ _val = METER_MAX_CAPACITY ]
+            |   tok.SetMaxSecondaryStat_    [ _val = METER_MAX_SECONDARY_STAT ]
             |   tok.SetCapacity_            [ _val = METER_CAPACITY ]
             |   tok.SetDamage_              [ _val = METER_CAPACITY ]
+            |   tok.SetSecondaryStat_       [ _val = METER_SECONDARY_STAT ]
             ;
-        static bool once = true;
-        if (once) {
-            retval.name("ship-part MeterType");
-#if DEBUG_PARSERS
-            debug(retval);
-#endif
-            once = false;
-        }
-        return retval;
     }
 }

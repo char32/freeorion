@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _ValueRefFwd_h_
 #define _ValueRefFwd_h_
 
@@ -23,7 +22,7 @@ namespace ValueRef {
     enum StatisticType {
         INVALID_STATISTIC_TYPE = -1,
         COUNT,  // returns the number of objects matching the condition
-        UNIQUE_COUNT,   // returns the number of distinct property values of objects matching the condition
+        UNIQUE_COUNT,   // returns the number of distinct property values of objects matching the condition. eg. if 3 objects have the property value "small", and two have "big", then this value is 2, as there are 2 unique property values.
         IF,     // returns T(1) if anything matches the condition, or T(0) otherwise
         SUM,    // returns the sum of the property values of all objects matching the condition
         MEAN,   // returns the mean of the property values of all objects matching the condition
@@ -37,7 +36,8 @@ namespace ValueRef {
     };
     template <class FromType, class ToType> struct StaticCast;
     template <class FromType> struct StringCast;
-    struct UserStringLookup;
+    template <class FromType> struct UserStringLookup;
+    struct NameLookup;
     template <class T> struct Operation;
     enum OpType {
         PLUS,
@@ -54,9 +54,17 @@ namespace ValueRef {
         MAXIMUM,
         RANDOM_UNIFORM,
         RANDOM_PICK,
-        SUBSTITUTION
+        SUBSTITUTION,
+        COMPARE_EQUAL,
+        COMPARE_GREATER_THAN,
+        COMPARE_GREATER_THAN_OR_EQUAL,
+        COMPARE_LESS_THAN,
+        COMPARE_LESS_THAN_OR_EQUAL,
+        COMPARE_NOT_EQUAL,
+        ROUND_NEAREST,
+        ROUND_UP,
+        ROUND_DOWN
     };
-    template <class T> bool ConstantExpr(const ValueRefBase<T>* expr);
 }
 
 #endif // _ValueRefFwd_h_

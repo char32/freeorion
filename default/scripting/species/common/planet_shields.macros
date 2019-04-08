@@ -1,0 +1,44 @@
+
+NATIVE_PLANETARY_SHIELDS
+'''EffectsGroup
+            scope = Source
+            activation = And [
+                Planet
+                Unowned
+            ]
+            effects = SetMaxShield value = Value + 10 accountinglabel = "NATIVE_PLANETARY_SHIELDS_LABEL"
+
+    [[AVERAGE_PLANETARY_SHIELDS]]
+'''
+
+
+AVERAGE_PLANETARY_SHIELDS
+'''[[PROTECTION_FOCUS_SHIELDS]]
+[[STANDARD_SHIELD_GROWTH]]'''
+
+STANDARD_SHIELD_GROWTH
+'''        EffectsGroup // increase 1 per turn, up to max
+            scope = Source
+            activation = And [
+                Planet
+                Unowned
+                (Source.LastTurnConquered < CurrentTurn)
+                (Source.LastTurnAttackedByShip  < CurrentTurn)
+            ]
+            priority = [[AFTER_ALL_TARGET_MAX_METERS_PRIORITY]]
+            effects = SetShield value = min(Value(Target.MaxShield), Value + 1)
+'''
+
+PROTECTION_FOCUS_SHIELDS
+'''EffectsGroup
+            scope = Source
+            activation = And [
+                Planet
+                Focus type = "FOCUS_PROTECTION"
+            ]
+            stackinggroup = "FOCUS_PROTECTION_SHIELDS_STACK"
+            priority = [[VERY_LATE_PRIORITY]]
+            effects = SetMaxShield value = Value * 2 accountinglabel = "FOCUS_PROTECTION_LABEL"
+'''
+
+#include "/scripting/common/priorities.macros"

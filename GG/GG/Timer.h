@@ -31,6 +31,8 @@
 
 #include <GG/Base.h>
 
+#include <boost/signals2/signal.hpp>
+
 #include <set>
 
 

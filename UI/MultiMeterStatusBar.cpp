@@ -1,12 +1,15 @@
 #include "MultiMeterStatusBar.h"
+#include "MeterBrowseWnd.h"
 
 #include <GG/ClrConstants.h>
 #include <GG/DrawUtil.h>
 #include <GG/Texture.h>
+#include <GG/GLClientAndServerBuffer.h>
 
 #include "../util/Logger.h"
 #include "../universe/Meter.h"
 #include "../universe/UniverseObject.h"
+#include "../universe/Enums.h"
 #include "../client/human/HumanClientApp.h"
 #include "ClientUI.h"
 
@@ -51,6 +54,8 @@ namespace {
             return GG::Clr(255, 255, 0, 255);
         case METER_SUPPLY:
         case METER_MAX_SUPPLY:
+        case METER_STOCKPILE:
+        case METER_MAX_STOCKPILE:
         case METER_CONSTRUCTION:
         case METER_TARGET_CONSTRUCTION:
         case METER_POPULATION:
@@ -67,10 +72,10 @@ namespace {
     const int       BAR_PAD(1);
     const GG::Y     BAR_HEIGHT(10);
 
-    const double    MULTI_METER_STATUS_BAR_DISPLAYED_METER_RANGE = 100.0;
+    const double    MULTI_METER_STATUS_BAR_DISPLAYED_METER_RANGE_INCREMENT = 100.0;
 }
 
-MultiMeterStatusBar::MultiMeterStatusBar(GG::X w, int object_id, const std::vector<std::pair<MeterType, MeterType> >& meter_types) :
+MultiMeterStatusBar::MultiMeterStatusBar(GG::X w, int object_id, const std::vector<std::pair<MeterType, MeterType>>& meter_types) :
     GG::Wnd(GG::X0, GG::Y0, w, GG::Y1, GG::INTERACTIVE),
     m_bar_shading_texture(ClientUI::GetTexture(ClientUI::ArtDir() / "misc" / "meter_bar_shading.png")),
     m_meter_types(meter_types),
@@ -107,22 +112,40 @@ void MultiMeterStatusBar::Render() {
         y += BAR_HEIGHT + BAR_PAD;
     }
 
+    // Find the largest value to be displayed to determine the scale factor.  Must be greater than
+    // zero so that there is at least one segment drawn.
+    double largest_value = 0.1;
+    for (unsigned int i = 0; i < m_initial_values.size(); ++i) {
+        if ((m_initial_values[i] != Meter::INVALID_VALUE) && (m_initial_values[i] > largest_value))
+            largest_value = m_initial_values[i];
+        if ((m_projected_values[i] != Meter::INVALID_VALUE) && (m_projected_values[i] > largest_value))
+            largest_value = m_projected_values[i];
+        if ((m_target_max_values[i] != Meter::INVALID_VALUE) && (m_target_max_values[i] > largest_value))
+            largest_value = m_target_max_values[i];
+    }
 
-    // lines for 20, 40, 60, 80
-    glDisable(GL_TEXTURE_2D);
+    double num_full_increments =
+        std::ceil(largest_value / MULTI_METER_STATUS_BAR_DISPLAYED_METER_RANGE_INCREMENT);
+    double MULTI_METER_STATUS_BAR_DISPLAYED_METER_RANGE =
+        num_full_increments * MULTI_METER_STATUS_BAR_DISPLAYED_METER_RANGE_INCREMENT;
+
+    // lines for 20, 40, 60, 80 etc.
+    GG::GL2DVertexBuffer bar_verts;
+    unsigned int num_segments = num_full_increments * 5;
+    bar_verts.reserve(num_segments - 1);
+    for (unsigned int ii_div_line = 1; ii_div_line <= (num_segments - 1); ++ii_div_line) {
+        bar_verts.store(Value(BAR_LEFT) + ii_div_line*Value(BAR_MAX_LENGTH)/num_segments, TOP);
+        bar_verts.store(Value(BAR_LEFT) + ii_div_line*Value(BAR_MAX_LENGTH)/num_segments, y - BAR_PAD);
+    }
+    bar_verts.activate();
+
     glColor(HALF_GREY);
-    glBegin(GL_LINES);
-        glVertex(BAR_LEFT +   BAR_MAX_LENGTH/5, TOP);
-        glVertex(BAR_LEFT +   BAR_MAX_LENGTH/5, y - BAR_PAD);
-        glVertex(BAR_LEFT + 2*BAR_MAX_LENGTH/5, TOP);
-        glVertex(BAR_LEFT + 2*BAR_MAX_LENGTH/5, y - BAR_PAD);
-        glVertex(BAR_LEFT + 3*BAR_MAX_LENGTH/5, TOP);
-        glVertex(BAR_LEFT + 3*BAR_MAX_LENGTH/5, y - BAR_PAD);
-        glVertex(BAR_LEFT + 4*BAR_MAX_LENGTH/5, TOP);
-        glVertex(BAR_LEFT + 4*BAR_MAX_LENGTH/5, y - BAR_PAD);
-    glEnd();
+    glDisable(GL_TEXTURE_2D);
+    glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glDrawArrays(GL_LINES, 0, bar_verts.size());
+    glPopClientAttrib();
     glEnable(GL_TEXTURE_2D);
-
 
     // current, initial, and target/max horizontal bars for each pair of MeterType
     y = TOP;
@@ -141,8 +164,6 @@ void MultiMeterStatusBar::Render() {
         const GG::Y INITIAL_TOP(BAR_TOP);
         if (SHOW_INITIAL) {
             // initial value
-            const GG::X INITIAL_RIGHT(BAR_LEFT + BAR_MAX_LENGTH * m_initial_values[i] / MULTI_METER_STATUS_BAR_DISPLAYED_METER_RANGE);
-            const GG::Y INITIAL_TOP(BAR_TOP);
             glColor(m_bar_colours[i]);
             m_bar_shading_texture->OrthoBlit(GG::Pt(BAR_LEFT, INITIAL_TOP), GG::Pt(INITIAL_RIGHT, BAR_BOTTOM));
             // black border
@@ -182,7 +203,7 @@ void MultiMeterStatusBar::Update() {
     m_projected_values.clear(); // projected current value of .first MeterTypes for the start of next turn
     m_target_max_values.clear();// current values of the .second MeterTypes in m_meter_types
 
-    TemporaryPtr<const UniverseObject> obj = GetUniverseObject(m_object_id);
+    auto obj = GetUniverseObject(m_object_id);
     if (!obj) {
         ErrorLogger() << "MultiMeterStatusBar couldn't get object with id " << m_object_id;
         return;
@@ -190,28 +211,20 @@ void MultiMeterStatusBar::Update() {
 
     int num_bars = 0;   // count number of valid bars' data added
 
-    for (std::vector<std::pair<MeterType, MeterType> >::const_iterator meter_pairs_it = m_meter_types.begin(); meter_pairs_it != m_meter_types.end(); ++meter_pairs_it) {
-        const std::pair<MeterType, MeterType>& meter_types_pair = *meter_pairs_it;
+    for (auto& meter_types_pair : m_meter_types) {
         const Meter* actual_meter = obj->GetMeter(meter_types_pair.first);
         const Meter* target_max_meter = obj->GetMeter(meter_types_pair.second);
 
         if (actual_meter || target_max_meter) {
+            float initial = actual_meter ? actual_meter->Initial() : Meter::INVALID_VALUE;
+            float projected = actual_meter ? actual_meter->Current() : Meter::INVALID_VALUE;
+            float target = target_max_meter ? target_max_meter->Current() : Meter::INVALID_VALUE;
+
             ++num_bars;
-            if (actual_meter) {
-                m_initial_values.push_back(actual_meter->Initial());
-                if (target_max_meter)
-                    m_projected_values.push_back(obj->NextTurnCurrentMeterValue(meter_types_pair.first));
-                else
-                    m_projected_values.push_back(actual_meter->Initial());
-            } else {
-                m_initial_values.push_back(Meter::INVALID_VALUE);
-                m_projected_values.push_back(Meter::INVALID_VALUE);
-            }
-            if (target_max_meter) {
-                m_target_max_values.push_back(target_max_meter->Current());
-            } else {
-                m_target_max_values.push_back(Meter::INVALID_VALUE);
-            }
+
+            m_initial_values.push_back(initial);
+            m_projected_values.push_back(projected);
+            m_target_max_values.push_back(target);
             m_bar_colours.push_back(MeterColor(meter_types_pair.first));
         }
     }

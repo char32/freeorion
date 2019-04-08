@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _Ship_h_
 #define _Ship_h_
 
@@ -7,6 +6,11 @@
 
 #include "../util/Export.h"
 
+FO_COMMON_API extern const int ALL_EMPIRES;
+FO_COMMON_API extern const int INVALID_DESIGN_ID;
+FO_COMMON_API extern const int INVALID_GAME_TURN;
+FO_COMMON_API extern const int BEFORE_FIRST_TURN;
+FO_COMMON_API extern const int INVALID_OBJECT_ID;
 class ShipDesign;
 
 /** a class representing a single FreeOrion ship */
@@ -15,38 +19,51 @@ public:
     typedef std::map<std::pair<MeterType, std::string>, Meter>          PartMeterMap;
 
     /** \name Accessors */ //@{
-    virtual std::set<std::string>
-                                Tags() const;                                       ///< returns all tags this object has
-    virtual bool                HasTag(const std::string& name) const;              ///< returns true iff this object has the tag with the indicated \a name
+    bool HostileToEmpire(int empire_id) const override;
+    std::set<std::string> Tags() const override;
+    bool HasTag(const std::string& name) const override;
+    UniverseObjectType ObjectType() const override;
+    std::string Dump(unsigned short ntabs = 0) const override;
 
-    virtual UniverseObjectType  ObjectType() const;
-    virtual std::string         Dump() const;
+    int ContainerObjectID() const override
+    { return m_fleet_id; }
+
+    bool ContainedBy(int object_id) const override;
+    const std::string& PublicName(int empire_id) const override;
+    std::shared_ptr<UniverseObject> Accept(const UniverseObjectVisitor& visitor) const override;
+
+    /** Back propagates part meters (which UniverseObject equivalent doesn't). */
+    void BackPropagateMeters() override;
+
+    void ResetTargetMaxUnpairedMeters() override;
+    void ResetPairedActiveMeters() override;
+    void ClampMeters() override;
+
+    /** Returns new copy of this Ship. */
+    Ship* Clone(int empire_id = ALL_EMPIRES) const override;
+
+    void Copy(std::shared_ptr<const UniverseObject> copied_object, int empire_id = ALL_EMPIRES) override;
 
     const ShipDesign*           Design() const;     ///< returns the design of the ship, containing engine type, weapons, etc.
     int                         DesignID() const            { return m_design_id; }             ///< returns the design id of the ship
 
-    virtual int                 ContainerObjectID() const   { return m_fleet_id; }             ///< returns id of the object that directly contains this object, if any, or INVALID_OBJECT_ID if this object is not contained by any other
-    virtual bool                ContainedBy(int object_id) const;                               ///< returns true if there is an object with id \a object_id that contains this UniverseObject
     int                         FleetID() const             { return m_fleet_id; }              ///< returns the ID of the fleet the ship is residing in
 
     int                         ProducedByEmpireID() const  { return m_produced_by_empire_id; } ///< returns the empire ID of the empire that produced this ship
-
-    virtual const std::string&  PublicName(int empire_id) const;
+    int                         ArrivedOnTurn() const       { return m_arrived_on_turn; }       ///< returns the turn on which this ship arrived in its current system
+    int                         LastResuppliedOnTurn() const{ return m_last_resupplied_on_turn;}///< returns the turn on which this ship was last resupplied / upgraded
 
     bool                        IsMonster() const;
     bool                        IsArmed() const;
+    bool                        HasFighters() const;
     bool                        CanColonize() const;
     bool                        HasTroops() const;
+    bool                        CanHaveTroops() const;
     bool                        CanBombard() const;
     const std::string&          SpeciesName() const         { return m_species_name; }
     float                       Speed() const;
     float                       ColonyCapacity() const;
     float                       TroopCapacity() const;
-
-    virtual TemporaryPtr<UniverseObject>
-                                Accept(const UniverseObjectVisitor& visitor) const;
-
-    virtual float               NextTurnCurrentMeterValue(MeterType type) const;    ///< returns expected value of  specified meter current value on the next turn
 
     bool                        OrderedScrapped() const         { return m_ordered_scrapped; }          ///< returns true iff this ship has been ordered scrapped, or false otherwise
     int                         OrderedColonizePlanet() const   { return m_ordered_colonize_planet_id; }///< returns the ID of the planet this ship has been ordered to colonize, or INVALID_OBJECT_ID if this ship hasn't been ordered to colonize a planet
@@ -59,14 +76,19 @@ public:
     float                       CurrentPartMeterValue(MeterType type, const std::string& part_name) const;  ///< returns current value of the specified part meter \a type for the specified part name
     float                       InitialPartMeterValue(MeterType type, const std::string& part_name) const;  ///< returns this turn's initial value for the speicified part meter \a type for the specified part name
 
-    float                       TotalWeaponsDamage(float shield_DR = 0.0) const;  ///< versus an enemy with a given shields DR
-    std::vector<float>          AllWeaponsDamage(float shield_DR = 0.0) const;  ///< any nonzero weapons values after adjustment versus an enemy with a given shields DR
+    /** Returns sum of current value for part meter @p type of all parts with ShipPartClass @p part_class */
+    float                       SumCurrentPartMeterValuesForPartClass(MeterType type, ShipPartClass part_class) const;
+
+    float                       TotalWeaponsDamage(float shield_DR = 0.0f, bool include_fighters = true) const; ///< versus an enemy with a given shields DR
+    float                       FighterCount() const;
+    float                       FighterMax() const;
+    std::vector<float>          AllWeaponsDamage(float shield_DR = 0.0f, bool include_fighters = true) const;   ///< any nonzero weapons strengths after adjustment versus an enemy with a given shields DR
+    std::vector<float>          AllWeaponsMaxDamage(float shield_DR = 0.0f, bool include_fighters = true) const;///< any nonzero weapons strengths, assuming the shpi has been refueled recently, after adjustment versus an enemy with a given shields DR
     //@}
 
     /** \name Mutators */ //@{
-    virtual void    Copy(TemporaryPtr<const UniverseObject> copied_object, int empire_id = ALL_EMPIRES);
-
     void            SetFleetID(int fleet_id);                                   ///< sets the ID of the fleet the ship resides in
+    void            SetArrivedOnTurn(int turn);
 
     void            Resupply();
 
@@ -84,38 +106,41 @@ public:
 
     Meter*          GetPartMeter(MeterType type, const std::string& part_name); ///< returns the requested Meter, or 0 if no such Meter of that type is found in this object
 
-    virtual void    ResetTargetMaxUnpairedMeters();
+    virtual void    SetShipMetersToMax();
     //@}
 
 protected:
     friend class Universe;
+
     /** \name Structors */ //@{
-    Ship();                                         ///< default ctor
+    Ship();
+
+public:
+    /** Create a ship from an @p empire_id, @p design_id, @p species_name and
+        @p production_by_empire_id. */
     Ship(int empire_id, int design_id, const std::string& species_name,
-         int produced_by_empire_id = ALL_EMPIRES);  ///< general ctor taking ship's empire and design id, species name and production empire id.
+         int produced_by_empire_id = ALL_EMPIRES);
 
+protected:
     template <class T> friend void boost::python::detail::value_destroyer<false>::execute(T const volatile* p);
-    template <class T> friend void boost::checked_delete(T* x);
-    ~Ship() {}
 
-    virtual Ship*   Clone(int empire_id = ALL_EMPIRES) const;   ///< returns new copy of this Ship
+public:
+    ~Ship() {}
     //@}
 
-
 private:
-    virtual void    PopGrowthProductionResearchPhase();
-    virtual void    ClampMeters();
-
-    int             m_design_id;
-    int             m_fleet_id;
-    bool            m_ordered_scrapped;
-    int             m_ordered_colonize_planet_id;
-    int             m_ordered_invade_planet_id;
-    int             m_ordered_bombard_planet_id;
-    int             m_last_turn_active_in_combat;
+    int             m_design_id = INVALID_DESIGN_ID;
+    int             m_fleet_id = INVALID_OBJECT_ID;
+    bool            m_ordered_scrapped = false;
+    int             m_ordered_colonize_planet_id = INVALID_OBJECT_ID;
+    int             m_ordered_invade_planet_id = INVALID_OBJECT_ID;
+    int             m_ordered_bombard_planet_id = INVALID_OBJECT_ID;
+    int             m_last_turn_active_in_combat = INVALID_GAME_TURN;
     PartMeterMap    m_part_meters;
     std::string     m_species_name;
-    int             m_produced_by_empire_id;
+    int             m_produced_by_empire_id = ALL_EMPIRES;
+    int             m_arrived_on_turn = INVALID_GAME_TURN;
+    int             m_last_resupplied_on_turn = BEFORE_FIRST_TURN;
 
     friend class boost::serialization::access;
     template <class Archive>

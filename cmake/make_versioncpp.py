@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 
+
 import sys
 import os
 from string import Template
@@ -15,13 +16,16 @@ required_boost_libraries = [
     "boost_chrono",
     "boost_date_time",
     "boost_filesystem",
+    "boost_iostreams",
+    "boost_locale",
     "boost_log",
+    "boost_log_setup",
     "boost_python",
     "boost_regex",
     "boost_serialization",
     "boost_signals",
     "boost_system",
-    "boost_thread"
+    "boost_thread",
 ]
 
 
@@ -39,12 +43,17 @@ class Generator(object):
 
     def execute(self, version, branch, build_no, build_sys):
         if build_no == INVALID_BUILD_NO:
-            print "WARNING: Can't determine git commit, %s not updated!" % self.outfile
-            return
+            print "WARNING: Can't determine git commit!"
 
         if os.path.isfile(self.outfile):
             with open(self.outfile) as check_file:
-                if build_no in check_file.read():
+                check_file_contents = check_file.read()
+                if build_no == INVALID_BUILD_NO:
+                    if version in check_file_contents:
+                        print "Version matches version in existing Version.cpp, skip regenerating it"
+                        return
+                elif build_no in check_file_contents:
+                    print "Build number matches build number in existing Version.cpp, skip regenerating it"
                     return
 
         try:
@@ -62,14 +71,14 @@ class Generator(object):
 class NsisInstScriptGenerator(Generator):
     def compile_dll_list(self):
         all_dll_files = glob("*.dll")
-        accepted_dll_files = []
+        accepted_dll_files = set(["GiGi.dll", "GiGiSDL.dll"])
         for dll_file in all_dll_files:
             if dll_file.startswith("boost_"):
-                if dll_file.partition("-")[0] in required_boost_libraries:
-                    accepted_dll_files.append(dll_file)
+                if dll_file.partition(".")[0] in required_boost_libraries:
+                    accepted_dll_files.add(dll_file)
             else:
-                accepted_dll_files.append(dll_file)
-        return accepted_dll_files
+                accepted_dll_files.add(dll_file)
+        return sorted(accepted_dll_files)
 
     def compile_output(self, template, version, branch, build_no, build_sys):
         dll_files = self.compile_dll_list()
@@ -101,14 +110,16 @@ os.chdir(sys.argv[1])
 build_sys = sys.argv[2]
 
 # A list of tuples containing generators
-generators = [Generator('util/Version.cpp.in', 'util/Version.cpp')]
+generators = [
+    Generator('util/Version.cpp.in', 'util/Version.cpp')
+]
 if system() == 'Windows':
     generators.append(NsisInstScriptGenerator('Installer/FreeOrion_Install_Script.nsi.in',
                                               'Installer/FreeOrion_Install_Script.nsi'))
 if system() == 'Darwin':
     generators.append(Generator('Xcode/Info.plist.in', 'Xcode/Info.plist'))
 
-version = "0.4.5+"
+version = "0.4.8+"
 branch = ""
 build_no = INVALID_BUILD_NO
 
@@ -118,11 +129,11 @@ try:
         branch = ""
     else:
         branch += " "
-    commit = check_output(["git", "show", "-s", "--format=%h", "HEAD"]).strip()
+    commit = check_output(["git", "show", "-s", "--format=%h", "--abbrev=7", "HEAD"]).strip()
     timestamp = float(check_output(["git", "show", "-s", "--format=%ct", "HEAD"]).strip())
     build_no = ".".join([datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d"), commit])
 except:
-    print "WARNING: git not installed"
+    print "WARNING: git not installed or not setup correctly"
 
 for generator in generators:
     generator.execute(version, branch, build_no, build_sys)

@@ -34,16 +34,12 @@
 // GL headers
 #include <GL/glew.h>
 
-// include useful boost headers
-#include <boost/cstdint.hpp>
-#include <boost/signals2/signal.hpp>
-
 // other headers
 #include <GG/Enum.h>
 #include <GG/Clr.h>
 #include <GG/PtRect.h>
-#include <GG/SignalsAndSlots.h>
 
+#include <memory>
 
 /** \namespace GG \brief The namespace that encloses all GG classes,
     functions, typedefs, enums, etc. */
@@ -71,6 +67,80 @@ private:
     T& m_t;
 };
 
+/** Apply \p process to each weak_ptr in \p container and then remove any that are expired.*/
+
+// vector
+template <typename Container>
+void ProcessThenRemoveExpiredPtrs(
+    Container& container,
+    const std::function<void(std::shared_ptr<typename Container::value_type::element_type>&)>& process,
+    typename std::add_pointer<decltype(std::declval<Container>().at(std::declval<typename Container::size_type>()))>::type = nullptr)
+{
+    // Process
+    for (const auto& weak : container)
+        if (auto wnd = weak.lock())
+            process(wnd);
+
+    // Remove if the process caused the pointer to expire.
+    Container not_expired;
+    for (auto& weak : container) {
+        if (!weak.expired()) {
+            // Swap them to avoid another reference count check
+            not_expired.push_back(std::shared_ptr<typename Container::value_type::element_type>());
+            not_expired.back().swap(weak);
+        }
+    }
+    container.swap(not_expired);
+}
+
+// set, unordered_set
+template <typename Container>
+void ProcessThenRemoveExpiredPtrs(
+    Container& container,
+    const std::function<void(std::shared_ptr<typename Container::value_type::element_type>&)>& process,
+    decltype(std::declval<Container>().erase(std::declval<typename Container::iterator>()))* = nullptr,
+    decltype(std::declval<Container>().equal_range(std::declval<
+                                                   typename std::add_const<
+                                                   typename std::add_lvalue_reference<
+                                                   typename Container::key_type>::type>::type>()))* = nullptr)
+{
+    auto it = container.begin();
+    while (it != container.end()) {
+        // Process
+        if (auto wnd = it->lock())
+            process(wnd);
+
+        // Remove if the process caused the pointer to expire.
+        if (!it->expired())
+            ++it;
+        else
+            it = container.erase(it);
+    }
+}
+
+// list types
+template <typename Container>
+void ProcessThenRemoveExpiredPtrs(
+    Container& container,
+    const std::function<void(std::shared_ptr<typename Container::value_type::element_type>&)>& process,
+    decltype(std::declval<Container>().erase(std::declval<typename Container::iterator>()))* = nullptr,
+    decltype(std::declval<Container>().splice(std::declval<typename Container::const_iterator>(),
+                                              std::declval<typename std::add_lvalue_reference<Container>::type>()))* = nullptr)
+{
+    auto it = container.begin();
+    while (it != container.end()) {
+        // Process
+        if (auto wnd = it->lock())
+            process(wnd);
+
+        // Remove if the process caused the pointer to expire.
+        if (!it->expired())
+            ++it;
+        else
+            it = container.erase(it);
+    }
+}
+
 /** "Regions" of a window; used e.g. to determine direction(s) of drag when a
     window that has a drag-frame is clicked. */
 GG_ENUM(WndRegion,
@@ -91,32 +161,6 @@ GG_ENUM(Orientation,
     VERTICAL,  ///< Vertical orientation.
     HORIZONTAL ///< Horizontal orientation.
 )
-
-/** The built-in visual styles of state buttons. */
-GG_ENUM(StateButtonStyle,
-    SBSTYLE_3D_CHECKBOX,     ///< Draws a down-beveled box with a 3D check-mark inside.
-    SBSTYLE_3D_RADIO,        ///< Draws a down-beveled circle with a 3D "dot" or "bubble" inside.
-
-    /** Draws an up-beveled rectagular tab that is brighter and larger when
-        pressed; it's bottom is unbeveled. */
-    SBSTYLE_3D_TOP_ATTACHED_TAB,
-
-    /** Draws an up-beveled rectagular tab that is brighter and larger when
-        pressed; it's bottom is beveled. */
-    SBSTYLE_3D_TOP_DETACHED_TAB
-)
-
-/** The styles of display for a TabBar. */
-GG_ENUM(TabBarStyle,
-    /** The currently active tab should appear to be connected to the area
-        below the bar. */
-    TAB_BAR_ATTACHED,
-
-    /** The currently active tab should appear to be unconnected to the area
-        below the bar. */
-    TAB_BAR_DETACHED
-)
-
 
 /** Adpated from SDLKey enum in SDL_keysym.h of the SDL library; capital
     letter keys added. */

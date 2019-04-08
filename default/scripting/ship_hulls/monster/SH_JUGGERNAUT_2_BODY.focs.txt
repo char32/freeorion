@@ -1,0 +1,66 @@
+Hull
+    name = "SH_JUGGERNAUT_2_BODY"
+    description = "SH_JUGGERNAUT_2_BODY_DESC"
+    speed = 25
+    fuel = 2
+    stealth = 5
+    structure = 200
+    slots = [
+        Slot type = External position = (0.35, 0.70)
+        Slot type = External position = (0.65, 0.75)
+        Slot type = External position = (0.95, 0.65)
+        Slot type = Internal position = (0.50, 0.30)
+    ]
+    buildCost = 1
+    buildTime = 1
+    Unproducible
+    tags = [ "PEDIA_HULL_MONSTER_JUGGERNAUT" ]
+    location = All
+    effectsgroups = [
+        [[MONSTER_MOVE_ALWAYS]]
+        [[INFINITE_FUEL]]
+        [[MONSTER_SHIELD_REGENERATION]]
+
+        EffectsGroup
+            scope = And [
+                Source
+                ContainedBy And [
+                    System 
+                    Contains Planet type = Asteroids
+                ]
+            ]
+            activation = And [
+                Turn low = max(60, Source.LastTurnActiveInBattle + 1)
+                Random probability = Source.Age*0.01 - 0.1
+            ]
+            effects = [
+                CreateShip designname = "SM_JUGGERNAUT_3" empire = Source.Owner
+                Destroy
+                GenerateSitRepMessage
+                    message = "EFFECT_TAME_MONSTER_MATURED"
+                    label = "EFFECT_TAME_MONSTER_MATURED_LABEL"
+                    icon = "icons/monsters/juggernaut-3.png"
+                    parameters = [
+                        tag = "system" data = Source.SystemID
+                        tag = "predefinedshipdesign" data = "SM_JUGGERNAUT_3"
+                    ]
+                    empire = Source.Owner
+            ]
+        
+         EffectsGroup
+            scope = Source
+            activation = Source
+            effects = [
+                SetMaxCapacity partname = "SR_JAWS" value = Value + min(Source.Age*0.1, 8)
+                SetCapacity partname = "SR_JAWS" value = Value + min(Source.Age*0.1, 8)
+            ]
+        
+        [[GOOD_VISION]]
+
+    ]
+    icon = ""
+    graphic = "icons/monsters/juggernaut-2.png"
+
+#include "monster.macros"
+
+#include "../ship_hulls.macros"

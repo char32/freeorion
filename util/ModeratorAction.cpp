@@ -4,6 +4,7 @@
 #include "../universe/UniverseObject.h"
 #include "../universe/System.h"
 #include "../universe/Planet.h"
+#include "../universe/Enums.h"
 #include "Directories.h"
 #include "Logger.h"
 #include "i18n.h"
@@ -33,7 +34,7 @@ void Moderator::DestroyUniverseObject::Execute() const
 
 std::string Moderator::DestroyUniverseObject::Dump() const {
     std::string retval = "Moderator::DestroyUniverseObject object_id = "
-                       + boost::lexical_cast<std::string>(m_object_id);
+                       + std::to_string(m_object_id);
     return retval;
 }
 
@@ -49,7 +50,7 @@ Moderator::SetOwner::SetOwner(int object_id, int new_owner_empire_id) :
 {}
 
 void Moderator::SetOwner::Execute() const {
-    TemporaryPtr<UniverseObject> obj = GetUniverseObject(m_object_id);
+    auto obj = GetUniverseObject(m_object_id);
     if (!obj) {
         ErrorLogger() << "Moderator::SetOwner::Execute couldn't get object with id: " << m_object_id;
         return;
@@ -59,9 +60,9 @@ void Moderator::SetOwner::Execute() const {
 
 std::string Moderator::SetOwner::Dump() const {
     std::string retval = "Moderator::SetOwner object_id = "
-                       + boost::lexical_cast<std::string>(m_object_id)
+                       + std::to_string(m_object_id)
                        + " new_owner_empire_id = "
-                       + boost::lexical_cast<std::string>(m_new_owner_empire_id);
+                       + std::to_string(m_new_owner_empire_id);
     return retval;
 }
 
@@ -79,12 +80,12 @@ Moderator::AddStarlane::AddStarlane(int system_1_id, int system_2_id) :
 {}
 
 void Moderator::AddStarlane::Execute() const {
-    TemporaryPtr<System> sys1 = GetSystem(m_id_1);
+    std::shared_ptr<System> sys1 = GetSystem(m_id_1);
     if (!sys1) {
         ErrorLogger() << "Moderator::AddStarlane::Execute couldn't get system with id: " << m_id_1;
         return;
     }
-    TemporaryPtr<System> sys2 = GetSystem(m_id_2);
+    std::shared_ptr<System> sys2 = GetSystem(m_id_2);
     if (!sys2) {
         ErrorLogger() << "Moderator::AddStarlane::Execute couldn't get system with id: " << m_id_2;
         return;
@@ -95,9 +96,9 @@ void Moderator::AddStarlane::Execute() const {
 
 std::string Moderator::AddStarlane::Dump() const {
     std::string retval = "Moderator::AddStarlane system_id_1 = "
-                       + boost::lexical_cast<std::string>(m_id_1)
+                       + std::to_string(m_id_1)
                        + " system_id_2 = "
-                       + boost::lexical_cast<std::string>(m_id_2);
+                       + std::to_string(m_id_2);
     return retval;
 }
 
@@ -115,12 +116,12 @@ Moderator::RemoveStarlane::RemoveStarlane(int system_1_id, int system_2_id) :
 {}
 
 void Moderator::RemoveStarlane::Execute() const {
-    TemporaryPtr<System> sys1 = GetSystem(m_id_1);
+    std::shared_ptr<System> sys1 = GetSystem(m_id_1);
     if (!sys1) {
         ErrorLogger() << "Moderator::RemoveStarlane::Execute couldn't get system with id: " << m_id_1;
         return;
     }
-    TemporaryPtr<System> sys2 = GetSystem(m_id_2);
+    std::shared_ptr<System> sys2 = GetSystem(m_id_2);
     if (!sys2) {
         ErrorLogger() << "Moderator::RemoveStarlane::Execute couldn't get system with id: " << m_id_2;
         return;
@@ -131,9 +132,9 @@ void Moderator::RemoveStarlane::Execute() const {
 
 std::string Moderator::RemoveStarlane::Dump() const {
     std::string retval = "Moderator::RemoveStarlane system_id_1 = "
-                       + boost::lexical_cast<std::string>(m_id_1)
+                       + std::to_string(m_id_1)
                        + " system_id_2 = "
-                       + boost::lexical_cast<std::string>(m_id_2);
+                       + std::to_string(m_id_2);
     return retval;
 }
 
@@ -154,34 +155,30 @@ Moderator::CreateSystem::CreateSystem(double x, double y, StarType star_type) :
 
 namespace {
     std::string GenerateSystemName() {
-        static std::list<std::string> star_names;
-        if (star_names.empty())
-            UserStringList("STAR_NAMES", star_names);
+        static std::vector<std::string> star_names = UserStringList("STAR_NAMES");
 
         const ObjectMap& objects = Objects();
-        std::vector<TemporaryPtr<const System> > systems = objects.FindObjects<System>();
+        std::vector<std::shared_ptr<const System>> systems = objects.FindObjects<System>();
 
         // pick a name for the system
-        for (std::list<std::string>::const_iterator it = star_names.begin(); it != star_names.end(); ++it) {
+        for (const std::string& star_name : star_names) {
             // does an existing system have this name?
             bool dupe = false;
-            for (std::vector<TemporaryPtr<const System> >::const_iterator sys_it = systems.begin();
-                 sys_it != systems.end(); ++sys_it)
-            {
-                if ((*sys_it)->Name() == *it) {
+            for (auto& system : systems) {
+                if (system->Name() == star_name) {
                     dupe = true;
                     break;  // another system has this name. skip to next potential name.
                 }
             }
             if (!dupe)
-                return *it; // no systems have this name yet. use it.
+                return star_name; // no systems have this name yet. use it.
         }
         return "";  // fallback to empty name.
     }
 }
 
 void Moderator::CreateSystem::Execute() const {
-    TemporaryPtr<System> system = GetUniverse().CreateSystem(m_star_type, GenerateSystemName(), m_x, m_y);
+    auto system = GetUniverse().InsertNew<System>(m_star_type, GenerateSystemName(), m_x, m_y);
     if (!system) {
         ErrorLogger() << "CreateSystem::Execute couldn't create system!";
         return;
@@ -190,9 +187,9 @@ void Moderator::CreateSystem::Execute() const {
 
 std::string Moderator::CreateSystem::Dump() const {
     std::string retval = "Moderator::CreateSystem x = "
-                       + boost::lexical_cast<std::string>(m_x)
+                       + std::to_string(m_x)
                        + " y = "
-                       + boost::lexical_cast<std::string>(m_y)
+                       + std::to_string(m_y)
                        + " star_type = "
                        + boost::lexical_cast<std::string>(m_star_type);
     return retval;
@@ -214,7 +211,7 @@ Moderator::CreatePlanet::CreatePlanet(int system_id, PlanetType planet_type, Pla
 {}
 
 void Moderator::CreatePlanet::Execute() const {
-    TemporaryPtr<System> location = GetSystem(m_system_id);
+    std::shared_ptr<System> location = GetSystem(m_system_id);
     if (!location) {
         ErrorLogger() << "CreatePlanet::Execute couldn't get a System object at which to create the planet";
         return;
@@ -227,19 +224,19 @@ void Moderator::CreatePlanet::Execute() const {
         return;
     }
 
-    TemporaryPtr<Planet> planet = GetUniverse().CreatePlanet(m_planet_type, m_planet_size);
+    auto planet = GetUniverse().InsertNew<Planet>(m_planet_type, m_planet_size);
     if (!planet) {
         ErrorLogger() << "CreatePlanet::Execute unable to create new Planet object";
         return;
     }
 
     int orbit = *(free_orbits.begin());
-    location->Insert(TemporaryPtr<UniverseObject>(planet), orbit);
+    location->Insert(std::shared_ptr<UniverseObject>(planet), orbit);
 }
 
 std::string Moderator::CreatePlanet::Dump() const {
     std::string retval = "Moderator::CreatePlanet system_id = "
-                       + boost::lexical_cast<std::string>(m_system_id)
+                       + std::to_string(m_system_id)
                        + " planet_type = "
                        + boost::lexical_cast<std::string>(m_planet_type)
                        + " planet_size = "

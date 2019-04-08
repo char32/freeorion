@@ -1,11 +1,22 @@
-#include "Label.h"
-#include "EnumParser.h"
-#include "ValueRefParser.h"
-#include "ParseImpl.h"
 #include "Parse.h"
+
+#include "ParseImpl.h"
+#include "EnumParser.h"
+#include "EffectParser.h"
+#include "ValueRefParser.h"
+#include "MovableEnvelope.h"
+
+#include "../universe/ValueRef.h"
+#include "../universe/Effect.h"
 #include "../universe/Species.h"
+#include "../universe/Tech.h"
+#include "../util/Directories.h"
 
 #include <boost/spirit/include/phoenix.hpp>
+#include <boost/spirit/include/qi_as.hpp>
+//TODO: replace with std::make_unique when transitioning to C++14
+#include <boost/smart_ptr/make_unique.hpp>
+
 
 #define DEBUG_PARSERS 0
 
@@ -13,138 +24,154 @@
 namespace std {
     inline ostream& operator<<(ostream& os, const std::vector<ItemSpec>&) { return os; }
     inline ostream& operator<<(ostream& os, const std::set<std::string>&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::vector<boost::shared_ptr<Effect::EffectsGroup> >&) { return os; }
+    inline ostream& operator<<(ostream& os, const parse::effects_group_payload&) { return os; }
     inline ostream& operator<<(ostream& os, const Tech::TechInfo&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::pair<const std::string, TechCategory*>&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::pair<const std::string, std::unique_ptr<TechCategory>>&) { return os; }
 }
 #endif
 
 namespace {
-    std::set<std::string>* g_categories_seen = 0;
-    std::map<std::string, TechCategory*>* g_categories = 0;
+    const boost::phoenix::function<parse::detail::is_unique> is_unique_;
 
-    struct insert_tech_ {
-#if BOOST_VERSION < 105600
-        template <typename Arg1, typename Arg2> // Phoenix v2
-        struct result
-        { typedef void type; };
-#else
-        typedef void result_type;
-#endif
+    std::set<std::string>* g_categories_seen = nullptr;
+    std::map<std::string, std::unique_ptr<TechCategory>>* g_categories = nullptr;
 
-        void operator()(TechManager::TechContainer& techs, Tech* tech) const {
-            g_categories_seen->insert(tech->Category());
-            if (techs.get<TechManager::NameIndex>().find(tech->Name()) != techs.get<TechManager::NameIndex>().end()) {
-                std::string error_str = "ERROR: More than one tech in techs.txt has the name " + tech->Name();
-                throw std::runtime_error(error_str.c_str());
-            }
-            if (tech->Prerequisites().find(tech->Name()) != tech->Prerequisites().end()) {
-                std::string error_str = "ERROR: Tech " + tech->Name() + " depends on itself!";
-                throw std::runtime_error(error_str.c_str());
-            }
-            techs.insert(tech);
+    /// Check if the tech will be unique.
+    bool check_tech(TechManager::TechContainer& techs, const std::unique_ptr<Tech>& tech) {
+        auto retval = true;
+        if (techs.get<TechManager::NameIndex>().count(tech->Name())) {
+            ErrorLogger() <<  "More than one tech has the name " << tech->Name();
+            retval = false;
         }
-    };
-    const boost::phoenix::function<insert_tech_> insert_tech;
-
-    struct insert_category_ {
-#if BOOST_VERSION < 105600
-        template <typename Arg1, typename Arg2> // Phoenix v2
-        struct result
-        { typedef void type; };
-#else
-        typedef void result_type;
-#endif
-
-        void operator()(std::map<std::string, TechCategory*>& categories, TechCategory* category) const {
-            if (!categories.insert(std::make_pair(category->name, category)).second) {
-                std::string error_str = "ERROR: More than one tech category in techs.txt name " + category->name;
-                throw std::runtime_error(error_str.c_str());
-            }
+        if (tech->Prerequisites().count(tech->Name())) {
+            ErrorLogger() << "Tech " << tech->Name() << " depends on itself!";
+            retval = false;
         }
-    };
-    const boost::phoenix::function<insert_category_> insert_category;
+        return retval;
+    }
 
-    struct rules {
-        rules() {
-            const parse::lexer& tok = parse::lexer::instance();
+    void insert_tech(TechManager::TechContainer& techs,
+                     const parse::detail::MovableEnvelope<Tech::TechInfo>& tech_info,
+                     const boost::optional<parse::effects_group_payload>& effects,
+                     const boost::optional<std::set<std::string>>& prerequisites,
+                     const boost::optional<std::vector<ItemSpec>>& unlocked_items,
+                     const boost::optional<std::string>& graphic,
+                     bool& pass)
+    {
+        auto tech_ptr = boost::make_unique<Tech>(
+            *tech_info.OpenEnvelope(pass),
+            (effects ? parse::detail::OpenEnvelopes(*effects, pass) : std::vector<std::unique_ptr<Effect::EffectsGroup>>()),
+            (prerequisites ? *prerequisites : std::set<std::string>()),
+            (unlocked_items ? *unlocked_items : std::vector<ItemSpec>()),
+            (graphic ? *graphic : std::string()));
 
-            const parse::value_ref_parser_rule<double>::type& double_value_ref =    parse::value_ref_parser<double>();
-            const parse::value_ref_parser_rule< int >::type& flexible_int_ref =     parse::value_ref_parser_flexible_int();
+        if (check_tech(techs, tech_ptr)) {
+            g_categories_seen->insert(tech_ptr->Category());
+            techs.insert(std::move(tech_ptr));
+        }
+    }
+
+    BOOST_PHOENIX_ADAPT_FUNCTION(void, insert_tech_, insert_tech, 7)
+
+    void insert_category(std::map<std::string, std::unique_ptr<TechCategory>>& categories,
+                         const std::string& name, const std::string& graphic, const GG::Clr& color)
+    {
+        auto category_ptr = boost::make_unique<TechCategory>(name, graphic, color);
+        categories.insert(std::make_pair(category_ptr->name, std::move(category_ptr)));
+    }
+
+    BOOST_PHOENIX_ADAPT_FUNCTION(void, insert_category_, insert_category, 4)
+
+
+    using start_rule_signature = void(TechManager::TechContainer&);
+
+    struct grammar : public parse::detail::grammar<start_rule_signature> {
+        grammar(const parse::lexer& tok,
+                const std::string& filename,
+                const parse::text_iterator& first, const parse::text_iterator& last) :
+            grammar::base_type(start),
+            one_or_more_string_tokens(tok),
+            condition_parser(tok, label),
+            string_grammar(tok, label, condition_parser),
+            castable_int_rules(tok, label, condition_parser, string_grammar),
+            double_rules(tok, label, condition_parser, string_grammar),
+            effects_group_grammar(tok, label, condition_parser, string_grammar),
+            tags_parser(tok, label),
+            item_spec_parser(tok, label),
+            one_or_more_item_specs(item_spec_parser),
+            color_parser(tok)
+        {
+            namespace phoenix = boost::phoenix;
+            namespace qi = boost::spirit::qi;
+
+            using phoenix::new_;
+            using phoenix::construct;
+            using phoenix::insert;
+            using phoenix::push_back;
 
             qi::_1_type _1;
             qi::_2_type _2;
             qi::_3_type _3;
             qi::_4_type _4;
-            qi::_a_type _a;
-            qi::_b_type _b;
-            qi::_c_type _c;
-            qi::_d_type _d;
-            qi::_e_type _e;
-            qi::_f_type _f;
-            qi::_g_type _g;
-            qi::_h_type _h;
+            qi::_5_type _5;
+            qi::_6_type _6;
+            qi::_7_type _7;
+            qi::_8_type _8;
+            qi::_pass_type _pass;
             qi::_r1_type _r1;
-            qi::_r2_type _r2;
-            qi::_r3_type _r3;
             qi::_val_type _val;
             qi::eps_type eps;
-            using phoenix::construct;
-            using phoenix::insert;
-            using phoenix::new_;
-            using phoenix::push_back;
+            qi::omit_type omit_;
+            qi::as_string_type as_string_;
+            const boost::phoenix::function<parse::detail::construct_movable> construct_movable_;
+            const boost::phoenix::function<parse::detail::deconstruct_movable> deconstruct_movable_;
 
-            tech_info_name_desc
-                =   parse::label(Name_token)              > tok.string [ _r1 = _1 ]
-                >   parse::label(Description_token)       > tok.string [ _r2 = _1 ]
-                >   parse::label(Short_Description_token) > tok.string [ _r3 = _1 ] // TODO: Get rid of underscore.
+            researchable =
+                    tok.Unresearchable_ [ _val = false ]
+                |   tok.Researchable_ [ _val = true ]
+                |   eps [ _val = true ]
                 ;
 
             tech_info
-                =   tech_info_name_desc(_a, _b, _c)
-                > -(    parse::label(TechType_token) > parse::enum_parser<TechType>() [ _d = _1 ]
-                   |    eps [ _d = TT_THEORY ]
-                   )
-                >   parse::label(Category_token)      > tok.string      [ _e = _1 ]
-                >   parse::label(ResearchCost_token)  > double_value_ref[ _f = _1 ]
-                >   parse::label(ResearchTurns_token) > flexible_int_ref   [ _g = _1 ]
-                >  (    tok.Unresearchable_ [ _h = false ]
-                    |   tok.Researchable_ [ _h = true ]
-                    |   eps [ _h = true ]
-                   )
-                [ _val = construct<Tech::TechInfo>(_a, _b, _c, _e, _d, _f, _g, _h) ]
+                = ( label(tok.Name_)                > tok.string
+                >   label(tok.Description_)         > tok.string
+                >   label(tok.Short_Description_)   > tok.string  // TODO: Get rid of underscore.
+                >   label(tok.Category_)            > tok.string
+                >   label(tok.ResearchCost_)        > double_rules.expr
+                >   label(tok.ResearchTurns_)       > castable_int_rules.flexible_int
+                >   researchable
+                >   tags_parser
+                ) [ _val = construct_movable_(new_<Tech::TechInfo>(_1, _2, _3, _4, deconstruct_movable_(_5, _pass),
+                                                                   deconstruct_movable_(_6, _pass), _7, _8)) ]
                 ;
 
             prerequisites
-                =   parse::label(Prerequisites_token)
-                >  (    '[' > +tok.string [ insert(_r1, _1) ] > ']'
-                    |   tok.string [ insert(_r1, _1) ]
-                   )
+                %=   label(tok.Prerequisites_)
+                >  one_or_more_string_tokens
                 ;
 
             unlocks
-                =   parse::label(Unlock_token)
-                >  (    '[' > +parse::detail::item_spec_parser() [ push_back(_r1, _1) ] > ']'
-                    |   parse::detail::item_spec_parser() [ push_back(_r1, _1) ]
-                   )
+                %=   label(tok.Unlock_)
+                >  one_or_more_item_specs
                 ;
 
             tech
-                =  (tok.Tech_
-                >   tech_info [ _a = _1 ]
-                >  -prerequisites(_b)
-                >  -unlocks(_c)
-                > -(parse::label(EffectsGroups_token) > parse::detail::effects_group_parser() [ _d = _1 ])
-                > -(parse::label(Graphic_token) > tok.string [ _e = _1 ])
-                   )
-                [ insert_tech(_r1, new_<Tech>(_a, _d, _b, _c, _e)) ]
+                = ( omit_[tok.Tech_]
+                >   tech_info
+                >  -prerequisites
+                >  -unlocks
+                >  -(label(tok.EffectsGroups_) > effects_group_grammar)
+                >  -as_string_[(label(tok.Graphic_) > tok.string)]
+                  ) [ insert_tech_(_r1, _1, _4, _2, _3, _5, _pass) ]
                 ;
 
             category
-                =   tok.Category_
-                >   parse::label(Name_token)    > tok.string [ _a = _1 ]
-                >   parse::label(Graphic_token) > tok.string [ _b = _1 ]
-                >   parse::label(Colour_token)  > parse::detail::color_parser() [ insert_category(_r1, new_<TechCategory>(_a, _b, _1)) ]
+                = ( tok.Category_
+                    >   label(tok.Name_)    > tok.string
+                    >   label(tok.Graphic_) > tok.string
+                    >   label(tok.Colour_)  > color_parser
+                  ) [ _pass = is_unique_(_r1, _1, _2),
+                      insert_category_(_r1, _2, _3, _4) ]
                 ;
 
             start
@@ -153,7 +180,7 @@ namespace {
                    )
                 ;
 
-            tech_info_name_desc.name("tech name");
+            researchable.name("Researchable");
             tech_info.name("Tech info");
             prerequisites.name("Prerequisites");
             unlocks.name("Unlock");
@@ -170,90 +197,61 @@ namespace {
             debug(category);
 #endif
 
-            qi::on_error<qi::fail>(start, parse::report_error(_1, _2, _3, _4));
+            qi::on_error<qi::fail>(start, parse::report_error(filename, first, last, _1, _2, _3, _4));
         }
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Tech::TechInfo (std::string&, std::string&, std::string&),
-            parse::skipper_type
-        > tech_info_name_desc_rule;
+        using tech_info_rule = parse::detail::rule<parse::detail::MovableEnvelope<Tech::TechInfo> ()>;
+        using prerequisites_rule = parse::detail::rule<std::set<std::string> ()>;
+        using unlocks_rule = parse::detail::rule<std::vector<ItemSpec> ()>;
+        using tech_rule = parse::detail::rule<void (TechManager::TechContainer&)>;
+        using category_rule = parse::detail::rule<void (std::map<std::string, std::unique_ptr<TechCategory>>&)>;
+        using start_rule = parse::detail::rule<void (TechManager::TechContainer&)>;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Tech::TechInfo (),
-            qi::locals<
-                std::string,
-                std::string,
-                std::string,
-                TechType,
-                std::string,
-                ValueRef::ValueRefBase<double>*,
-                ValueRef::ValueRefBase<int>*,
-                bool
-            >,
-            parse::skipper_type
-        > tech_info_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Tech::TechInfo (std::set<std::string>&),
-            parse::skipper_type
-        > prerequisites_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            Tech::TechInfo (std::vector<ItemSpec>&),
-            parse::skipper_type
-        > unlocks_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (TechManager::TechContainer&),
-            qi::locals<
-                Tech::TechInfo,
-                std::set<std::string>,
-                std::vector<ItemSpec>,
-                std::vector<boost::shared_ptr<Effect::EffectsGroup> >,
-                std::string
-            >,
-            parse::skipper_type
-        > tech_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::map<std::string, TechCategory*>&),
-            qi::locals<
-                std::string,
-                std::string
-            >,
-            parse::skipper_type
-        > category_rule;
-
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (TechManager::TechContainer&),
-            parse::skipper_type
-        > start_rule;
-
-        tech_info_name_desc_rule    tech_info_name_desc;
-        tech_info_rule              tech_info;
-        prerequisites_rule          prerequisites;
-        unlocks_rule                unlocks;
-        tech_rule                   tech;
-        category_rule               category;
-        start_rule                  start;
+        parse::detail::Labeller                 label;
+        parse::detail::single_or_repeated_string<std::set<std::string>>
+                                                one_or_more_string_tokens;
+        parse::conditions_parser_grammar        condition_parser;
+        const parse::string_parser_grammar      string_grammar;
+        parse::castable_as_int_parser_rules     castable_int_rules;
+        parse::double_parser_rules              double_rules;
+        parse::effects_group_grammar            effects_group_grammar;
+        parse::detail::tags_grammar             tags_parser;
+        parse::detail::item_spec_grammar        item_spec_parser;
+        parse::detail::single_or_bracketed_repeat<parse::detail::item_spec_grammar>
+                                                one_or_more_item_specs;
+        parse::detail::color_parser_grammar     color_parser;
+        parse::detail::rule<bool()>             researchable;
+        tech_info_rule                          tech_info;
+        prerequisites_rule                      prerequisites;
+        unlocks_rule                            unlocks;
+        tech_rule                               tech;
+        category_rule                           category;
+        start_rule                              start;
     };
 }
 
 namespace parse {
-    bool techs(const boost::filesystem::path& path,
-               TechManager::TechContainer& techs_,
-               std::map<std::string, TechCategory*>& categories,
-               std::set<std::string>& categories_seen)
-    {
+    template <typename T>
+    T techs(const boost::filesystem::path& path) {
+        const lexer lexer;
+        TechManager::TechContainer techs_;
+        std::map<std::string, std::unique_ptr<TechCategory>> categories;
+        std::set<std::string> categories_seen;
+
         g_categories_seen = &categories_seen;
         g_categories = &categories;
-        return detail::parse_file<rules, TechManager::TechContainer>(path, techs_);
+
+        /*auto success =*/ detail::parse_file<grammar, TechManager::TechContainer>(lexer, path / "Categories.inf", techs_);
+
+        for (const boost::filesystem::path& file : ListScripts(path)) {
+            /*auto success =*/ detail::parse_file<grammar, TechManager::TechContainer>(lexer, file, techs_);
+        }
+
+        return std::make_tuple(std::move(techs_), std::move(categories), categories_seen);
     }
 }
+
+// explicitly instantiate techs.
+// This allows Tech.h to only be included in this .cpp file and not Parse.h
+// which recompiles all parsers if Tech.h changes.
+template FO_PARSE_API TechManager::TechParseTuple parse::techs<TechManager::TechParseTuple>(const boost::filesystem::path& path);

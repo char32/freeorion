@@ -1,12 +1,13 @@
-// -*- C++ -*-
 #ifndef _AppInterface_h_
 #define _AppInterface_h_
 
 #include "Export.h"
 #include "../universe/Universe.h"
+#include "../network/Networking.h"
 
 class EmpireManager;
 class Empire;
+class SupplyManager;
 class Universe;
 class UniverseObject;
 class ObjectMap;
@@ -21,46 +22,73 @@ class Field;
 struct GalaxySetupData;
 
 class FO_COMMON_API IApp {
+protected:
+    IApp();
+
 public:
+    IApp(const IApp&) = delete;
+
+    IApp(IApp&&) = delete;
+
     virtual ~IApp();
 
-    static IApp* GetApp(); ///< returns a IApp pointer to the singleton instance of the app
+    const IApp& operator=(const IApp&) = delete;
 
-    virtual Universe& GetUniverse() = 0;  ///< returns applications copy of Universe
+    IApp& operator=(IApp&&) = delete;
 
-    virtual EmpireManager& Empires() = 0; ///< returns the set of known Empires for this application
+    /** Returns a IApp pointer to the singleton instance of the app. */
+    static IApp* GetApp();
+
+    //! Returns the ::Universe known to this application
+    //!
+    //! @return
+    //! A constant reference to the single ::Universe instance representing the
+    //! known universe of this application.
+    virtual Universe& GetUniverse() = 0;
+
+    /** Start parsing universe object types on a separate thread. */
+    virtual void StartBackgroundParsing();
+
+    /** Returns the set of known Empires for this application. */
+    virtual EmpireManager& Empires() = 0;
 
     virtual Empire* GetEmpire(int id) = 0;
 
-    virtual TemporaryPtr<UniverseObject> GetUniverseObject(int object_id) = 0;
+    virtual SupplyManager& GetSupplyManager() = 0;
+
+    virtual std::shared_ptr<UniverseObject> GetUniverseObject(int object_id) = 0;
 
     /** Accessor for known objects of specified empire. */
     virtual ObjectMap& EmpireKnownObjects(int empire_id) = 0;
 
-    virtual TemporaryPtr<UniverseObject> EmpireKnownObject(int object_id, int empire_id) = 0;
+    virtual std::shared_ptr<UniverseObject> EmpireKnownObject(int object_id, int empire_id) = 0;
 
-    virtual std::string GetVisibleObjectName(TemporaryPtr<const UniverseObject> object) = 0;
+    virtual std::string GetVisibleObjectName(std::shared_ptr<const UniverseObject> object) = 0;
 
-    /** returns a universe object ID which can be used for new objects.
-        Can return INVALID_OBJECT_ID if an ID cannot be created. */
-    virtual int GetNewObjectID() = 0;
+    //! Returns the current game turn
+    //!
+    //! @return The number representing the current game turn.
+    virtual int CurrentTurn() const = 0;
 
-    /** returns a design ID which can be used for a new design to uniquely identify it.
-        Can return INVALID_OBJECT_ID if an ID cannot be created. */
-    virtual int GetNewDesignID() = 0;
+    static int MAX_AI_PLAYERS(); ///<Maximum number of AIs
 
-    virtual int CurrentTurn() const = 0;        ///< returns the current game turn
-
+    /** Returns the galaxy setup data used for the current game */
     virtual const GalaxySetupData& GetGalaxySetupData() const = 0;
 
-protected:
-    IApp();
+    /** Returns the networking client type for the given empire_id. */
+    virtual Networking::ClientType GetEmpireClientType(int empire_id) const = 0;
 
+    /** Returns the networking client type for the given player_id. */
+    virtual Networking::ClientType GetPlayerClientType(int player_id) const = 0;
+
+    virtual int EffectsProcessingThreads() const = 0;
+
+protected:
     static IApp* s_app; ///< a IApp pointer to the singleton instance of the app
 
-private:
-    const IApp& operator=(const IApp&); // disabled
-    IApp(const IApp&); // disabled
+    // NormalExitException is used to break out of the run loop, without calling
+    // terminate and failing to unroll the stack.
+    class NormalExitException {};
 };
 
 /** Accessor for the App's empire manager */
@@ -71,9 +99,17 @@ inline EmpireManager& Empires()
 inline Empire* GetEmpire(int id)
 { return IApp::GetApp()->GetEmpire(id); }
 
+/** Accessor for the App's empire supply manager */
+inline SupplyManager& GetSupplyManager()
+{ return IApp::GetApp()->GetSupplyManager(); }
+
 /** Accessor for the App's universe object */
 inline Universe& GetUniverse()
 { return IApp::GetApp()->GetUniverse(); }
+
+/** Accessor for the App's universe object */
+inline std::shared_ptr<const Pathfinder> GetPathfinder()
+{ return IApp::GetApp()->GetUniverse().GetPathfinder(); }
 
 /** Accessor for all (on server) or all known (on client) objects ObjectMap */
 inline ObjectMap& Objects()
@@ -84,72 +120,64 @@ inline ObjectMap& EmpireKnownObjects(int empire_id)
 { return IApp::GetApp()->EmpireKnownObjects(empire_id); }
 
 /** Accessor for individual objects. */
-inline TemporaryPtr<UniverseObject> GetUniverseObject(int object_id)
+inline std::shared_ptr<UniverseObject> GetUniverseObject(int object_id)
 { return IApp::GetApp()->GetUniverseObject(object_id); }
 
-inline TemporaryPtr<UniverseObject> GetEmpireKnownObject(int object_id, int empire_id)
+inline std::shared_ptr<UniverseObject> GetEmpireKnownObject(int object_id, int empire_id)
 { return IApp::GetApp()->EmpireKnownObject(object_id, empire_id); }
 
-inline TemporaryPtr<ResourceCenter> GetResourceCenter(int object_id)
+inline std::shared_ptr<ResourceCenter> GetResourceCenter(int object_id)
 { return IApp::GetApp()->GetUniverse().Objects().Object<ResourceCenter>(object_id); }
 
-inline TemporaryPtr<ResourceCenter> GetEmpireKnownResourceCenter(int object_id, int empire_id)
+inline std::shared_ptr<ResourceCenter> GetEmpireKnownResourceCenter(int object_id, int empire_id)
 { return IApp::GetApp()->EmpireKnownObjects(empire_id).Object<ResourceCenter>(object_id); }
 
-inline TemporaryPtr<PopCenter> GetPopCenter(int object_id)
+inline std::shared_ptr<PopCenter> GetPopCenter(int object_id)
 { return IApp::GetApp()->GetUniverse().Objects().Object<PopCenter>(object_id); }
 
-inline TemporaryPtr<PopCenter> GetEmpireKnownPopCenter(int object_id, int empire_id)
+inline std::shared_ptr<PopCenter> GetEmpireKnownPopCenter(int object_id, int empire_id)
 { return IApp::GetApp()->EmpireKnownObjects(empire_id).Object<PopCenter>(object_id); }
 
-inline TemporaryPtr<Planet> GetPlanet(int object_id)
+inline std::shared_ptr<Planet> GetPlanet(int object_id)
 { return IApp::GetApp()->GetUniverse().Objects().Object<Planet>(object_id); }
 
-inline TemporaryPtr<Planet> GetEmpireKnownPlanet(int object_id, int empire_id)
+inline std::shared_ptr<Planet> GetEmpireKnownPlanet(int object_id, int empire_id)
 { return IApp::GetApp()->EmpireKnownObjects(empire_id).Object<Planet>(object_id); }
 
-inline TemporaryPtr<System> GetSystem(int object_id)
+inline std::shared_ptr<System> GetSystem(int object_id)
 { return IApp::GetApp()->GetUniverse().Objects().Object<System>(object_id); }
 
-inline TemporaryPtr<System> GetEmpireKnownSystem(int object_id, int empire_id)
+inline std::shared_ptr<System> GetEmpireKnownSystem(int object_id, int empire_id)
 { return IApp::GetApp()->EmpireKnownObjects(empire_id).Object<System>(object_id); }
 
-inline TemporaryPtr<Field> GetField(int object_id)
+inline std::shared_ptr<Field> GetField(int object_id)
 { return IApp::GetApp()->GetUniverse().Objects().Object<Field>(object_id); }
 
-inline TemporaryPtr<Field> GetEmpireKnownField(int object_id, int empire_id)
+inline std::shared_ptr<Field> GetEmpireKnownField(int object_id, int empire_id)
 { return IApp::GetApp()->EmpireKnownObjects(empire_id).Object<Field>(object_id); }
 
-inline TemporaryPtr<Ship> GetShip(int object_id)
+inline std::shared_ptr<Ship> GetShip(int object_id)
 { return IApp::GetApp()->GetUniverse().Objects().Object<Ship>(object_id); }
 
-inline TemporaryPtr<Ship> GetEmpireKnownShip(int object_id, int empire_id)
+inline std::shared_ptr<Ship> GetEmpireKnownShip(int object_id, int empire_id)
 { return IApp::GetApp()->EmpireKnownObjects(empire_id).Object<Ship>(object_id); }
 
-inline TemporaryPtr<Fleet> GetFleet(int object_id)
+inline std::shared_ptr<Fleet> GetFleet(int object_id)
 { return IApp::GetApp()->GetUniverse().Objects().Object<Fleet>(object_id); }
 
-inline TemporaryPtr<Fleet> GetEmpireKnownFleet(int object_id, int empire_id)
+inline std::shared_ptr<Fleet> GetEmpireKnownFleet(int object_id, int empire_id)
 { return IApp::GetApp()->EmpireKnownObjects(empire_id).Object<Fleet>(object_id); }
 
-inline TemporaryPtr<Building> GetBuilding(int object_id)
+inline std::shared_ptr<Building> GetBuilding(int object_id)
 { return IApp::GetApp()->GetUniverse().Objects().Object<Building>(object_id); }
 
-inline TemporaryPtr<Building> GetEmpireKnownBuilding(int object_id, int empire_id)
+inline std::shared_ptr<Building> GetEmpireKnownBuilding(int object_id, int empire_id)
 { return IApp::GetApp()->EmpireKnownObjects(empire_id).Object<Building>(object_id); }
 
 /** Returns the object name of the universe object. This can be apperant object
  * name, if the application isn't supposed to see the real object name. */
-inline std::string GetVisibleObjectName(TemporaryPtr<const UniverseObject> object)
+inline std::string GetVisibleObjectName(std::shared_ptr<const UniverseObject> object)
 { return IApp::GetApp()->GetVisibleObjectName(object); }
-
-/** Returns a new object ID from the server */
-inline int GetNewObjectID()
-{ return IApp::GetApp()->GetNewObjectID(); }
-
-/** Returns a new object ID from the server */
-inline int GetNewDesignID()
-{ return IApp::GetApp()->GetNewDesignID(); }
 
 /** Returns current game turn.  This is >= 1 during a game, BEFORE_FIRST_TURN
   * during galaxy setup, or is INVALID_GAME_TURN at other times */
@@ -159,6 +187,15 @@ inline int CurrentTurn()
 /** Returns the galaxy setup settings used in the current game. */
 inline const GalaxySetupData& GetGalaxySetupData()
 { return IApp::GetApp()->GetGalaxySetupData(); }
+
+inline Networking::ClientType GetEmpireClientType(int empire_id)
+{ return IApp::GetApp()->GetEmpireClientType(empire_id); }
+
+inline Networking::ClientType GetPlayerClientType(int player_id)
+{ return IApp::GetApp()->GetPlayerClientType(player_id); }
+
+inline int EffectsProcessingThreads()
+{ return IApp::GetApp()->EffectsProcessingThreads(); }
 
 
 // sentinel values returned by CurrentTurn().  Can't be an enum since

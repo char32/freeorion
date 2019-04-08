@@ -1,11 +1,21 @@
-#include "ConditionParserImpl.h"
-#include "EnumParser.h"
-#include "Label.h"
 #include "Parse.h"
+
 #include "ParseImpl.h"
+#include "EnumParser.h"
+#include "ValueRefParser.h"
+#include "EnumValueRefRules.h"
+#include "EffectParser.h"
+#include "ConditionParserImpl.h"
+#include "MovableEnvelope.h"
+
+#include "../universe/Condition.h"
+#include "../universe/Effect.h"
 #include "../universe/Species.h"
 
 #include <boost/spirit/include/phoenix.hpp>
+//TODO: replace with std::make_unique when transitioning to C++14
+#include <boost/smart_ptr/make_unique.hpp>
+
 
 #define DEBUG_PARSERS 0
 
@@ -13,131 +23,172 @@
 namespace std {
     inline ostream& operator<<(ostream& os, const FocusType&) { return os; }
     inline ostream& operator<<(ostream& os, const std::vector<FocusType>&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::vector<boost::shared_ptr<Effect::EffectsGroup> >&) { return os; }
+    inline ostream& operator<<(ostream& os, const parse::effects_group_payload&) { return os; }
     inline ostream& operator<<(ostream& os, const std::pair<PlanetType, PlanetEnvironment>&) { return os; }
     inline ostream& operator<<(ostream& os, const std::pair<const PlanetType, PlanetEnvironment>&) { return os; }
     inline ostream& operator<<(ostream& os, const std::map<PlanetType, PlanetEnvironment>&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::pair<const std::string, Species*>&) { return os; }
-    inline ostream& operator<<(ostream& os, const std::map<std::string, Species*>&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::pair<const std::string, std::unique_ptr<Species>>&) { return os; }
+    inline ostream& operator<<(ostream& os, const std::map<std::string, std::unique_ptr<Species>>&) { return os; }
 }
 #endif
 
 namespace {
-    struct insert_species_ {
-#if BOOST_VERSION < 105600
-        template <typename Arg1, typename Arg2> // Phoenix v2
-        struct result
-        { typedef void type; };
-#else
-        typedef void result_type;
-#endif
+    const boost::phoenix::function<parse::detail::is_unique> is_unique_;
 
-        void operator()(std::map<std::string, Species*>& species, Species* specie) const {
-            if (!species.insert(std::make_pair(specie->Name(), specie)).second) {
-                std::string error_str = "ERROR: More than one species in species.txt has the name " + specie->Name();
-                throw std::runtime_error(error_str.c_str());
-            }
-        }
+    struct SpeciesStuff {
+        SpeciesStuff(const boost::optional<std::vector<FocusType>>& foci_,
+                     const boost::optional<std::string>& preferred_focus_,
+                     const std::set<std::string>& tags_,
+                     const std::string& graphic_) :
+            foci(foci_),
+            preferred_focus(preferred_focus_),
+            tags(tags_),
+            graphic(graphic_)
+        {}
+
+        boost::optional<std::vector<FocusType>> foci;
+        boost::optional<std::string>            preferred_focus;
+        std::set<std::string>                   tags;
+        std::string                             graphic;
     };
-    const boost::phoenix::function<insert_species_> insert_species;
 
-    struct rules {
-        rules() {
-            const parse::lexer& tok = parse::lexer::instance();
+
+    void insert_species(
+        std::map<std::string, std::unique_ptr<Species>>& species,
+        const SpeciesStrings& strings,
+        const boost::optional<std::map<PlanetType, PlanetEnvironment>>& planet_environments,
+        const boost::optional<parse::effects_group_payload>& effects,
+        boost::optional<parse::detail::MovableEnvelope<Condition::ConditionBase>>& combat_targets,
+        const SpeciesParams& params,
+        const SpeciesStuff& foci_preferred_tags_graphic,
+        bool& pass)
+    {
+        auto species_ptr = boost::make_unique<Species>(
+            strings,
+            (foci_preferred_tags_graphic.foci ? *foci_preferred_tags_graphic.foci : std::vector<FocusType>()),
+            (foci_preferred_tags_graphic.preferred_focus ? *foci_preferred_tags_graphic.preferred_focus : std::string()),
+            (planet_environments ? *planet_environments : std::map<PlanetType, PlanetEnvironment>()),
+            (effects ? OpenEnvelopes(*effects, pass) : std::vector<std::unique_ptr<Effect::EffectsGroup>>()),
+            (combat_targets ? (*combat_targets).OpenEnvelope(pass) : nullptr),
+            params,
+            foci_preferred_tags_graphic.tags,
+            foci_preferred_tags_graphic.graphic);
+
+        species.insert(std::make_pair(species_ptr->Name(), std::move(species_ptr)));
+    }
+
+    BOOST_PHOENIX_ADAPT_FUNCTION(void, insert_species_, insert_species, 8)
+
+
+    using start_rule_payload = std::pair<
+        std::map<std::string, std::unique_ptr<Species>>, // species_by_name
+        std::vector<std::string> // census ordering
+    >;
+    using start_rule_signature = void(start_rule_payload::first_type&);
+
+    struct grammar : public parse::detail::grammar<start_rule_signature> {
+        grammar(const parse::lexer& tok,
+                const std::string& filename,
+                const parse::text_iterator& first, const parse::text_iterator& last) :
+            grammar::base_type(start),
+            condition_parser(tok, label),
+            string_grammar(tok, label, condition_parser),
+            tags_parser(tok, label),
+            effects_group_grammar(tok, label, condition_parser, string_grammar),
+            one_or_more_foci(focus_type),
+            planet_type_rules(tok, label, condition_parser),
+            planet_environment_rules(tok, label, condition_parser)
+        {
+            namespace phoenix = boost::phoenix;
+            namespace qi = boost::spirit::qi;
+
+            using phoenix::construct;
+            using phoenix::insert;
+            using phoenix::push_back;
 
             qi::_1_type _1;
             qi::_2_type _2;
             qi::_3_type _3;
             qi::_4_type _4;
-            qi::_a_type _a;
-            qi::_b_type _b;
-            qi::_c_type _c;
-            qi::_d_type _d;
-            qi::_e_type _e;
-            qi::_f_type _f;
-            qi::_g_type _g;
+            qi::_5_type _5;
+            qi::_6_type _6;
+            qi::_7_type _7;
+            qi::_8_type _8;
+            qi::_9_type _9;
+            qi::_pass_type _pass;
             qi::_r1_type _r1;
             qi::_val_type _val;
             qi::eps_type eps;
-            using phoenix::construct;
-            using phoenix::insert;
-            using phoenix::new_;
-            using phoenix::push_back;
+            qi::matches_type matches_;
+            qi::omit_type omit_;
+            qi::as_string_type as_string_;
+            const boost::phoenix::function<parse::detail::deconstruct_movable> deconstruct_movable_;
 
             focus_type
-                =    tok.Focus_
-                >    parse::label(Name_token)        > tok.string [ _a = _1 ]
-                >    parse::label(Description_token) > tok.string [ _b = _1 ]
-                >    parse::label(Location_token)    > parse::detail::condition_parser [ _c = _1 ]
-                >    parse::label(Graphic_token)     > tok.string
-                     [ _val = construct<FocusType>(_a, _b, _c, _1) ]
+                =  ( omit_[tok.Focus_]
+                >    label(tok.Name_)        > tok.string
+                >    label(tok.Description_) > tok.string
+                >    label(tok.Location_)    > condition_parser
+                >    label(tok.Graphic_)     > tok.string
+                ) [ _val = construct<FocusType>(_1, _2, deconstruct_movable_(_3, _pass), _4) ]
                 ;
 
             foci
-                =    parse::label(Foci_token)
-                >    (
-                            '[' > +focus_type [ push_back(_r1, _1) ] > ']'
-                        |   focus_type [ push_back(_r1, _1) ]
-                     )
-                ;
-
-            effects
-                =    parse::label(EffectsGroups_token) > parse::detail::effects_group_parser() [ _r1 = _1 ]
+                =    label(tok.Foci_)
+                >    one_or_more_foci
                 ;
 
             environment_map_element
-                =    parse::label(Type_token)        > parse::enum_parser<PlanetType>() [ _a = _1 ]
-                >    parse::label(Environment_token) >  parse::enum_parser<PlanetEnvironment>()
-                     [ _val = construct<std::pair<PlanetType, PlanetEnvironment> >(_a, _1) ]
+                =  ( label(tok.Type_)        > planet_type_rules.enum_expr
+                >    label(tok.Environment_) > planet_environment_rules.enum_expr
+                ) [ _val = construct<std::pair<PlanetType, PlanetEnvironment>>(_1, _2) ]
                 ;
 
             environment_map
-                =    '[' > +environment_map_element [ insert(_val, _1) ] > ']'
-                |    environment_map_element [ insert(_val, _1) ]
-                ;
-
-            environments
-                =    parse::label(Environments_token) > environment_map [ _r1 = _1 ]
+                =    ('[' > +environment_map_element [ insert(_val, _1) ] > ']')
+                |     environment_map_element [ insert(_val, _1) ]
                 ;
 
             species_params
-                =   ((tok.Playable_ [ _a = true ]) | eps)
-                >   ((tok.Native_ [ _b = true ]) | eps)
-                >   ((tok.CanProduceShips_ [ _c = true ]) | eps)
-                >   ((tok.CanColonize_ [ _d = true ]) | eps)
-                    [ _val = construct<SpeciesParams>(_a, _b, _d, _c) ]
+                =   (matches_[tok.Playable_]
+                >    matches_[tok.Native_]
+                >    matches_[tok.CanProduceShips_]
+                >    matches_[tok.CanColonize_]
+                    ) [ _val = construct<SpeciesParams>(_1, _2, _4, _3) ]
                 ;
 
             species_strings
-                =    parse::label(Name_token)                   > tok.string [ _a = _1 ]
-                >    parse::label(Description_token)            > tok.string [ _b = _1 ]
-                >    parse::label(Gameplay_Description_token)   > tok.string [ _c = _1 ]
-                    [ _val = construct<SpeciesStrings>(_a, _b, _c) ]
+                =  ( tok.Species_
+                >    label(tok.Name_)                   > tok.string
+                >    label(tok.Description_)            > tok.string
+                >    label(tok.Gameplay_Description_)   > tok.string
+                   ) [ _pass = is_unique_(_r1, _1, _2),
+                       _val = construct<SpeciesStrings>(_2, _3, _4) ]
                 ;
 
             species
-                =    tok.Species_
-                >    species_strings [ _a = _1 ]
-                >    species_params [ _b = _1]
-                >    parse::detail::tags_parser()(_c)
-                >   -foci(_d)
-                >   -(parse::label(PreferredFocus_token)        >> tok.string [ _g = _1 ])
-                >   -effects(_e)
-                >   -environments(_f)
-                >    parse::label(Graphic_token) > tok.string
-                     [ insert_species(_r1, new_<Species>(_a, _d, _g, _f, _e, _b, _c, _1)) ]
+                = ( species_strings(_r1)// _1
+                >   species_params      // _2
+                >   tags_parser         // _3
+                >  -foci                // _4
+                >  -as_string_[(label(tok.PreferredFocus_)  >   tok.string )]           // _5
+                > -(label(tok.EffectsGroups_)               >   effects_group_grammar)  // _6
+                > -(label(tok.CombatTargets_)               >   condition_parser)       // _7
+                > -(label(tok.Environments_)                >   environment_map)        // _8
+                >   label(tok.Graphic_)                     >   tok.string              // _9
+                  ) [ insert_species_(_r1, _1, _8, _6, _7, _2,
+                                      construct<SpeciesStuff>(_4, _5, _3, _9),
+                                      _pass) ]
                 ;
 
             start
-                =   +species(_r1)
+                = +species(_r1)
                 ;
 
             focus_type.name("Focus");
             foci.name("Foci");
-            effects.name("EffectsGroups");
             environment_map_element.name("Type = <type> Environment = <env>");
             environment_map.name("Environments");
-            environments.name("Environments");
             species_params.name("Species Flags");
             species_strings.name("Species Strings");
             species.name("Species");
@@ -146,119 +197,119 @@ namespace {
 #if DEBUG_PARSERS
             debug(focus_type);
             debug(foci);
-            debug(effects);
             debug(environment_map_element);
             debug(environment_map);
-            debug(environments);
             debug(species_params);
             debug(species_strings);
             debug(species);
             debug(start);
 #endif
 
-            qi::on_error<qi::fail>(start, parse::report_error(_1, _2, _3, _4));
+            qi::on_error<qi::fail>(start, parse::report_error(filename, first, last, _1, _2, _3, _4));
         }
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            FocusType (),
-            qi::locals<
-                std::string,
-                std::string,
-                Condition::ConditionBase*
-            >,
-            parse::skipper_type
-        > focus_type_rule;
+        using focus_type_rule = parse::detail::rule<FocusType ()>;
+        using foci_rule = parse::detail::rule<std::vector<FocusType> ()>;
+        using environment_map_element_rule = parse::detail::rule<std::pair<PlanetType, PlanetEnvironment> ()>;
+        using environment_map_rule = parse::detail::rule<std::map<PlanetType, PlanetEnvironment> ()>;
+        using species_params_rule = parse::detail::rule<SpeciesParams ()>;
+        using species_strings_rule = parse::detail::rule<SpeciesStrings (const start_rule_payload::first_type&)>;
+        using species_rule = parse::detail::rule<void (start_rule_payload::first_type&)>;
+        using start_rule = parse::detail::rule<start_rule_signature>;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::vector<FocusType>&),
-            parse::skipper_type
-        > foci_rule;
+        parse::detail::Labeller                                    label;
+        const parse::conditions_parser_grammar                     condition_parser;
+        const parse::string_parser_grammar                         string_grammar;
+        parse::detail::tags_grammar                                tags_parser;
+        parse::effects_group_grammar                               effects_group_grammar;
+        foci_rule                                                  foci;
+        focus_type_rule                                            focus_type;
+        parse::detail::single_or_bracketed_repeat<focus_type_rule> one_or_more_foci;
+        environment_map_element_rule                               environment_map_element;
+        environment_map_rule                                       environment_map;
+        species_params_rule                                        species_params;
+        species_strings_rule                                       species_strings;
+        species_rule                                               species;
+        start_rule                                                 start;
+        parse::detail::planet_type_parser_rules                    planet_type_rules;
+        parse::detail::planet_environment_parser_rules             planet_environment_rules;
+    };
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::vector<boost::shared_ptr<Effect::EffectsGroup> >&),
-            parse::skipper_type
-        > effects_rule;
+    using manifest_start_rule_signature = void (std::vector<std::string>&);
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            std::pair<PlanetType, PlanetEnvironment> (),
-            qi::locals<PlanetType>,
-            parse::skipper_type
-        > environment_map_element_rule;
+    struct manifest_grammar : public parse::detail::grammar<manifest_start_rule_signature> {
+        manifest_grammar(const parse::lexer& tok,
+                         const std::string& filename,
+                         const parse::text_iterator& first, const parse::text_iterator& last) :
+            manifest_grammar::base_type(start)
+        {
+            namespace phoenix = boost::phoenix;
+            namespace qi = boost::spirit::qi;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            std::map<PlanetType, PlanetEnvironment> (),
-            parse::skipper_type
-        > environment_map_rule;
+            using phoenix::push_back;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::map<PlanetType, PlanetEnvironment>&),
-            parse::skipper_type
-        > environments_rule;
+            qi::_1_type _1;
+            qi::_2_type _2;
+            qi::_3_type _3;
+            qi::_4_type _4;
+            qi::_r1_type _r1;
+            qi::omit_type omit_;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            SpeciesParams (),
-            qi::locals<
-                bool,
-                bool,
-                bool,
-                bool
-            >,
-            parse::skipper_type
-        > species_params_rule;
+            species_manifest
+                =    omit_[tok.SpeciesCensusOrdering_]
+                >    *(label(tok.Tag_) > tok.string [ push_back(_r1, _1) ])
+                ;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            SpeciesStrings (),
-            qi::locals<
-                std::string,
-                std::string,
-                std::string
-            >,
-            parse::skipper_type
-        > species_strings_rule;
+            start
+                =   +species_manifest(_r1)
+                ;
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::map<std::string, Species*>&),
-            qi::locals<
-                SpeciesStrings,
-                SpeciesParams,
-                std::set<std::string>,  // tags
-                std::vector<FocusType>,
-                std::vector<boost::shared_ptr<Effect::EffectsGroup> >,
-                std::map<PlanetType, PlanetEnvironment>,
-                std::string             // graphic
-            >,
-            parse::skipper_type
-        > species_rule;
+            species_manifest.name("ParsedSpeciesCensusOrdering");
 
-        typedef boost::spirit::qi::rule<
-            parse::token_iterator,
-            void (std::map<std::string, Species*>&),
-            parse::skipper_type
-        > start_rule;
+#if DEBUG_PARSERS
+            debug(species_manifest);
+#endif
 
-        foci_rule                       foci;
-        focus_type_rule                 focus_type;
-        effects_rule                    effects;
-        environment_map_element_rule    environment_map_element;
-        environment_map_rule            environment_map;
-        environments_rule               environments;
-        species_params_rule             species_params;
-        species_strings_rule            species_strings;
-        species_rule                    species;
-        start_rule                      start;
+            qi::on_error<qi::fail>(start, parse::report_error(filename, first, last, _1, _2, _3, _4));
+        }
+
+        using manifest_rule = parse::detail::rule<void (std::vector<std::string>&)>;
+        using start_rule = parse::detail::rule<manifest_start_rule_signature>;
+
+        parse::detail::Labeller label;
+        manifest_rule species_manifest;
+        start_rule start;
     };
 }
 
 namespace parse {
-    bool species(const boost::filesystem::path& path, std::map<std::string, Species*>& species_)
-    { return detail::parse_file<rules, std::map<std::string, Species*> >(path, species_); }
+    start_rule_payload species(const boost::filesystem::path& path) {
+        const lexer lexer;
+        start_rule_payload::first_type species_;
+        start_rule_payload::second_type ordering;
+
+        boost::filesystem::path manifest_file;
+
+        for (const boost::filesystem::path& file : ListScripts(path)) {
+            if (file.filename() == "SpeciesCensusOrdering.focs.txt" ) {
+                manifest_file = file;
+                continue;
+            }
+
+            /*auto success =*/ detail::parse_file<grammar, start_rule_payload::first_type>(lexer, file, species_);
+        }
+
+        if (!manifest_file.empty()) {
+            try {
+                /*auto success =*/ detail::parse_file<manifest_grammar, start_rule_payload::second_type>(
+                    lexer, manifest_file, ordering);
+
+            } catch (const std::runtime_error& e) {
+                ErrorLogger() << "Failed to species census manifest in " << manifest_file << " from " << path
+                              << " because " << e.what();
+            }
+        }
+
+        return {std::move(species_), ordering};
+    }
 }

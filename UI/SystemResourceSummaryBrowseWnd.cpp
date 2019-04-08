@@ -4,6 +4,7 @@
 #include "../util/Logger.h"
 #include "../universe/ResourceCenter.h"
 #include "../universe/System.h"
+#include "../universe/Enums.h"
 #include "../Empire/Empire.h"
 #include "../client/human/HumanClientApp.h"
 #include "CUIControls.h"
@@ -12,7 +13,10 @@ namespace {
     /** Returns how much of specified \a resource_type is being consumed by the
       * empire with id \a empire_id at the location of the specified
       * object \a obj. */
-    double ObjectResourceConsumption(TemporaryPtr<const UniverseObject> obj, ResourceType resource_type, int empire_id = ALL_EMPIRES) {
+    double ObjectResourceConsumption(std::shared_ptr<const UniverseObject> obj,
+                                     ResourceType resource_type,
+                                     int empire_id = ALL_EMPIRES)
+    {
         if (!obj) {
             ErrorLogger() << "ObjectResourceConsumption passed a null object";
             return 0.0;
@@ -23,7 +27,7 @@ namespace {
         }
 
 
-        const Empire* empire = 0;
+        const Empire* empire = nullptr;
 
         if (empire_id != ALL_EMPIRES) {
             empire = GetEmpire(empire_id);
@@ -40,39 +44,35 @@ namespace {
         }
 
 
-        //TemporaryPtr<const PopCenter> pc = 0;
+        //std::shared_ptr<const PopCenter> pc;
         double prod_queue_allocation_sum = 0.0;
-        TemporaryPtr<const Building> building;
+        std::shared_ptr<const Building> building;
 
         switch (resource_type) {
         case RE_INDUSTRY:
             // PP (equal to mineral and industry) cost of objects on production queue at this object's location
             if (empire) {
                 // add allocated PP for all production items at this location for this empire
-                const ProductionQueue& queue = empire->GetProductionQueue();
-                for (ProductionQueue::const_iterator queue_it = queue.begin(); queue_it != queue.end(); ++queue_it)
-                    if (queue_it->location == obj->ID())
-                        prod_queue_allocation_sum += queue_it->allocated_pp;
+                for (const auto& elem : empire->GetProductionQueue())
+                    if (elem.location == obj->ID())
+                        prod_queue_allocation_sum += elem.allocated_pp;
 
             } else {
                 // add allocated PP for all production items at this location for all empires
-                for (EmpireManager::const_iterator it = Empires().begin(); it != Empires().end(); ++it) {
-                    empire = it->second;
-                    const ProductionQueue& queue = empire->GetProductionQueue();
-                    for (ProductionQueue::const_iterator queue_it = queue.begin(); queue_it != queue.end(); ++queue_it)
-                        if (queue_it->location == obj->ID())
-                            prod_queue_allocation_sum += queue_it->allocated_pp;
+                for (auto& entry : Empires()) {
+                    empire = entry.second;
+                    for (const ProductionQueue::Element& elem : empire->GetProductionQueue())
+                        if (elem.location == obj->ID())
+                            prod_queue_allocation_sum += elem.allocated_pp;
                 }
             }
             return prod_queue_allocation_sum;
             break;
 
         case RE_TRADE:
-            return 0.0;
-            break;
-
         case RE_RESEARCH:
-            // research isn't consumed at a particular location, so none is consumed at any location
+        case RE_STOCKPILE:
+            // research/stockpile aren't consumed at a particular location, so none is consumed at any location
         default:
             // for INVALID_RESOURCE_TYPE just return 0.0.  Could throw an exception, I suppose...
             break;
@@ -81,18 +81,26 @@ namespace {
     }
 
     const int       EDGE_PAD(3);
+    GG::X LabelWidth()
+    { return GG::X(ClientUI::Pts()*18); }
 
-    const GG::X     LABEL_WIDTH(240);
-    const GG::X     VALUE_WIDTH(60);
+    GG::X ValueWidth()
+    { return GG::X(ClientUI::Pts()*4); }
 }
 
-SystemResourceSummaryBrowseWnd::SystemResourceSummaryBrowseWnd(ResourceType resource_type, int system_id, int empire_id) :
-    GG::BrowseInfoWnd(GG::X0, GG::Y0, LABEL_WIDTH + VALUE_WIDTH, GG::Y1),
+SystemResourceSummaryBrowseWnd::SystemResourceSummaryBrowseWnd(ResourceType resource_type,
+                                                               int system_id, int empire_id) :
+    GG::BrowseInfoWnd(GG::X0, GG::Y0, LabelWidth() + ValueWidth(), GG::Y1),
     m_resource_type(resource_type),
     m_system_id(system_id),
     m_empire_id(empire_id),
-    m_production_label(0), m_allocation_label(0), m_import_export_label(0),
-    row_height(1), production_label_top(0), allocation_label_top(0), import_export_label_top(0)
+    m_production_label(nullptr),
+    m_allocation_label(nullptr),
+    m_import_export_label(nullptr),
+    row_height(1),
+    production_label_top(0),
+    allocation_label_top(0),
+    import_export_label_top(0)
 {}
 
 bool SystemResourceSummaryBrowseWnd::WndHasBrowseInfo(const GG::Wnd* wnd, std::size_t mode) const {
@@ -124,13 +132,13 @@ void SystemResourceSummaryBrowseWnd::UpdateImpl(std::size_t mode, const GG::Wnd*
 
 void SystemResourceSummaryBrowseWnd::Initialize() {
     row_height = GG::Y(ClientUI::Pts() * 3/2);
-    const GG::X TOTAL_WIDTH = LABEL_WIDTH + VALUE_WIDTH;
+    const GG::X TOTAL_WIDTH = LabelWidth() + ValueWidth();
 
     GG::Y top = GG::Y0;
 
 
     production_label_top = top;
-    m_production_label = new CUILabel("", GG::FORMAT_RIGHT);
+    m_production_label = GG::Wnd::Create<CUILabel>("", GG::FORMAT_RIGHT);
     m_production_label->MoveTo(GG::Pt(GG::X0, production_label_top));
     m_production_label->Resize(GG::Pt(TOTAL_WIDTH - EDGE_PAD, row_height));
     m_production_label->SetFont(ClientUI::GetBoldFont());
@@ -140,7 +148,7 @@ void SystemResourceSummaryBrowseWnd::Initialize() {
 
 
     allocation_label_top = top;
-    m_allocation_label = new CUILabel("", GG::FORMAT_RIGHT);
+    m_allocation_label = GG::Wnd::Create<CUILabel>("", GG::FORMAT_RIGHT);
     m_allocation_label->MoveTo(GG::Pt(GG::X0, allocation_label_top));
     m_allocation_label->Resize(GG::Pt(TOTAL_WIDTH - EDGE_PAD, row_height));
     m_allocation_label->SetFont(ClientUI::GetBoldFont());
@@ -150,7 +158,7 @@ void SystemResourceSummaryBrowseWnd::Initialize() {
 
 
     import_export_label_top = top;
-    m_import_export_label = new CUILabel("", GG::FORMAT_RIGHT);
+    m_import_export_label = GG::Wnd::Create<CUILabel>("", GG::FORMAT_RIGHT);
     m_import_export_label->MoveTo(GG::Pt(GG::X0, import_export_label_top));
     m_import_export_label->Resize(GG::Pt(TOTAL_WIDTH - EDGE_PAD, row_height));
     m_import_export_label->SetFont(ClientUI::GetBoldFont());
@@ -159,19 +167,19 @@ void SystemResourceSummaryBrowseWnd::Initialize() {
     UpdateImportExport(top);
 
 
-    Resize(GG::Pt(LABEL_WIDTH + VALUE_WIDTH, top));
+    Resize(GG::Pt(LabelWidth() + ValueWidth(), top));
 }
 
 void SystemResourceSummaryBrowseWnd::UpdateProduction(GG::Y& top) {
     // adds pairs of labels for ResourceCenter name and production of resource starting at vertical position \a top
     // and updates \a top to the vertical position after the last entry
-    for (unsigned int i = 0; i < m_production_labels_and_amounts.size(); ++i) {
-        DeleteChild(m_production_labels_and_amounts[i].first);
-        DeleteChild(m_production_labels_and_amounts[i].second);
+    for (const auto& label_pair : m_production_labels_and_amounts) {
+        DetachChild(label_pair.first);
+        DetachChild(label_pair.second);
     }
     m_production_labels_and_amounts.clear();
 
-    TemporaryPtr<const System> system = GetSystem(m_system_id);
+    auto system = GetSystem(m_system_id);
     if (!system || m_resource_type == INVALID_RESOURCE_TYPE)
         return;
 
@@ -180,19 +188,14 @@ void SystemResourceSummaryBrowseWnd::UpdateProduction(GG::Y& top) {
 
 
     // add label-value pair for each resource-producing object in system to indicate amount of resource produced
-    std::vector<TemporaryPtr<const UniverseObject> > objects =
-        Objects().FindObjects<const UniverseObject>(system->ContainedObjectIDs());
+    auto objects = Objects().FindObjects<const UniverseObject>(system->ContainedObjectIDs());
 
-    for (std::vector<TemporaryPtr<const UniverseObject> >::const_iterator it = objects.begin();
-         it != objects.end(); ++it)
-    {
-        TemporaryPtr<const UniverseObject> obj = *it;
-
+    for (auto& obj : objects) {
         // display information only for the requested player
         if (m_empire_id != ALL_EMPIRES && !obj->OwnedBy(m_empire_id))
             continue;   // if m_empire_id == -1, display resource production for all empires.  otherwise, skip this resource production if it's not owned by the requested player
 
-        TemporaryPtr<const ResourceCenter> rc = boost::dynamic_pointer_cast<const ResourceCenter>(obj);
+        auto rc = std::dynamic_pointer_cast<const ResourceCenter>(obj);
         if (!rc) continue;
 
         std::string name = obj->Name();
@@ -202,17 +205,17 @@ void SystemResourceSummaryBrowseWnd::UpdateProduction(GG::Y& top) {
         std::string amount_text = DoubleToString(production, 3, false);
 
 
-        GG::Label* label = new CUILabel(name, GG::FORMAT_RIGHT);
+        auto label = GG::Wnd::Create<CUILabel>(name, GG::FORMAT_RIGHT);
         label->MoveTo(GG::Pt(GG::X0, top));
-        label->Resize(GG::Pt(LABEL_WIDTH, row_height));
+        label->Resize(GG::Pt(LabelWidth(), row_height));
         AttachChild(label);
 
-        GG::Label* value = new CUILabel(amount_text);
-        value->MoveTo(GG::Pt(LABEL_WIDTH, top));
-        value->Resize(GG::Pt(VALUE_WIDTH, row_height));
+        auto value = GG::Wnd::Create<CUILabel>(amount_text);
+        value->MoveTo(GG::Pt(LabelWidth(), top));
+        value->Resize(GG::Pt(ValueWidth(), row_height));
         AttachChild(value);
 
-        m_production_labels_and_amounts.push_back(std::pair<GG::Label*, GG::Label*>(label, value));
+        m_production_labels_and_amounts.push_back({label, value});
 
         top += row_height;
     }
@@ -220,17 +223,17 @@ void SystemResourceSummaryBrowseWnd::UpdateProduction(GG::Y& top) {
 
     if (m_production_labels_and_amounts.empty()) {
         // add "blank" line to indicate no production
-        GG::Label* label = new CUILabel(UserString("NOT_APPLICABLE"));
+        auto label = GG::Wnd::Create<CUILabel>(UserString("NOT_APPLICABLE"));
         label->MoveTo(GG::Pt(GG::X0, top));
-        label->Resize(GG::Pt(LABEL_WIDTH, row_height));
+        label->Resize(GG::Pt(LabelWidth(), row_height));
         AttachChild(label);
 
-        GG::Label* value = new CUILabel("");
-        value->MoveTo(GG::Pt(LABEL_WIDTH, top));
-        value->Resize(GG::Pt(VALUE_WIDTH, row_height));
+        auto value = GG::Wnd::Create<CUILabel>("");
+        value->MoveTo(GG::Pt(LabelWidth(), top));
+        value->Resize(GG::Pt(ValueWidth(), row_height));
         AttachChild(value);
 
-        m_production_labels_and_amounts.push_back(std::pair<GG::Label*, GG::Label*>(label, value));
+        m_production_labels_and_amounts.push_back({label, value});
 
         top += row_height;
     }
@@ -245,6 +248,8 @@ void SystemResourceSummaryBrowseWnd::UpdateProduction(GG::Y& top) {
         resource_text = UserString("RESEARCH_PRODUCTION");  break;
     case RE_TRADE:
         resource_text = UserString("TRADE_PRODUCTION");     break;
+    case RE_STOCKPILE:
+        resource_text = UserString("STOCKPILE_GENERATION"); break;
     default:
         resource_text = UserString("UNKNOWN_VALUE_SYMBOL"); break;
     }
@@ -259,13 +264,13 @@ void SystemResourceSummaryBrowseWnd::UpdateProduction(GG::Y& top) {
 void SystemResourceSummaryBrowseWnd::UpdateAllocation(GG::Y& top) {
     // adds pairs of labels for allocation of resources in system, starting at vertical position \a top and
     // updates \a top to be the vertical position after the last entry
-    for (unsigned int i = 0; i < m_allocation_labels_and_amounts.size(); ++i) {
-        DeleteChild(m_allocation_labels_and_amounts[i].first);
-        DeleteChild(m_allocation_labels_and_amounts[i].second);
+    for (const auto& label_pair : m_allocation_labels_and_amounts) {
+        DetachChild(label_pair.first);
+        DetachChild(label_pair.second);
     }
     m_allocation_labels_and_amounts.clear();
 
-    TemporaryPtr<const System> system = GetSystem(m_system_id);
+    auto system = GetSystem(m_system_id);
     if (!system || m_resource_type == INVALID_RESOURCE_TYPE)
         return;
 
@@ -274,14 +279,7 @@ void SystemResourceSummaryBrowseWnd::UpdateAllocation(GG::Y& top) {
 
 
     // add label-value pair for each resource-consuming object in system to indicate amount of resource consumed
-    std::vector<TemporaryPtr<const UniverseObject> > objects =
-        Objects().FindObjects<const UniverseObject>(system->ContainedObjectIDs());
-
-    for (std::vector<TemporaryPtr<const UniverseObject> >::const_iterator it = objects.begin();
-         it != objects.end(); ++it)
-    {
-        TemporaryPtr<const UniverseObject> obj = *it;
-
+    for (auto& obj : Objects().FindObjects<const UniverseObject>(system->ContainedObjectIDs())) {
         // display information only for the requested player
         if (m_empire_id != ALL_EMPIRES && !obj->OwnedBy(m_empire_id))
             continue;   // if m_empire_id == ALL_EMPIRES, display resource production for all empires.  otherwise, skip this resource production if it's not owned by the requested player
@@ -306,18 +304,18 @@ void SystemResourceSummaryBrowseWnd::UpdateAllocation(GG::Y& top) {
         std::string amount_text = DoubleToString(allocation, 3, false);
 
 
-        GG::Label* label = new CUILabel(name, GG::FORMAT_RIGHT);
+        auto label = GG::Wnd::Create<CUILabel>(name, GG::FORMAT_RIGHT);
         label->MoveTo(GG::Pt(GG::X0, top));
-        label->Resize(GG::Pt(LABEL_WIDTH, row_height));
+        label->Resize(GG::Pt(LabelWidth(), row_height));
         AttachChild(label);
 
 
-        GG::Label* value = new CUILabel(amount_text);
-        value->MoveTo(GG::Pt(LABEL_WIDTH, top));
-        value->Resize(GG::Pt(VALUE_WIDTH, row_height));
+        auto value = GG::Wnd::Create<CUILabel>(amount_text);
+        value->MoveTo(GG::Pt(LabelWidth(), top));
+        value->Resize(GG::Pt(ValueWidth(), row_height));
         AttachChild(value);
 
-        m_allocation_labels_and_amounts.push_back(std::pair<GG::Label*, GG::Label*>(label, value));
+        m_allocation_labels_and_amounts.push_back({label, value});
 
         top += row_height;
     }
@@ -325,17 +323,17 @@ void SystemResourceSummaryBrowseWnd::UpdateAllocation(GG::Y& top) {
 
     if (m_allocation_labels_and_amounts.empty()) {
         // add "blank" line to indicate no allocation
-        GG::Label* label = new CUILabel(UserString("NOT_APPLICABLE"), GG::FORMAT_RIGHT);
+        auto label = GG::Wnd::Create<CUILabel>(UserString("NOT_APPLICABLE"), GG::FORMAT_RIGHT);
         label->MoveTo(GG::Pt(GG::X0, top));
-        label->Resize(GG::Pt(LABEL_WIDTH, row_height));
+        label->Resize(GG::Pt(LabelWidth(), row_height));
         AttachChild(label);
 
-        GG::Label* value = new CUILabel("");
-        value->MoveTo(GG::Pt(LABEL_WIDTH, top));
-        value->Resize(GG::Pt(VALUE_WIDTH, row_height));
+        auto value = GG::Wnd::Create<CUILabel>("");
+        value->MoveTo(GG::Pt(LabelWidth(), top));
+        value->Resize(GG::Pt(ValueWidth(), row_height));
         AttachChild(value);
 
-        m_allocation_labels_and_amounts.push_back(std::pair<GG::Label*, GG::Label*>(label, value));
+        m_allocation_labels_and_amounts.push_back({label, value});
 
         top += row_height;
     }
@@ -350,14 +348,18 @@ void SystemResourceSummaryBrowseWnd::UpdateAllocation(GG::Y& top) {
         resource_text = UserString("RESEARCH_CONSUMPTION"); break;
     case RE_TRADE:
         resource_text = UserString("TRADE_CONSUMPTION");    break;
+    case RE_STOCKPILE:
+        resource_text = UserString("STOCKPILE_USE");        break;
     default:
         resource_text = UserString("UNKNOWN_VALUE_SYMBOL"); break;
     }
 
     std::string system_allocation_text = DoubleToString(m_allocation, 3, false);
 
-    // for research only, local allocation makes no sense
+    // for research and stockpiling, local allocation makes no sense
     if (m_resource_type == RE_RESEARCH && m_allocation == 0.0)
+        system_allocation_text = UserString("NOT_APPLICABLE");
+    if (m_resource_type == RE_STOCKPILE && m_allocation == 0.0)
         system_allocation_text = UserString("NOT_APPLICABLE");
 
 
@@ -371,11 +373,14 @@ void SystemResourceSummaryBrowseWnd::UpdateAllocation(GG::Y& top) {
 void SystemResourceSummaryBrowseWnd::UpdateImportExport(GG::Y& top) {
     m_import_export_label->SetText(UserString("IMPORT_EXPORT_TOOLTIP"));
 
-    const Empire* empire = 0;
+    const Empire* empire = nullptr;
 
     // check for early exit cases...
     bool abort = false;
-    if (m_empire_id == ALL_EMPIRES ||m_resource_type == RE_RESEARCH) {
+    if (m_empire_id == ALL_EMPIRES ||
+        m_resource_type == RE_RESEARCH ||
+        m_resource_type == RE_STOCKPILE)
+    {
         // multiple empires have complicated stockpiling which don't make sense to try to display.
         // Research use is nonlocalized, so importing / exporting doesn't make sense to display
         abort = true;
@@ -410,6 +415,7 @@ void SystemResourceSummaryBrowseWnd::UpdateImportExport(GG::Y& top) {
             }
             break;
         case RE_RESEARCH:
+        case RE_STOCKPILE:
         default:
             // show nothing
             abort = true;
@@ -425,41 +431,41 @@ void SystemResourceSummaryBrowseWnd::UpdateImportExport(GG::Y& top) {
 
 
     // add label and amount.  may be "NOT APPLIABLE" and nothing if aborted above
-    GG::Label* label = new CUILabel(label_text, GG::FORMAT_RIGHT);
+    auto label = GG::Wnd::Create<CUILabel>(label_text, GG::FORMAT_RIGHT);
     label->MoveTo(GG::Pt(GG::X0, top));
-    label->Resize(GG::Pt(LABEL_WIDTH, row_height));
+    label->Resize(GG::Pt(LabelWidth(), row_height));
     AttachChild(label);
 
-    GG::Label* value = new CUILabel(amount_text);
-    value->MoveTo(GG::Pt(LABEL_WIDTH, top));
-    value->Resize(GG::Pt(VALUE_WIDTH, row_height));
+    auto value = GG::Wnd::Create<CUILabel>(amount_text);
+    value->MoveTo(GG::Pt(LabelWidth(), top));
+    value->Resize(GG::Pt(ValueWidth(), row_height));
     AttachChild(value);
 
-    m_import_export_labels_and_amounts.push_back(std::pair<GG::Label*, GG::Label*>(label, value));
+    m_import_export_labels_and_amounts.push_back({label, value});
 
     top += row_height;
 }
 
 void SystemResourceSummaryBrowseWnd::Clear() {
-    DeleteChild(m_production_label);
-    DeleteChild(m_allocation_label);
-    DeleteChild(m_import_export_label);
+    DetachChildAndReset(m_production_label);
+    DetachChildAndReset(m_allocation_label);
+    DetachChildAndReset(m_import_export_label);
 
-    for (std::vector<std::pair<GG::Label*, GG::Label*> >::iterator it = m_production_labels_and_amounts.begin(); it != m_production_labels_and_amounts.end(); ++it) {
-        DeleteChild(it->first);
-        DeleteChild(it->second);
+    for (const auto& label_pair : m_production_labels_and_amounts) {
+        DetachChild(label_pair.first);
+        DetachChild(label_pair.second);
     }
     m_production_labels_and_amounts.clear();
 
-    for (std::vector<std::pair<GG::Label*, GG::Label*> >::iterator it = m_allocation_labels_and_amounts.begin(); it != m_allocation_labels_and_amounts.end(); ++it) {
-        DeleteChild(it->first);
-        DeleteChild(it->second);
+    for (const auto& label_pair : m_allocation_labels_and_amounts) {
+        DetachChild(label_pair.first);
+        DetachChild(label_pair.second);
     }
     m_allocation_labels_and_amounts.clear();
 
-    for (std::vector<std::pair<GG::Label*, GG::Label*> >::iterator it = m_import_export_labels_and_amounts.begin(); it != m_import_export_labels_and_amounts.end(); ++it) {
-        DeleteChild(it->first);
-        DeleteChild(it->second);
+    for (const auto& label_pair : m_import_export_labels_and_amounts) {
+        DetachChild(label_pair.first);
+        DetachChild(label_pair.second);
     }
     m_import_export_labels_and_amounts.clear();
 }

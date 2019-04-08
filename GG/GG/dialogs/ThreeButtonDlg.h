@@ -59,10 +59,11 @@ class GG_API ThreeButtonDlg : public Wnd
 public:
     /** \name Structors */ ///@{
     /** Ctor that automatically centers the dialog in the app's area*/
-    ThreeButtonDlg(X w, Y h, const std::string& msg, const boost::shared_ptr<Font>& font, Clr color, 
+    ThreeButtonDlg(X w, Y h, const std::string& msg, const std::shared_ptr<Font>& font, Clr color,
                    Clr border_color, Clr button_color, Clr text_color, std::size_t buttons, const std::string& zero = "", 
                    const std::string& one = "", const std::string& two = "");
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ ///@{
     Clr         ButtonColor() const;   ///< returns the color of the buttons in the dialog
@@ -72,8 +73,8 @@ public:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void Render();
-    virtual void KeyPress(Key key, boost::uint32_t key_code_point, Flags<ModKey> mod_keys);
+    void Render() override;
+    void KeyPress(Key key, std::uint32_t key_code_point, Flags<ModKey> mod_keys) override;
 
     void SetButtonColor(Clr color);       ///< sets the color used to render the dialog's buttons
     void SetDefaultButton(std::size_t i); ///< sets the number of the button that will be chosen by default if the user hits enter (NO_BUTTON to disable)
@@ -84,8 +85,6 @@ public:
 
 private:
     std::size_t NumButtons() const;
-    void Init(const std::string& msg, const boost::shared_ptr<Font>& font, std::size_t buttons,
-              const std::string& zero = "", const std::string& one = "", const std::string& two = "");
     void ConnectSignals();
     void Button0Clicked();
     void Button1Clicked();
@@ -98,9 +97,10 @@ private:
     std::size_t m_default;
     std::size_t m_escape;
     std::size_t m_result;
-    Button*     m_button_0;
-    Button*     m_button_1;
-    Button*     m_button_2;
+    std::shared_ptr<Button>     m_button_0;
+    std::shared_ptr<Button>     m_button_1;
+    std::shared_ptr<Button>     m_button_2;
+    std::shared_ptr<Layout>     m_button_layout;
 };
 
 } // namespace GG

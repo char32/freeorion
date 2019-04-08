@@ -1,71 +1,11 @@
-cmake_minimum_required(VERSION 2.6)
-cmake_policy(VERSION 2.6.4)
-
-project(freeoriond)
-
-message("-- Configuring freeoriond")
-
-find_package(Boost ${MINIMUM_BOOST_VERSION} COMPONENTS python log REQUIRED)
-find_package(PythonLibs ${PYTHON_VERSION} REQUIRED)
-
-include_directories(
-    ${Boost_INCLUDE_DIRS}
-    ${PYTHON_INCLUDE_PATH}
+target_sources(freeoriond
+    PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}/SaveLoad.h
+        ${CMAKE_CURRENT_LIST_DIR}/ServerApp.h
+        ${CMAKE_CURRENT_LIST_DIR}/ServerFSM.h
+    PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/dmain.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/SaveLoad.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ServerApp.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/ServerFSM.cpp
 )
-
-add_definitions(-DFREEORION_BUILD_SERVER)
-
-if (CMAKE_COMPILER_IS_GNUCXX)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden")
-endif ()
-
-set(freeoriond_LINK_LIBS
-    freeorioncommon
-    freeorionparse
-    ${PYTHON_LIBRARIES}
-    ${Boost_LIBRARIES}
-)
-
-if (WIN32)
-    link_directories(${BOOST_LIBRARYDIR})
-endif ()
-
-set (freeoriond_HEADER
-    ../network/ServerNetworking.h
-    SaveLoad.h
-    ServerApp.h
-    ServerFSM.h
-)
-
-set (freeoriond_SOURCE
-    dmain.cpp
-    SaveLoad.cpp
-    ServerApp.cpp
-    ServerFSM.cpp
-    ../combat/CombatSystem.cpp
-    ../network/ServerNetworking.cpp
-    ../python/PythonEnumWrapper.cpp
-    ../python/PythonLoggingWrapper.cpp
-    ../python/PythonUniverseWrapper.cpp
-    ../python/server/PythonServerWrapper.cpp
-    ../python/server/PythonServerFramework.cpp
-    ../python/server/PythonServer.cpp
-    ../universe/UniverseGenerator.cpp
-)
-
-add_executable(freeoriond
-    ${freeoriond_HEADER}
-    ${freeoriond_SOURCE}
-)
-
-target_link_libraries(freeoriond
-    ${freeoriond_LINK_LIBS}
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-
-install(
-    TARGETS freeoriond
-    RUNTIME DESTINATION bin
-    COMPONENT COMPONENT_FREEORION
-)
-

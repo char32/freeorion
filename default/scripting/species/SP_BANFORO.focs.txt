@@ -1,0 +1,65 @@
+Species
+    name = "SP_BANFORO"
+    description = "SP_BANFORO_DESC"
+    gameplay_description = "SP_BANFORO_GAMEPLAY_DESC"
+    CanProduceShips
+    CanColonize
+
+    tags = [ "LITHIC" "LIGHT_SENSITIVE" "GOOD_INDUSTRY" "AVERAGE_SUPPLY" "ULTIMATE_DETECTION" "GOOD_STEALTH" "CTRL_EXTINCT" "PEDIA_LITHIC_SPECIES_CLASS" ]
+
+    foci = [
+        [[HAS_INDUSTRY_FOCUS]]
+        [[HAS_RESEARCH_FOCUS]]
+        [[HAS_GROWTH_FOCUS]]
+        [[HAS_ADVANCED_FOCI]]
+    ]
+
+    preferredfocus = "FOCUS_INDUSTRY"
+
+    effectsgroups = [
+        [[GOOD_INDUSTRY]]
+        [[AVERAGE_RESEARCH]]
+        [[AVERAGE_STOCKPILE]]
+
+        [[AVERAGE_POPULATION]]
+        [[AVERAGE_HAPPINESS]]
+        [[AVERAGE_SUPPLY]]
+        [[AVERAGE_DEFENSE_TROOPS]]
+
+        [[ULTIMATE_DETECTION]]
+        [[GOOD_STEALTH]]
+
+        EffectsGroup
+            description = "LIGHT_SENSITIVE_DESC"
+            scope = Source
+            activation = AND [
+                Planet
+                Star type = [Blue]
+            ]
+            accountinglabel = "VERY_BRIGHT_STAR"
+            priority = [[TARGET_POPULATION_AFTER_SCALING_PRIORITY]]
+            effects = SetTargetPopulation value = Value - 2 * Source.HabitableSize
+
+        EffectsGroup
+            scope = Source
+            activation = AND [
+                Planet
+                Star type = [White]
+            ]
+            accountinglabel = "BRIGHT_STAR"
+            priority = [[TARGET_POPULATION_AFTER_SCALING_PRIORITY]]
+            effects = SetTargetPopulation value = Value - Source.HabitableSize
+
+        // not for description
+        [[AVERAGE_PLANETARY_SHIELDS]]
+        [[AVERAGE_PLANETARY_DEFENSE]]
+        [[STANDARD_SHIP_SHIELDS]]
+    ]
+
+    [[BARREN_STANDARD_EP]]
+
+    graphic = "icons/species/banforo.png"
+
+#include "common/*.macros"
+
+#include "/scripting/common/*.macros"

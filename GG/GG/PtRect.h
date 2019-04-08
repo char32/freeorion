@@ -30,6 +30,7 @@
 
 #include <GG/Base.h>
 #include <GG/StrongTypedef.h>
+#include <boost/functional/hash.hpp>
 
 
 namespace GG {
@@ -56,7 +57,8 @@ extern GG_API const Y Y1;
 struct GG_API Pt
 {
     /** \name Structors */ ///@{
-    Pt();               ///< Default ctor.
+    Pt();
+
     Pt(X x_, Y y_);     ///< Ctor that creates a Pt ( \a _x , \a y ).
     Pt(X_d x_, Y y_);   ///< Ctor that creates a Pt ( \a _x , \a y ).
     Pt(X x_, Y_d y_);   ///< Ctor that creates a Pt ( \a _x , \a y ).
@@ -72,9 +74,11 @@ struct GG_API Pt
     //@}
 
     /** \name Mutators */ ///@{
-    void  operator+=(const Pt& rhs)      { x += rhs.x; y += rhs.y; } ///< Adds \a rhs to Pt.
-    void  operator-=(const Pt& rhs)      { x -= rhs.x; y -= rhs.y; } ///< Subtracts \a rhs to Pt.
-    Pt    operator-() const              { return Pt(-x, -y); }      ///< Negates Pt.
+    void  operator+=(const Pt& rhs)     { x += rhs.x; y += rhs.y; }     ///< Adds \a rhs to Pt.
+    void  operator-=(const Pt& rhs)     { x -= rhs.x; y -= rhs.y; }     ///< Subtracts \a rhs from Pt.
+    Pt    operator-() const             { return Pt(-x, -y); }          ///< Negates Pt.
+    Pt    operator/=(const double rhs)  { return Pt(x / rhs, y / rhs); }///< Devides components of Pt by \a rhs
+    Pt    operator*=(const double rhs)  { return Pt(x * rhs, y * rhs); }///< Devides components of Pt by \a rhs
     //@}
 
     X x; ///< The x component.
@@ -90,20 +94,24 @@ GG_API std::ostream& operator<<(std::ostream& os, const Pt& pt);
 struct GG_API Rect
 {
     /** \name Structors */ ///@{
-    Rect();                                ///< default ctor
+    Rect();
+
     Rect(const Pt& pt1, const Pt& pt2);    ///< ctor that constructs a Rect from two corners; any two opposing corners will do
     Rect(X x1, Y y1, X x2, Y y2);  ///< ctor that constructs a Rect from its left, upper, right, and bottom boundaries
     //@}
 
     /** \name Accessors */ ///@{
-    X  Left() const         { return ul.x; }        ///< returns the left boundary of the Rect
-    X  Right() const        { return lr.x; }        ///< returns the right boundary of the Rect
-    Y  Top() const          { return ul.y; }        ///< returns the top boundary of the Rect
-    Y  Bottom() const       { return lr.y; }        ///< returns the bottom boundary of the Rect
-    Pt UpperLeft() const    { return ul; }          ///< returns the upper-left corner of the Rect
-    Pt LowerRight() const   { return lr; }          ///< returns the lower-right corner of the Rect
-    X  Width() const        { return lr.x - ul.x; } ///< returns the width of the Rect
-    Y  Height() const       { return lr.y - ul.y; } ///< returns the height of the Rect
+    X   Left() const        { return ul.x; }            ///< returns the left boundary of the Rect
+    X   Right() const       { return lr.x; }            ///< returns the right boundary of the Rect
+    Y   Top() const         { return ul.y; }            ///< returns the top boundary of the Rect
+    Y   Bottom() const      { return lr.y; }            ///< returns the bottom boundary of the Rect
+    Pt  UpperLeft() const   { return ul; }              ///< returns the upper-left corner of the Rect
+    Pt  LowerRight() const  { return lr; }              ///< returns the lower-right corner of the Rect
+    X   Width() const       { return lr.x - ul.x; }     ///< returns the width of the Rect
+    Y   Height() const      { return lr.y - ul.y; }     ///< returns the height of the Rect
+    X   MidX() const        { return (lr.x + ul.x)/2; } ///< returns the horizontal mid-point of the Rect
+    Y   MidY() const        { return (lr.y + ul.y)/2; } ///< returns the vertical mid-point of the Rect
+
 
     bool  Contains(const Pt& pt) const; ///< returns true iff \a pt falls inside the Rect
     //@}
@@ -125,6 +133,8 @@ GG_API inline bool operator<=(const Pt& lhs, const Pt& rhs) { return lhs.x <= rh
 GG_API inline bool operator>=(const Pt& lhs, const Pt& rhs) { return lhs.x >= rhs.x && lhs.y >= rhs.y; } ///< returns true if \a lhs.x and \a lhs.y are both greater than or equal to the corresponding components of \a rhs
 GG_API inline Pt   operator+(const Pt& lhs, const Pt& rhs)  { return Pt(lhs.x + rhs.x, lhs.y + rhs.y); } ///< returns the vector sum of \a lhs and \a rhs
 GG_API inline Pt   operator-(const Pt& lhs, const Pt& rhs)  { return Pt(lhs.x - rhs.x, lhs.y - rhs.y); } ///< returns the vector difference of \a lhs and \a rhs
+GG_API inline Pt   operator*(const Pt& lhs, double rhs)     { return Pt(lhs.x * rhs, lhs.y * rhs); }     ///< returns the vector with components multiplied by \a rhs
+GG_API inline Pt   operator/(const Pt& lhs, double rhs)     { return Pt(lhs.x / rhs, lhs.y / rhs); }     ///< returns the vector with components divided by \a rhs
 
 GG_API std::ostream& operator<<(std::ostream& os, const Pt& pt); ///< Pt stream-output operator for debug output
 
@@ -140,6 +150,23 @@ GG_API inline Rect operator+(const Pt& pt, const Rect& rect) { return rect + pt;
 GG_API inline Rect operator-(const Pt& pt, const Rect& rect) { return rect - pt; } ///< returns \a rect shifted by subtracting \a pt from each corner
 
 GG_API std::ostream& operator<<(std::ostream& os, const Rect& rect); ///< Rect stream-output operator for debug output
+
+    // Hash functions
+    // Replace with C++11 equilvalent when converted to C++11
+    GG_API inline std::size_t hash_value(X const& x) { return boost::hash<int>()(Value(x)); }
+    GG_API inline std::size_t hash_value(Y const& y) { return boost::hash<int>()(Value(y)); }
+    GG_API inline std::size_t hash_value(Pt const& pt) {
+        std::size_t seed(0);
+        boost::hash_combine(seed, pt.x);
+        boost::hash_combine(seed, pt.y);
+        return seed;
+    }
+    GG_API inline std::size_t hash_value(Rect const& r) {
+        std::size_t seed(0);
+        boost::hash_combine(seed, r.ul);
+        boost::hash_combine(seed, r.lr);
+        return seed;
+    }
 
 } // namepace GG
 

@@ -12,7 +12,7 @@
 namespace GG {
 
 ///////////////////////////////////////////////////////////////////////////
-// implementation for GLBufferBase
+// GLBufferBase
 ///////////////////////////////////////////////////////////////////////////
 GLBufferBase::GLBufferBase() :
     b_name(0)
@@ -40,14 +40,14 @@ void GLBufferBase::harmonizeBufferType(GLBufferBase& other)
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// implementation for GLClientAndServerBufferBase<vtype> template
+// GLClientAndServerBufferBase<vtype> template
 ///////////////////////////////////////////////////////////////////////////
 template <class vtype>
 GLClientAndServerBufferBase<vtype>::GLClientAndServerBufferBase(std::size_t elementsPerItem) :
     GLBufferBase(),
     b_data(),
     b_size(0),
-    b_elementsPerItem(elementsPerItem)
+    b_elements_per_item(elementsPerItem)
 {}
 
 template <class vtype>
@@ -59,10 +59,14 @@ bool GLClientAndServerBufferBase<vtype>::empty() const
 { return b_size == 0; }
 
 template <class vtype>
+void GLClientAndServerBufferBase<vtype>::reserve(std::size_t num_items)
+{ b_data.reserve(num_items * b_elements_per_item); }
+
+template <class vtype>
 void GLClientAndServerBufferBase<vtype>::store(vtype item)
 {
     b_data.push_back(item);
-    b_size=b_data.size() / b_elementsPerItem;
+    b_size=b_data.size() / b_elements_per_item;
 }
 
 template <class vtype>
@@ -70,7 +74,7 @@ void GLClientAndServerBufferBase<vtype>::store(vtype item1, vtype item2)
 {
     b_data.push_back(item1);
     b_data.push_back(item2);
-    b_size=b_data.size() / b_elementsPerItem;
+    b_size=b_data.size() / b_elements_per_item;
 }
 
 template <class vtype>
@@ -79,7 +83,7 @@ void GLClientAndServerBufferBase<vtype>::store(vtype item1, vtype item2, vtype i
     b_data.push_back(item1);
     b_data.push_back(item2);
     b_data.push_back(item3);
-    b_size=b_data.size() / b_elementsPerItem;
+    b_size=b_data.size() / b_elements_per_item;
 }
 
 template <class vtype> 
@@ -89,7 +93,7 @@ void GLClientAndServerBufferBase<vtype>::store(vtype item1, vtype item2, vtype i
     b_data.push_back(item2);
     b_data.push_back(item3);
     b_data.push_back(item4);
-    b_size=b_data.size() / b_elementsPerItem;
+    b_size=b_data.size() / b_elements_per_item;
 }
 
 template <class vtype>
@@ -101,7 +105,7 @@ void GLClientAndServerBufferBase<vtype>::createServerBuffer()
     glBindBuffer(GL_ARRAY_BUFFER, b_name);
     glBufferData(GL_ARRAY_BUFFER,
                  b_data.size() * sizeof(vtype),
-                 &b_data[0],
+                 b_data.empty() ? nullptr : &b_data[0],
                  GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
@@ -114,7 +118,7 @@ template <class vtype> void GLClientAndServerBufferBase<vtype>::clear()
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// implementation for GLRGBAColorBuffer
+// GLRGBAColorBuffer
 ///////////////////////////////////////////////////////////////////////////
 template class GLClientAndServerBufferBase<unsigned char>;
 
@@ -129,15 +133,15 @@ void GLRGBAColorBuffer::activate() const
 {
     if (b_name) {
         glBindBuffer(GL_ARRAY_BUFFER, b_name);
-        glColorPointer(4, GL_UNSIGNED_BYTE, 0, 0);
+        glColorPointer(4, GL_UNSIGNED_BYTE, 0, nullptr);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     } else {
-        glColorPointer(4, GL_UNSIGNED_BYTE, 0, &b_data[0]);
+        glColorPointer(4, GL_UNSIGNED_BYTE, 0, b_data.empty() ? nullptr: &b_data[0]);
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// implementation for GL2DVertexBuffer
+// GL2DVertexBuffer
 ///////////////////////////////////////////////////////////////////////////
 template class GLClientAndServerBufferBase<float>;
 
@@ -145,45 +149,35 @@ GL2DVertexBuffer::GL2DVertexBuffer() :
     GLClientAndServerBufferBase<float>(2)
 {}
 
+void GL2DVertexBuffer::store(const Pt& pt)
+{ store(pt.x, pt.y); }
+
+void GL2DVertexBuffer::store(X x, Y y)
+{ GLClientAndServerBufferBase::store(Value(x), Value(y)); }
+
+void GL2DVertexBuffer::store(X x, float y)
+{ GLClientAndServerBufferBase::store(Value(x), y); }
+
+void GL2DVertexBuffer::store(float x, Y y)
+{ GLClientAndServerBufferBase::store(x, Value(y)); }
+
+void GL2DVertexBuffer::store(float x, float y)
+{ GLClientAndServerBufferBase::store(x, y); }
+
 void GL2DVertexBuffer::activate() const
 {
     if (b_name) {
         glBindBuffer(GL_ARRAY_BUFFER, b_name);
-        glVertexPointer(2, GL_FLOAT, 0, 0);
+        glVertexPointer(2, GL_FLOAT, 0, nullptr);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     } else {
-        glVertexPointer(2, GL_FLOAT, 0, &b_data[0]);
+        glVertexPointer(2, GL_FLOAT, 0, b_data.empty() ? nullptr: &b_data[0]);
     }
 }
 
-///////////////////////////////////////////////////////////////////////////
-// implementation for GLPtBuffer
-///////////////////////////////////////////////////////////////////////////
-template class GLClientAndServerBufferBase<int>;
-
-GLPtBuffer::GLPtBuffer () :
-    GLClientAndServerBufferBase<int>(2)
-{}
-
-void GLPtBuffer::store(const Pt& pt)
-{ store(pt.x, pt.y); }
-
-void GLPtBuffer::store(X x, Y y)
-{ GLClientAndServerBufferBase::store(Value(x), Value(y)); }
-
-void GLPtBuffer::activate() const
-{
-    if (b_name) {
-        glBindBuffer(GL_ARRAY_BUFFER, b_name);
-        glVertexPointer(2, GL_INT, 0, 0);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-    } else {
-        glVertexPointer(2, GL_INT, 0, &b_data[0]);
-    }
-}
 
 ///////////////////////////////////////////////////////////////////////////
-// implementation for GLTexCoordBuffer
+// GLTexCoordBuffer
 ///////////////////////////////////////////////////////////////////////////
 GLTexCoordBuffer::GLTexCoordBuffer() :
     GLClientAndServerBufferBase<float>(2)
@@ -193,10 +187,51 @@ void GLTexCoordBuffer::activate() const
 {
     if (b_name) {
         glBindBuffer(GL_ARRAY_BUFFER, b_name);
-        glTexCoordPointer(2, GL_FLOAT, 0, 0);
+        glTexCoordPointer(2, GL_FLOAT, 0, nullptr);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     } else {
-        glTexCoordPointer(2, GL_FLOAT, 0, &b_data[0]);
+        glTexCoordPointer(2, GL_FLOAT, 0, b_data.empty() ? nullptr: &b_data[0]);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+// GL3DVertexBuffer
+///////////////////////////////////////////////////////////////////////////
+GL3DVertexBuffer::GL3DVertexBuffer() :
+    GLClientAndServerBufferBase<float>(3)
+{}
+
+void GL3DVertexBuffer::store(float x, float y, float z)
+{ GLClientAndServerBufferBase::store(x, y, z); }
+
+void GL3DVertexBuffer::activate() const
+{
+    if (b_name) {
+        glBindBuffer(GL_ARRAY_BUFFER, b_name);
+        glVertexPointer(3, GL_FLOAT, 0, nullptr);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    } else {
+        glVertexPointer(3, GL_FLOAT, 0, b_data.empty() ? nullptr: &b_data[0]);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+// GLNormalBuffer
+///////////////////////////////////////////////////////////////////////////
+GLNormalBuffer::GLNormalBuffer() :
+    GLClientAndServerBufferBase<float>(3)
+{}
+
+void GLNormalBuffer::activate() const
+{
+    if (b_name) {
+        glBindBuffer(GL_ARRAY_BUFFER, b_name);
+        glNormalPointer(GL_FLOAT, 0, nullptr);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    } else {
+        glNormalPointer(GL_FLOAT, 0, b_data.empty() ? nullptr: &b_data[0]);
     }
 }
 

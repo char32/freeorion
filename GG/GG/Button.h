@@ -35,6 +35,8 @@
 #include <GG/TextControl.h>
 #include <GG/Enum.h>
 
+#include <boost/signals2/signal.hpp>
+
 
 namespace GG {
 
@@ -60,16 +62,17 @@ public:
     typedef boost::signals2::signal<void ()> ClickedSignalType;
     //@}
 
-    /** \name Structors */ ///@{
-    Button(const std::string& str, const boost::shared_ptr<Font>& font, Clr color,
-           Clr text_color = CLR_BLACK, Flags<WndFlag> flags = INTERACTIVE); ///< ctor
+   /** \name Structors */ ///@{
+    Button(const std::string& str, const std::shared_ptr<Font>& font, Clr color,
+           Clr text_color = CLR_BLACK, Flags<WndFlag> flags = INTERACTIVE);
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ ///@{
-    virtual Pt       MinUsableSize() const;
+    Pt MinUsableSize() const override;
 
     /** Returns button state \see ButtonState */
-    ButtonState       State() const;
+    ButtonState State() const;
 
     const std::string& Text() const;             ///< Returns the label to be used as the button label
     const SubTexture& UnpressedGraphic() const;  ///< Returns the SubTexture to be used as the image of the button when unpressed
@@ -80,52 +83,64 @@ public:
     mutable ClickedSignalType LeftClickedSignal;
     /** The right clicked signal object for this Button */
     mutable ClickedSignalType RightClickedSignal;
+    /** The left pressed signal object for this Button */
+    mutable ClickedSignalType LeftPressedSignal;
+    /** The right pressed signal object for this Button */
+    mutable ClickedSignalType RightPressedSignal;
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void   Show(bool children = true);
-    virtual void   Render();
-    virtual void   SizeMove(const Pt& ul, const Pt& lr);
+    void Show() override;
+    void Render() override;
+    void SizeMove(const Pt& ul, const Pt& lr) override;
 
-    virtual void   SetColor(Clr c); ///< Sets the control's color; does not affect the text color
+    /** Sets the control's color; does not affect the text color. */
+    void SetColor(Clr c) override;
 
     /** Sets button state programmatically \see ButtonState */
-    void           SetState(ButtonState state);
+    void SetState(ButtonState state);
 
-    void           SetText(const std::string& text);          ///< Sets the text to be used as the button label
-    void           SetUnpressedGraphic(const SubTexture& st); ///< Sets the SubTexture to be used as the image of the button when unpressed
-    void           SetPressedGraphic(const SubTexture& st);   ///< Sets the SubTexture to be used as the image of the button when pressed
-    void           SetRolloverGraphic(const SubTexture& st);  ///< Sets the SubTexture to be used as the image of the button when it contains the cursor, but is not pressed
+    void SetText(const std::string& text);          ///< Sets the text to be used as the button label
+    void SetUnpressedGraphic(const SubTexture& st); ///< Sets the SubTexture to be used as the image of the button when unpressed
+    void SetPressedGraphic(const SubTexture& st);   ///< Sets the SubTexture to be used as the image of the button when pressed
+    void SetRolloverGraphic(const SubTexture& st);  ///< Sets the SubTexture to be used as the image of the button when it contains the cursor, but is not pressed
     //@}
 
 protected:
     /** \name Mutators */ ///@{
-    virtual void   LButtonDown(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void   LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys);
-    virtual void   LButtonUp(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void   LClick(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void   RButtonDown(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void   RDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys);
-    virtual void   RButtonUp(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void   RClick(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void   MouseHere(const Pt& pt, Flags<ModKey> mod_keys);
-    virtual void   MouseLeave();
+    void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys) override;
+    void LButtonUp(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LClick(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void RButtonDown(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void RDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys) override;
+    void RButtonUp(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void RClick(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void MouseEnter(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void MouseHere(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void MouseLeave() override;
 
-    virtual void   RenderUnpressed();   ///< Draws the button unpressed.  If an unpressed graphic has been supplied, it is used.
-    virtual void   RenderPressed();     ///< Draws the button pressed.  If an pressed graphic has been supplied, it is used.
-    virtual void   RenderRollover();    ///< Draws the button rolled-over.  If an rollover graphic has been supplied, it is used.
+    /** Draws the button unpressed.  If an unpressed graphic has been supplied, it is used. */
+    virtual void RenderUnpressed();
+    /** Draws the button pressed.  If an pressed graphic has been supplied, it is used. */
+    virtual void RenderPressed();
+    /** Draws the button rolled-over.  If an rollover graphic has been supplied, it is used. */
+    virtual void RenderRollover();
     //@}
 
-    TextControl*   m_label;             ///< Label used to display text
+    std::shared_ptr<TextControl> m_label;   ///< Label used to display text
 
 private:
-    void           RenderDefault();     ///< This just draws the default unadorned square-and-rectangle button
+    void RenderDefault();     ///< This just draws the default unadorned square-and-rectangle button
 
     ButtonState    m_state;             ///< Button is always in exactly one of the ButtonState states above
     SubTexture     m_unpressed_graphic; ///< Graphic used to display button when it's unpressed
     SubTexture     m_pressed_graphic;   ///< Graphic used to display button when it's depressed
     SubTexture     m_rollover_graphic;  ///< Graphic used to display button when it's under the mouse and not pressed
 };
+
+
+class StateButtonRepresenter;
 
 
 /** \brief This is a basic state button control.
@@ -142,6 +157,13 @@ private:
 class GG_API StateButton : public Control
 {
 public:
+    /// the states of being for a GG::Button
+    GG_CLASS_ENUM(ButtonState,
+        BN_PRESSED,    ///< The button is being pressed by the user, and the cursor is over the button
+        BN_UNPRESSED,  ///< The button is unpressed
+        BN_ROLLOVER    ///< The button has the cursor over it, but is unpressed
+    )
+
     /** \name Signal Types */ ///@{
     /** Emitted when the StateButton is checked or unchecked; the checked or
         unchecked status is indicated by the bool parameter */
@@ -149,65 +171,149 @@ public:
     //@}
 
     /** \name Structors */ ///@{
-    StateButton(const std::string& str, const boost::shared_ptr<Font>& font, Flags<TextFormat> format,
-                Clr color, Clr text_color = CLR_BLACK, Clr interior = CLR_ZERO, StateButtonStyle style = SBSTYLE_3D_CHECKBOX); ///< Ctor
+    StateButton(const std::string& str, const std::shared_ptr<Font>& font, Flags<TextFormat> format,
+                Clr color, std::shared_ptr<StateButtonRepresenter> representer, Clr text_color = CLR_BLACK); ///< Ctor
     //@}
+    void CompleteConstruction() override;
 
     /** \name Accessors */ ///@{
-    virtual Pt       MinUsableSize() const;
+    Pt                  MinUsableSize() const override;
 
-    const std::string& Text() const;        ///< Returns the label to be used as the button label
+    /** Returns button state \see ButtonState */
+    ButtonState         State() const;
 
-    bool             Checked() const;       ///< Returns true if button is checked
-    Clr              InteriorColor() const; ///< Returns the interior color of the box, circle, or other enclosing shape
+    const std::string&  Text() const;        ///< Returns the label to be used as the button label
 
-    /** Returns the visual style of the button \see StateButtonStyle */
-    StateButtonStyle Style() const;
+    bool                Checked() const;       ///< Returns true if button is checked
+
+    TextControl*        GetLabel() const;
 
     mutable CheckedSignalType CheckedSignal; ///< The checked signal object for this StaticButton
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void     Show(bool children = true);
-    virtual void     Render();
-    virtual void     SizeMove(const Pt& ul, const Pt& lr);
+    void Show() override;
+    void Render() override;
+    void SizeMove(const Pt& ul, const Pt& lr) override;
 
-    void             Reset();                 ///< Unchecks button
-    void             SetCheck(bool b = true); ///< (Un)checks button
-    void             SetButtonPosition(const Pt& ul, const Pt& lr); ///< places the button within the control
-    void             SetDefaultButtonPosition(); ///< Places the button to its default positionwithin the control
-    virtual void     SetColor(Clr c);         ///< Sets the color of the button; does not affect text color
-    void             SetInteriorColor(Clr c); ///< Sets the interior color of the box, circle, or other enclosing shape
-    void             SetTextColor(Clr c); ///< Sets the color of the box label text
-
-    /** Sets the visual style of the button \see StateButtonStyle */
-    void             SetStyle(StateButtonStyle bs);
+    void Reset();                 ///< Unchecks button
+    void SetCheck(bool b = true); ///< (Un)checks button
+    void SetTextColor(Clr c); ///< Sets the color of the box label text
     //@}
 
 protected:
-    /** \name Accessors */ ///@{
-    TextControl* GetLabel() const;
-    Pt  ButtonUpperLeft() const;  ///< Returns the upper-left of the button part of the control
-    Pt  ButtonLowerRight() const; ///< Returns the lower-right of the button part of the control
-    Pt  TextUpperLeft() const;    ///< Returns the upper-left of the text part of the control
-    //@}
-
     /** \name Mutators */ ///@{
-    virtual void LClick(const Pt& pt, Flags<ModKey> mod_keys);
+    void LButtonDown(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LDrag(const Pt& pt, const Pt& move, Flags<ModKey> mod_keys) override;
+    void LButtonUp(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void LClick(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void MouseHere(const Pt& pt, Flags<ModKey> mod_keys) override;
+    void MouseLeave() override;
 
-    void RepositionButton();      ///< Places the button at the appropriate position based on the style flags, without resizing it
+    /** Sets button state programmatically \see ButtonState */
+    void SetState(ButtonState next_state);
     //@}
 
 private:
-    TextControl*      m_label;       ///< Label used to display text
+    std::shared_ptr<StateButtonRepresenter> m_representer;
+    std::shared_ptr<TextControl>            m_label;       ///< Label used to display text
+    ButtonState                             m_state;       ///< Button is always in exactly one of the ButtonState states above
+    bool                                    m_checked;     ///< true when this button in a checked, active state
+};
 
-    bool              m_checked;     ///< true when this button in a checked, active state
-    Clr               m_int_color;   ///< color inside border
-    StateButtonStyle  m_style;       ///< style of appearance to use when rendering button
 
-    Pt                m_button_ul;
-    Pt                m_button_lr;
-    Pt                m_text_ul;
+/** \brief Visual representation of a state button.
+
+    The StateButtonRepresenter is a stub interface to implement a visual
+    representation of a StateButton instance.  A representer can be shared
+    amongst multiple instances of a StateButton, so no subclass should
+    store instance specific attributes of a state button.
+ */
+class GG_API StateButtonRepresenter
+{
+public:
+    /** \brief Render the given state button according to its state.
+
+        \param button The StateButton instance to render.
+     */
+    virtual void Render(const StateButton& button) const;
+
+    /** \brief Respong to a button state change.
+
+        This method is called whenever a Button chanes its state.
+
+        \param button  The button that changed its state and is in the most
+                       recent state.
+        \param previous_state  The previous button state.
+     */
+    virtual void OnChanged(const StateButton& button, StateButton::ButtonState previous_state) const;
+
+    /** \brief Respond to a state button change.
+
+        This method is called whenever a StateButton changes its
+        state.
+
+        \param checked True if the state button was checked, False
+                       if not.
+     */
+    virtual void OnChecked(bool checked) const;
+
+    /** \brief Return the minimum size required for a usable representation
+
+        \param button The state button to calculate the minimum size of.
+        \return The minimum size to create a usable representation of the
+           given state button.
+     */
+    virtual Pt MinUsableSize(const StateButton& button) const;
+
+protected:
+    /** \brief Calculate the layout of text and button component.
+
+        \param button The StateButton instance to layout.
+        \param button_ul[out] The upper left corner of the visual
+               button.
+        \param button_lr[out] The lower right corner of the visual
+               button.
+        \param text_ul[out] The upper left corner of the button
+               label.
+     */
+    virtual void DoLayout(const GG::StateButton& button, Pt& button_ul, Pt& button_lr, Pt& text_ul) const;
+};
+
+
+/** \brief Builtin representation of a check box state button. */
+class GG_API BeveledCheckBoxRepresenter: public StateButtonRepresenter
+{
+public:
+    explicit BeveledCheckBoxRepresenter(Clr int_color = CLR_ZERO);
+
+    void Render(const StateButton& button) const override;
+
+private:
+    Clr m_int_color;
+};
+
+
+/** \brief Builtin representation of a radio state button. */
+class GG_API BeveledRadioRepresenter: public StateButtonRepresenter
+{
+public:
+    explicit BeveledRadioRepresenter(Clr int_color = CLR_ZERO);
+
+    void Render(const StateButton& button) const override;
+
+private:
+    Clr m_int_color;
+};
+
+
+/** \brief Builtin representation of a tab state button (part of the TabWnd). */
+class GG_API BeveledTabRepresenter: public StateButtonRepresenter
+{
+public:
+    void Render(const StateButton& button) const override;
+
+    Pt MinUsableSize(const StateButton& button) const override;
 };
 
 
@@ -230,11 +336,11 @@ public:
     //@}
 
     /** \name Structors */ ///@{
-    RadioButtonGroup(Orientation orientation); ///< ctor
+    RadioButtonGroup(Orientation orientation);
     //@}
 
     /** \name Accessors */ ///@{
-    virtual Pt       MinUsableSize() const;
+    Pt MinUsableSize() const override;
 
     /** Returns the orientation of the buttons in the group */
     Orientation      GetOrientation() const;
@@ -269,7 +375,7 @@ public:
     //@}
 
     /** \name Mutators */ ///@{
-    virtual void Render();
+    void Render() override;
 
     /** Checks the index-th button, and unchecks all others.  If there is no
         index-th button, they are all unchecked, and the currently-checked
@@ -282,12 +388,12 @@ public:
         to NO_BUTTON. */
     void DisableButton(std::size_t index, bool b = true); 
 
-    /** Adds a button to the end of the group. */
-    void AddButton(StateButton* bn);
+    /** Adds a button to the end of the group. The button group owns \p bn.*/
+    void AddButton(std::shared_ptr<StateButton> bn);
 
     /** Adds a button to the group at position \a index.  \a index must be in
-        the range [0, NumButtons()]. */
-    void InsertButton(std::size_t index, StateButton* bn);
+        the range [0, NumButtons()]. The button group owns \p bn.*/
+    void InsertButton(std::size_t index, std::shared_ptr<StateButton> bn);
 
     /** Removes \a button from the group.  If \a button is at index i, and is
         the currently-checked button, the currently-checked button index is
@@ -327,9 +433,10 @@ protected:
         RadioButtonGroup. */
     struct GG_API ButtonSlot
     {
-        ButtonSlot();
-        ButtonSlot(StateButton* button_);
-        StateButton*                button;
+        ButtonSlot(std::shared_ptr<StateButton>& button_);
+
+        std::shared_ptr<StateButton> button;
+
         boost::signals2::connection connection;
     };
 
@@ -338,17 +445,6 @@ protected:
     //@}
 
 private:
-    class ButtonClickedFunctor // for catching button-click signals from the contained buttons
-    {
-    public:
-        ButtonClickedFunctor(RadioButtonGroup* group, StateButton* button, std::size_t index);
-        void operator()(bool checked);
-    private:
-        RadioButtonGroup* m_group;
-        StateButton*      m_button;
-        std::size_t       m_index;
-    };
-
     void ConnectSignals();
     void SetCheckImpl(std::size_t index, bool signal);
     void Reconnect();
@@ -359,8 +455,6 @@ private:
     bool                    m_expand_buttons;
     bool                    m_expand_buttons_proportionally;
     bool                    m_render_outline;
-
-    friend class ButtonClickedFunctor;
 };
 
 } // namespace GG

@@ -2,9 +2,11 @@
 
 #include <GG/Button.h>
 
+#include "../util/i18n.h"
 #include "../util/Logger.h"
 #include "../universe/UniverseObject.h"
 #include "../universe/Planet.h"
+#include "../universe/Enums.h"
 #include "../client/human/HumanClientApp.h"
 #include "ClientUI.h"
 #include "CUIControls.h"
@@ -25,57 +27,60 @@ namespace {
 }
 
 MilitaryPanel::MilitaryPanel(GG::X w, int planet_id) :
-    AccordionPanel(w),
+    AccordionPanel(w, GG::Y(ClientUI::Pts()*2)),
     m_planet_id(planet_id),
     m_meter_stats(),
-    m_multi_icon_value_indicator(0),
-    m_multi_meter_status_bar(0)
-{
+    m_multi_icon_value_indicator(nullptr),
+    m_multi_meter_status_bar(nullptr)
+{}
+
+void MilitaryPanel::CompleteConstruction() {
+    AccordionPanel::CompleteConstruction();
+
     SetName("MilitaryPanel");
 
-    TemporaryPtr<const Planet> planet = GetPlanet();
+    auto planet = this->GetPlanet();
     if (!planet)
         throw std::invalid_argument("Attempted to construct a MilitaryPanel with an object id is not a Planet");
 
-    GG::Connect(m_expand_button->LeftClickedSignal, &MilitaryPanel::ExpandCollapseButtonPressed, this);
+    m_expand_button->LeftPressedSignal.connect(
+        boost::bind(&MilitaryPanel::ExpandCollapseButtonPressed, this));
 
-    // small meter indicators - for use when panel is collapsed
-    m_meter_stats.push_back(std::make_pair(METER_SHIELD, new StatisticIcon(ClientUI::MeterIcon(METER_SHIELD), 0, 3, false)));
-    m_meter_stats.push_back(std::make_pair(METER_DEFENSE, new StatisticIcon(ClientUI::MeterIcon(METER_DEFENSE), 0, 3, false)));
-    m_meter_stats.push_back(std::make_pair(METER_TROOPS, new StatisticIcon(ClientUI::MeterIcon(METER_TROOPS), 0, 3, false)));
-    m_meter_stats.push_back(std::make_pair(METER_DETECTION, new StatisticIcon(ClientUI::MeterIcon(METER_DETECTION), 0, 3, false)));
-    m_meter_stats.push_back(std::make_pair(METER_STEALTH, new StatisticIcon(ClientUI::MeterIcon(METER_STEALTH), 0, 3, false)));
-    m_meter_stats.push_back(std::make_pair(METER_SUPPLY, new StatisticIcon(ClientUI::MeterIcon(METER_SUPPLY), 0, 3, false)));
+    const auto obj = GetUniverseObject(m_planet_id);
+    if (!obj) {
+        ErrorLogger() << "Invalid object id " << m_planet_id;
+        return;
+    }
 
     // meter and production indicators
-    std::vector<std::pair<MeterType, MeterType> > meters;
+    std::vector<std::pair<MeterType, MeterType>> meters;
 
-    for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-        AttachChild(it->second);
-        meters.push_back(std::make_pair(it->first, AssociatedMeterType(it->first)));
+    // small meter indicators - for use when panel is collapsed
+    for (MeterType meter : {METER_SHIELD, METER_DEFENSE, METER_TROOPS, METER_DETECTION, METER_STEALTH})
+    {
+        auto stat = GG::Wnd::Create<StatisticIcon>(
+            ClientUI::MeterIcon(meter), obj->InitialMeterValue(meter),
+            3, false, MeterIconSize().x, MeterIconSize().y);
+        stat->InstallEventFilter(shared_from_this());
+        AttachChild(stat);
+        m_meter_stats.push_back({meter, stat});
+        meters.push_back({meter, AssociatedMeterType(meter)});
     }
 
     // attach and show meter bars and large resource indicators
-    m_multi_meter_status_bar =      new MultiMeterStatusBar(Width() - 2*EDGE_PAD,       m_planet_id, meters);
-    m_multi_icon_value_indicator =  new MultiIconValueIndicator(Width() - 2*EDGE_PAD,   m_planet_id, meters);
+    m_multi_meter_status_bar =      GG::Wnd::Create<MultiMeterStatusBar>(Width() - 2*EDGE_PAD,       m_planet_id, meters);
+    m_multi_icon_value_indicator =  GG::Wnd::Create<MultiIconValueIndicator>(Width() - 2*EDGE_PAD,   m_planet_id, meters);
 
     // determine if this panel has been created yet.
-    std::map<int, bool>::iterator it = s_expanded_map.find(m_planet_id);
+    auto it = s_expanded_map.find(m_planet_id);
     if (it == s_expanded_map.end())
         s_expanded_map[m_planet_id] = false; // if not, default to collapsed state
 
     Refresh();
 }
 
-MilitaryPanel::~MilitaryPanel() {
-    // manually delete all pointed-to controls that may or may not be attached as a child window at time of deletion
-    delete m_multi_icon_value_indicator;
-    delete m_multi_meter_status_bar;
-
-    for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-        delete it->second;
-    }
-}
+MilitaryPanel::~MilitaryPanel()
+{}
 
 void MilitaryPanel::ExpandCollapse(bool expanded) {
     if (expanded == s_expanded_map[m_planet_id]) return; // nothing to do
@@ -84,8 +89,41 @@ void MilitaryPanel::ExpandCollapse(bool expanded) {
     DoLayout();
 }
 
+bool MilitaryPanel::EventFilter(GG::Wnd* w, const GG::WndEvent& event) {
+    if (event.Type() != GG::WndEvent::RClick)
+        return false;
+    const GG::Pt& pt = event.Point();
+
+    MeterType meter_type = INVALID_METER_TYPE;
+    for (auto& meter_stat : m_meter_stats) {
+        if (meter_stat.second.get() == w) {
+            meter_type = meter_stat.first;
+            break;
+        }
+    }
+
+    if (meter_type == INVALID_METER_TYPE)
+        return false;
+
+    std::string meter_string = boost::lexical_cast<std::string>(meter_type);
+    std::string meter_title;
+    if (UserStringExists(meter_string))
+        meter_title = UserString(meter_string);
+    if (meter_title.empty())
+        return false;
+
+    bool retval = false;
+    auto zoom_action = [&retval, &meter_string]() { retval = ClientUI::GetClientUI()->ZoomToMeterTypeArticle(meter_string); };
+
+    auto popup = GG::Wnd::Create<CUIPopupMenu>(pt.x, pt.y);
+    std::string popup_label = boost::io::str(FlexibleFormat(UserString("ENC_LOOKUP")) % meter_title);
+    popup->AddMenuItem(GG::MenuItem(popup_label, false, false, zoom_action));
+
+    return retval;
+}
+
 void MilitaryPanel::Update() {
-    TemporaryPtr<const UniverseObject> obj = GetUniverseObject(m_planet_id);
+    auto obj = GetUniverseObject(m_planet_id);
     if (!obj) {
         ErrorLogger() << "MilitaryPanel::Update coudln't get object with id  " << m_planet_id;
         return;
@@ -96,18 +134,24 @@ void MilitaryPanel::Update() {
     m_multi_icon_value_indicator->Update();
 
     // tooltips
-    boost::shared_ptr<GG::BrowseInfoWnd> browse_wnd;
+    for (auto& meter_stat : m_meter_stats) {
+        meter_stat.second->SetValue(obj->InitialMeterValue(meter_stat.first));
 
-    for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-        it->second->SetValue(obj->InitialMeterValue(it->first));
-
-        browse_wnd = boost::shared_ptr<GG::BrowseInfoWnd>(new MeterBrowseWnd(m_planet_id, it->first, AssociatedMeterType(it->first)));
-        it->second->SetBrowseInfoWnd(browse_wnd);
-        m_multi_icon_value_indicator->SetToolTip(it->first, browse_wnd);
+        auto browse_wnd = GG::Wnd::Create<MeterBrowseWnd>(m_planet_id, meter_stat.first, AssociatedMeterType(meter_stat.first));
+        meter_stat.second->SetBrowseInfoWnd(browse_wnd);
+        m_multi_icon_value_indicator->SetToolTip(meter_stat.first, browse_wnd);
     }
 }
 
 void MilitaryPanel::Refresh() {
+    for (auto& meter_stat : m_meter_stats)
+        meter_stat.second->RequirePreRender();
+
+    RequirePreRender();
+}
+
+void MilitaryPanel::PreRender() {
+    AccordionPanel::PreRender();
     Update();
     DoLayout();
 }
@@ -118,8 +162,8 @@ void MilitaryPanel::ExpandCollapseButtonPressed()
 void MilitaryPanel::DoLayout() {
     AccordionPanel::DoLayout();
 
-    for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-        DetachChild(it->second);
+    for (auto& meter_stat : m_meter_stats) {
+        DetachChild(meter_stat.second);
     }
 
     // detach / hide meter bars and large resource indicators
@@ -130,16 +174,19 @@ void MilitaryPanel::DoLayout() {
     if (!s_expanded_map[m_planet_id]) {
         // position and reattach icons to be shown
         int n = 0;
-        for (std::vector<std::pair<MeterType, StatisticIcon*> >::iterator it = m_meter_stats.begin(); it != m_meter_stats.end(); ++it) {
-            GG::X x = MeterIconSize().x*n*7/2;
+        GG::X stride = MeterIconSize().x * 7/2;
+        for (auto& meter_stat : m_meter_stats) {
+            GG::X x = n * stride;
 
-            if (x > Width() - m_expand_button->Width() - MeterIconSize().x*5/2) break;  // ensure icon doesn't extend past right edge of panel
-
-            StatisticIcon* icon = it->second;
-            AttachChild(icon);
+            auto& icon = meter_stat.second;
             GG::Pt icon_ul(x, GG::Y0);
             GG::Pt icon_lr = icon_ul + MeterIconSize();
             icon->SizeMove(icon_ul, icon_lr);
+
+            if (x + icon->MinUsableSize().x >= ClientWidth())
+                break;
+
+            AttachChild(icon);
             icon->Show();
 
             n++;
@@ -163,21 +210,19 @@ void MilitaryPanel::DoLayout() {
         Resize(GG::Pt(Width(), m_multi_meter_status_bar->Bottom() + EDGE_PAD - top));
     }
 
-    m_expand_button->MoveTo(GG::Pt(Width() - m_expand_button->Width(), GG::Y0));
-
     SetCollapsed(!s_expanded_map[m_planet_id]);
 }
 
-TemporaryPtr<const Planet> MilitaryPanel::GetPlanet() const {
-    TemporaryPtr<const UniverseObject> obj = GetUniverseObject(m_planet_id);
+std::shared_ptr<const Planet> MilitaryPanel::GetPlanet() const {
+    auto obj = GetUniverseObject(m_planet_id);
     if (!obj) {
         ErrorLogger() << "MilitaryPanel tried to get an object with an invalid m_planet_id";
-        return TemporaryPtr<const Planet>();
+        return nullptr;
     }
-    TemporaryPtr<const Planet> planet = boost::dynamic_pointer_cast<const Planet>(obj);
+    auto planet = std::dynamic_pointer_cast<const Planet>(obj);
     if (!planet) {
         ErrorLogger() << "MilitaryPanel failed casting an object pointer to a Planet pointer";
-        return TemporaryPtr<const Planet>();
+        return nullptr;
     }
     return planet;
 }

@@ -1,4 +1,3 @@
-// -*- C++ -*-
 #ifndef _ServerConnectWnd_h_
 #define _ServerConnectWnd_h_
 
@@ -7,56 +6,59 @@
 #include <GG/ListBox.h>
 
 #include "CUIWnd.h"
-#include "../network/ClientNetworking.h"
-
+#include "../network/Networking.h"
 
 /** server connections window */
 class ServerConnectWnd : public CUIWnd
 {
 public:
+    /** Connection parameters */
+    struct Result {
+        std::string player_name;
+        std::string server_dest;
+        Networking::ClientType type;
+    };
+
     /** \name Structors */ //@{
     ServerConnectWnd();
+    void CompleteConstruction() override;
     //@}
 
     //! \name Mutators
     //!@{
-    virtual void ModalInit ();
-    virtual void KeyPress (GG::Key key, boost::uint32_t key_code_point, GG::Flags<GG::ModKey> mod_keys);
+    void ModalInit() override;
+
+    void KeyPress(GG::Key key, std::uint32_t key_code_point, GG::Flags<GG::ModKey> mod_keys) override;
     //!@}
 
     /** \name Accessors */ //@{
-    /** returns a the player's name (.first) and the location of the server (.second -- IP address or name), or "" if none was selected */
-    const std::pair<std::string, std::string>& Result() const;
+    /** returns a the player's name (.player_name); the location of the server (.server_dest -- IP address or name), or "" if none was selected and client type (.type) */
+    const Result& GetResult() const;
     //@}
 
 protected:
-    virtual GG::Rect CalculatePosition() const;
+    GG::Rect CalculatePosition() const override;
 
 private:
-    void Init();
     void PopulateServerList();
-    void RefreshServerList();
-    void HostOrJoinClicked(std::size_t idx);
     void ServerSelected(const GG::ListBox::SelectionSet& selections);
     void IPAddressEdited(const std::string& str);
-    void NameEdited(const std::string& str);
     void OkClicked();
     void CancelClicked() {CUIWnd::CloseClicked();}
     void EnableDisableControls();
 
-    std::pair<std::string, std::string> m_result;
+    Result m_result;
 
-    GG::RadioButtonGroup*               m_host_or_join_radio_group;
-    GG::Label*                          m_LAN_game_label;
-    GG::ListBox*                        m_servers_lb;
-    GG::Button*                         m_find_LAN_servers_bn;
-    GG::Label*                          m_internet_game_label;
-    GG::Edit*                           m_IP_address_edit;
-    GG::Edit*                           m_player_name_edit;
-    GG::Button*                         m_ok_bn;
-    GG::Button*                         m_cancel_bn;
-
-    ClientNetworking::ServerList        m_LAN_servers;
+    std::shared_ptr<GG::RadioButtonGroup>               m_host_or_join_radio_group;
+    std::shared_ptr<GG::DropDownList>                   m_client_type_list;
+    std::shared_ptr<GG::Label>                          m_LAN_game_label;
+    std::shared_ptr<GG::ListBox>                        m_servers_lb;
+    std::shared_ptr<GG::Button>                         m_find_LAN_servers_bn;
+    std::shared_ptr<GG::Label>                          m_internet_game_label;
+    std::shared_ptr<GG::Edit>                           m_IP_address_edit;
+    std::shared_ptr<GG::Edit>                           m_player_name_edit;
+    std::shared_ptr<GG::Button>                         m_ok_bn;
+    std::shared_ptr<GG::Button>                         m_cancel_bn;
 };
 
 #endif // _ServerConnectWnd_h_
